@@ -60,12 +60,12 @@ A template may only use these. Anything outside them needs new engine code, by d
 
 | Block | Shape | Engine behaviour |
 |---|---|---|
-| **Calendar** | number of periods (e.g. weeks), steps per period (sessions / nights), labels, and a **fixed phase order**: period start (capacity disruptions, then pending-request triggers) → each step (obstacles, then decisions, then recording) → period end (queue processing, then checks) | Steps through time in exactly that order: today's order, which decides "pending at the checkpoint" |
-| **Role** | id, label, `llm: bool` plus `rules: [recorder / queue_processor / checker]` (a role may be both, like faculty: an LLM that also records attendance), allowed action IDs | LLM roles decide when triggered; their rules run at their phase. Actions marked `rule_only` are never offered in the prompt |
+| **Calendar** | number of periods (e.g. weeks), steps per period (sessions / nights), labels, and a **fixed phase order**: period start (capacity disruptions, then pending-request triggers) → each step (obstacles → decisions, including endorsements → requests with `processed: each_step` → recording) → period end (requests with `processed: period_end` → checks) | Steps through time in exactly that order. For attendance it is today's order, which decides "pending at the checkpoint"; for curfew it means a permission is filed, consented to and decided before that night is recorded |
+| **Role** | id, label, `llm: bool` plus `rules: [recorder / queue_processor / checker]` (a role may be both, like faculty: an LLM that also records attendance), allowed action IDs | LLM roles decide when triggered, and their prompt lists only their allowed actions. Rules aren't actions: they run automatically at their phase and are never offered to an LLM |
 | **Person** | id, role, label; profile (description, goals, constraints) and numeric attributes, from the blueprint | Holds memory, strategy and attribute values |
 | **Attribute** | id, label, range, which role has it (e.g. `slack_min`) | Read by obstacle rules; changed only by an action with a `set_attribute` effect |
-| **Duty** | id, label, owed by role, each step, met by action / missed by action, `recorded_by` role, obstacle rule (`delay > attribute` means missed) | Creates each occurrence; the recorder records met or missed, with `caused_by` |
-| **Action** | id, label, allowed roles, parameters, effect from a fixed library (`meet_duty, miss_duty, set_attribute, file_request, endorse, decide_request, message, respond, correct_record, cancel_occurrence`), preconditions from a fixed list (`own_occurrence`, `occurrence_recorded`, `occurrence_not_yet`, `not_already_covered`, …) | Refuses anything not allowed (an `action_rejected` event with the reason) and commits the rest |
+| **Duty** | id, label, owed by role, each step, the actions that plan to meet or miss it, `recorded_by` role, obstacle rule (`delay > attribute` means missed) | Creates each occurrence. **Recording is not an action:** at the recording phase the recorder rule records met or missed for everyone, applying each person's plan and any obstacle, with `caused_by`. A person with no plan is treated as planning to meet it |
+| **Action** | id, label, allowed roles, parameters, one or more effects from a fixed library (`plan_meet, plan_miss, set_attribute, file_request, endorse, decide_request, message, respond, correct_record, cancel_occurrence`), preconditions from a fixed list (`own_occurrence`, `occurrence_recorded`, `occurrence_not_yet`, `not_already_covered`, …). `plan_meet` and `plan_miss` only record the person's plan for an upcoming occurrence; the outcome comes at recording. Example: `attend` = `plan_meet` plus an optional `set_attribute` on `slack_min` (today's "change your travel buffer") | Refuses anything not allowed (an `action_rejected` event with the reason) and commits the rest |
 | **Request type** | id, label, filed by, covers a duty, handled by a role, `processed: each_step / period_end` | see the three rows below |
 | | **Consent:** optional `endorsed_by` role (the request first needs that role's consent; refused consent ends it) | |
 | | **Who decides:** `decided_by: rule / llm`. A rule applies the decision rule; an LLM role decides each queued request within capacity, with a reason, while the engine still enforces capacity, order and the allowed outcomes | |
@@ -73,7 +73,7 @@ A template may only use these. Anything outside them needs new engine code, by d
 | **Count** | id, label, `rate` (met ÷ due, excluding listed statuses: `approved_request`, `cancelled`; pending counts as missed) or `tally` (number missed, excluding approved) | Recomputed on demand, always from records |
 | **Check** | id, label, run by a checker role, count, comparison (`>=` / `<=`), and **either** one threshold at one timing parameter **or** an **escalation ladder** checked every period (an ordered list of threshold → outcome, each a blueprint parameter) | Records `check_evaluated` with both figures (as is, and if pending requests were approved). An escalation outcome is an event that can trigger listed roles |
 | **Disruption kind** | `obstacle` (delay on a duty for listed people, at an explicit list of steps in its period), `capacity` (queue capacity override in a period), `cancellation` (listed occurrences cancelled) | Applied at its phase, recorded as an event |
-| **Trigger** | from today's five: an obstacle hits a person; a person's own duty is missed; a count comes within N of the threshold (plus listed roles); a request has been pending ≥ N periods (plus listed roles); ≥ K people missed in one step (to a listed role). Also, for the new blocks: an endorsement or escalation event reaches its listed role | Decides who is asked in each phase. No other new triggers, so attendance call counts stay as 6b measured |
+| **Trigger** | from today's five: an obstacle hits a person; a person's own duty is missed; a count comes within N of the threshold (plus listed roles); a request has been pending ≥ N periods (plus listed roles); ≥ K people missed in one step (to a listed role). Also, for the new blocks: a request awaiting consent reaches its `endorsed_by` person; a request awaiting an LLM decision reaches its `decided_by` person at its processing slot; an escalation outcome reaches its listed roles | Decides who is asked in each phase. No other new triggers, so attendance call counts stay as 6b measured |
 | **Parameter spec** | name, type, range, `kind: policy / environment / people`, a sentence template for prompts | What the blueprint must fill. Variants vary only `environment`; the three-policy comparison varies only `policy` |
 
 **Causality rules (general forms of the ones slices 4–5 proved):**
@@ -88,9 +88,13 @@ A template may only use these. Anything outside them needs new engine code, by d
 Each file carries `id`, `version`, a scope line, terms (display words), building-block definitions, parameter specs and its example input. The template check runs in pytest for every file. It is the slim, template-only form of the Brief's 4-stage validation (nice-to-have 8).
 
 **attendance@1** is a port of today's model:
-- **Calendar and people:** 10 weeks × 2 sessions. People: commuter, resident, working and family students (LLM), faculty (LLM, also the attendance recorder), advisor (LLM), attendance office (queue processor), exam officer (checker).
+- **Calendar and people:** 10 weeks × 2 sessions. 5 roles, 8 people: commuter, resident, working and family students (LLM), faculty (LLM, plus the recorder rule), advisor (LLM), attendance office (queue processor rule), exam officer (checker rule).
 - **Duty, request, count, check:** duty attend class; request exception; count attendance % (rate); check exam eligibility (attendance ≥ threshold, once, at the checkpoint week).
-- **Policy parameters:** threshold, scope, request timing, partial at submit, partial at decide, decision rule.
+- **Actions (7, today's LLM actions):** students `attend`, `skip`, `submit_exception_request`, `ask_advisor`; faculty `edit_attendance`, `cancel_session`; advisor `advise_student`. Today's `record_attendance` (faculty), `process_exception_queue` (attendance office) and `evaluate_eligibility` (exam officer) aren't actions any more: they're the recorder, queue processor and checker rules.
+- **Parameter kinds:**
+  - `policy`: threshold, scope, request timing, partial at submit, partial at decide, decision rule;
+  - `environment`: office capacity per week, checkpoint week, disruptions (as slice 6c varied them; the early-checkpoint variant is the one that broke);
+  - `people`: the 8 profiles and each student's `slack_min`.
 - **Example input:** the 80% example stays the pre-filled default.
 
 **hostel_curfew@1** is a different structure, not a renamed copy (team ask, 24 Nov):
@@ -105,7 +109,20 @@ Each file carries `id`, `version`, a scope line, terms (display words), building
 | Who reacts to outcomes | advisor (near the threshold) | **guardian, triggered by "guardian informed"** |
 | Disruptions | transport, office capacity | transport delay and lab overrun (obstacles, on chosen nights), warden away (capacity) |
 
-Residents' labels and profiles come from the blueprint. The template has its own pre-filled example policy (for example: "Residents must return by 10 pm; late entry needs prior permission from the warden with guardian consent; repeated late returns lead to disciplinary action").
+Residents' labels and profiles come from the blueprint. Its actions:
+- residents: `return_on_time` (`plan_meet`), `stay_out_late` (`plan_miss`), `request_late_entry` (`file_request`, in advance);
+- guardian: `give_consent` (`endorse`) and `talk_to_resident` (`message`);
+- warden: `decide_permission` (`decide_request`);
+- welfare officer: `advise_resident` (`respond`).
+
+Security, the warden's queue slot and the discipline committee are rules.
+
+Parameter kinds:
+- `policy`: curfew time, the ladder thresholds, request timing, partial acceptance;
+- `environment`: the warden's weekly capacity, disruptions;
+- `people`: the 10 profiles and each resident's `slack_min`.
+
+The template has its own pre-filled example policy (for example: "Residents must return by 10 pm; late entry needs prior permission from the warden with guardian consent; repeated late returns lead to disciplinary action").
 
 ## Blueprint (template + values)
 - **Shape:** `Blueprint = {template_id, template_version, values, facts, assumptions}`. `values` holds policy parameters, people (profile + attributes), capacities, check timing or ladder thresholds, and disruptions. Each is checked against the template's parameter specs and references; for example, a disruption's affected people must exist.
