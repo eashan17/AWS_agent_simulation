@@ -1,0 +1,22 @@
+{
+  "description": "Test-only case. Student C (working, fixed hours) attends 15 of 20 sessions; R1 and R2 cover two of C's absences, R3 covers one of the commuter's. The admin can process 2 requests in week 10.",
+  "threshold_pct": 80,
+  "students": ["commuter", "resident", "working", "family"],
+  "focus_student": "working",
+  "absent": {
+    "working": [5, 6, 11, 14, 17],
+    "commuter": [7]
+  },
+  "requests": [
+    {"student": "working", "sessions": [5], "reason": "work shift moved"},
+    {"student": "working", "sessions": [6], "reason": "work shift moved"},
+    {"student": "commuter", "sessions": [7], "reason": "transport disruption"}
+  ],
+  "admin_capacity": 2,
+  "permission_check": {
+    "role": "student",
+    "actor": "working",
+    "action": "edit_attendance",
+    "params": {"student": "working", "session": 5, "present": true}
+  }
+}

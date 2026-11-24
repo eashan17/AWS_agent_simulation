@@ -1,6 +1,8 @@
 """Terminal entry point. Calls the same core code the API and UI will use."""
 
 import argparse
+import json
+from pathlib import Path
 
 from rulestorm.education import EXAMPLE_POLICY
 from rulestorm.policy import (
@@ -30,6 +32,11 @@ def main(argv: list[str] | None = None) -> None:
     approve_cmd = blueprint_commands.add_parser("approve", help="approve and freeze a valid blueprint")
     approve_cmd.add_argument("blueprint_id")
 
+    engine = commands.add_parser("engine", help="deterministic rule engine")
+    engine_commands = engine.add_subparsers(dest="engine_command", required=True)
+    check_cmd = engine_commands.add_parser("check", help="play a fixed test case through the engine")
+    check_cmd.add_argument("--case", required=True, help="case JSON file, e.g. tests/cases/student_c.json")
+
     llm = commands.add_parser("llm", help="model adapter")
     llm_commands = llm.add_subparsers(dest="llm_command", required=True)
     smoke_cmd = llm_commands.add_parser("smoke", help="real Bedrock call: auth, latency, tokens, quotas")
@@ -57,6 +64,12 @@ def main(argv: list[str] | None = None) -> None:
         print(f"id: {record.id}")
         print(f"status: {record.status}")
         print(f"approved: {str(record.approved).lower()}")
+    elif args.command == "engine" and args.engine_command == "check":
+        from rulestorm.engine import run_case
+
+        case = json.loads(Path(args.case).read_text(encoding="utf-8"))
+        for line in run_case(case):
+            print(line)
     elif args.command == "llm" and args.llm_command == "smoke":
         from rulestorm import smoke
 

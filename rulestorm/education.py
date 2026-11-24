@@ -19,6 +19,26 @@ ARCHETYPES: dict[str, str] = {
 TERM_WEEKS = 10
 SESSIONS_PER_WEEK = 2
 
+# The 8 agents: 4 students (LLM), faculty and advisor (LLM), attendance admin and
+# examination officer (rule-following code). Agent ID -> role.
+AGENT_ROLES: dict[str, str] = {
+    **{archetype: "student" for archetype in ARCHETYPES},
+    "faculty": "faculty",
+    "advisor": "advisor",
+    "attendance_admin": "attendance_admin",
+    "exam_officer": "exam_officer",
+}
+
+# What each role may do. The engine refuses any other action with reason "permission":
+# students cannot edit attendance or approve their own exceptions.
+ROLE_ACTIONS: dict[str, frozenset[str]] = {
+    "student": frozenset({"attend", "skip", "submit_exception_request", "ask_advisor"}),
+    "faculty": frozenset({"record_attendance", "edit_attendance", "cancel_session"}),
+    "advisor": frozenset({"advise_student"}),
+    "attendance_admin": frozenset({"process_exception_queue"}),
+    "exam_officer": frozenset({"evaluate_eligibility"}),
+}
+
 EXAMPLE_POLICY = {
     "text": (
         "Students must maintain at least 80% attendance in each course to be "
