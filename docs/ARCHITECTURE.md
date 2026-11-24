@@ -155,7 +155,7 @@ The template has its own pre-filled example policy (for example: "Residents must
   - `store.py` (tables unchanged; records store `template_id@version`);
   - the API routes and CLI shape;
   - the agent framework (`CallBudget`, `CappedModel`, parallel phases, deadline, degraded status);
-  - the runner and caps (7a/7b, not built yet), deploy, and the UI plan.
+  - the runner (7a, built 24 Nov: `runner.py`, one run at a time, events saved each period, the run file written at the end as `run local` writes it) and the caps (7b, not built yet), deploy, and the UI plan.
 - **Ported in its own slice:**
   - **Agent prompts:** generated from the template, keeping the 6b fixes (the slack line, the absences no request covers, the outcomes of the person's last actions). A golden-prompt test (built in L5 as an exact copy) is narrowed at the switch-over (L7): an exact match only for the lines carrying the 6b fixes, and the same facts (not the same wording) for the rest. That keeps one template's old wording from shaping the engine.
     Added on the general engine (L9b–L9d): a "Now:" line naming the current step, with the step on every event line; each person's own requests with the steps they cover and what became of them; for a consenting person, the requests waiting for their consent; for an LLM decider at an open slot, the offered requests and the allowed outcomes; and the number of actions they may propose.
@@ -181,8 +181,8 @@ SQLite, WAL mode, one connection per thread:
 |---|---|
 | policies | the stored policy texts |
 | blueprints | template id + version, values, facts, assumptions, status, approved, parent_id (variants) |
-| runs | status (running / completed / degraded / failed), period, model ID, blueprint ID, counts, llm_errors, cap_hits, error |
-| events | run_id, event_id, seq, period, step, type, actor, payload, state_change, caused_by |
+| runs | status (running / completed / degraded / failed), period and periods, template, model ID, blueprint ID, summary (decisions, calls, llm_errors, cap_hits, tokens), error, started and finished times. A new run is inserted only if none is running, in one statement (built in 7a) |
+| events | run_id, seq, and the whole event (event_id, period, step, type, actor, payload, state_change, caused_by), saved after each period so the timeline can be followed live |
 | decisions | person, prompt hash, raw reply, parsed decision, accepted/rejected + reason, error |
 | findings | run_id, kind, title, chain |
 | daily_usage | date, runs, llm_calls, blueprint_calls |

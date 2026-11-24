@@ -76,9 +76,15 @@ def test_run_on_unapproved_blueprint_refused(store, blueprint, http) -> None:
     assert response.json() == {"detail": "blueprint not approved"}
 
 
-def test_approve_route_then_run_passes_the_check(blueprint, http) -> None:
+def test_approve_route_then_run_passes_the_check(blueprint, http, tmp_path) -> None:
+    from rulestorm.api import get_agent_model, get_runs_dir
+    from test_agents import RoutedModel
+
+    app.dependency_overrides[get_agent_model] = lambda: RoutedModel()
+    app.dependency_overrides[get_runs_dir] = lambda: str(tmp_path / "runs")
     response = http.post(f"/api/blueprints/{blueprint.id}/approve")
     assert response.status_code == 200 and response.json()["approved"] is True
-    # Approved: the approval check passes; the runner itself arrives in slice 7a.
-    assert http.post("/api/runs", json={"blueprint_id": blueprint.id}).status_code == 501
+    # Approved: the approval check passes and the run starts (slice 7a).
+    started = http.post("/api/runs", json={"blueprint_id": blueprint.id})
+    assert started.status_code == 200 and started.json()["run_id"].startswith("L-")
     assert http.post("/api/runs", json={"blueprint_id": "B-missing"}).status_code == 404

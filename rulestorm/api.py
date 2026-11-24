@@ -2,7 +2,8 @@
 
 from functools import lru_cache
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from rulestorm import llm
@@ -33,6 +34,15 @@ def get_store() -> Store:
 def get_blueprint_model() -> llm.Model:
     # Blueprint calls get no boto retries: 2 model calls in total (docs/ARCHITECTURE.md).
     return llm.get_model(max_attempts=1)
+
+
+def get_agent_model() -> llm.Model | None:
+    """The model for a run's people; None means the configured one (tests override this)."""
+    return None
+
+
+def get_runs_dir() -> str:
+    return "runs"
 
 
 class BlueprintRequest(BaseModel):
@@ -110,12 +120,30 @@ def post_variants(
 
 
 @app.post("/api/runs")
-def post_run(body: RunRequest, store: Store = Depends(get_store)) -> dict:
+def post_run(body: RunRequest, store: Store = Depends(get_store),
+             model: llm.Model | None = Depends(get_agent_model), runs_dir: str = Depends(get_runs_dir)):
+    """Starts a run in the background and answers at once; one run at a time (slice 7a)."""
+    from rulestorm.runner import RunActive, start_run
+
     try:
-        require_approved(store, body.blueprint_id)
+        run_id = start_run(store, body.blueprint_id, model=model, out_dir=runs_dir)
     except BlueprintNotFound:
         raise HTTPException(status_code=404, detail="blueprint not found")
     except BlueprintNotApproved:
         raise HTTPException(status_code=409, detail="blueprint not approved")
-    # Placeholder until slice 7a adds the background runner.
-    raise HTTPException(status_code=501, detail="runs not built yet (slice 7a)")
+    except RunActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a run is already running", "run_id": exc.run_id})
+    except ValueError as exc:  # the template changed since the blueprint was made
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"run_id": run_id, "status": "running"}
+
+
+@app.get("/api/runs/{run_id}")
+def get_run(run_id: str, after: int = Query(0, ge=0, description="only timeline events after this seq"),
+            store: Store = Depends(get_store)) -> dict:
+    """Status, period and the timeline of events so far (pass `after` to get only new ones)."""
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    run["run_id"] = run.pop("id")  # the same name the POST answers with
+    return {**run, "timeline": store.run_events(run_id, after_seq=after)}

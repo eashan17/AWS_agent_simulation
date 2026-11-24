@@ -268,13 +268,31 @@ def run_term(template: Template, values: dict[str, Any], agents: Agents | None =
     return engine, summarise(engine, agents)
 
 
+def write_run_file(out_dir: str, run_id: str, blueprint_id: str, template_ref: str, seconds: float,
+                   summary: RunSummary, blueprint, events) -> str:
+    """runs/<run_id>.json (UTF-8): the event log, the blueprint and the summary, readable by hand."""
+    from pathlib import Path
+
+    path = Path(out_dir) / f"{run_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "run_id": run_id,
+        "blueprint_id": blueprint_id,
+        "template": template_ref,
+        "seconds": seconds,
+        "summary": summary.model_dump(),
+        "blueprint": blueprint.model_dump(),
+        "events": [e.model_dump() for e in events],
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    return str(path)
+
+
 def run_local(store, blueprint_id: str, out_dir: str = "runs", on_period=None) -> tuple[str, RunSummary, float, str]:
     """A real term on the approved blueprint, in this process (the background runner is slice 7a).
     Writes the event log, the blueprint and the summary to <out_dir>/<run_id>.json (UTF-8) so a
     run can be read by hand. Returns (run_id, summary, seconds, path)."""
     import time
     import uuid
-    from pathlib import Path
 
     from rulestorm.core.model import load_template
     from rulestorm.policy import require_approved
@@ -289,15 +307,5 @@ def run_local(store, blueprint_id: str, out_dir: str = "runs", on_period=None) -
     started = time.monotonic()
     engine, summary = run_term(template, bp.values, on_period=on_period)
     seconds = round(time.monotonic() - started, 1)
-    path = Path(out_dir) / f"{run_id}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "run_id": run_id,
-        "blueprint_id": blueprint_id,
-        "template": template.ref,
-        "seconds": seconds,
-        "summary": summary.model_dump(),
-        "blueprint": bp.model_dump(),
-        "events": [e.model_dump() for e in engine.events],
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
-    return run_id, summary, seconds, str(path)
+    path = write_run_file(out_dir, run_id, blueprint_id, template.ref, seconds, summary, bp, engine.events)
+    return run_id, summary, seconds, path
