@@ -12,6 +12,7 @@ a scripted decider joins it in slice L4.
 """
 
 import json
+import string
 from collections import Counter
 from pathlib import Path
 from typing import Literal
@@ -43,7 +44,8 @@ TriggerKind = Literal[
 DisruptionKindName = Literal["obstacle", "capacity", "cancellation"]
 CountExclusion = Literal["approved_request", "cancelled"]
 ParameterKind = Literal["policy", "environment", "people"]
-ParameterType = Literal["int", "bool", "choice", "attribute", "profiles", "disruptions"]
+ParameterType = Literal["int", "bool", "choice", "text", "attribute", "profiles", "disruptions"]
+PromptSection = Literal["policy", "request_rules", "you"]
 
 # Which reference each effect needs (a field on the Effect).
 EFFECT_NEEDS: dict[str, str | None] = {
@@ -106,6 +108,7 @@ class ActionParam(Block):
     # step / step_list name the occurrence(s) an action is about; person names a target person
     type: Literal["int", "str", "bool", "step", "step_list", "person"]
     required: bool = True
+    hint: str = Field("", description="how the value is described to an LLM person, e.g. <current session>")
 
 
 class Effect(Block):
@@ -114,6 +117,12 @@ class Effect(Block):
     attribute: str | None = None
     request_type: str | None = None
     to: str | None = Field(None, description="message only: the role it goes to")
+    param: str | None = Field(None, description="set_attribute only: the action parameter holding the new "
+                                                "value (default: the attribute ID)")
+
+    @property
+    def value_param(self) -> str | None:
+        return self.param or self.attribute
 
 
 class Action(Block):
@@ -200,7 +209,11 @@ class Parameter(Block):
     max: int | None = None
     choices: list[str] | None = None
     attribute: str | None = Field(None, description="type attribute: which attribute each person sets")
-    sentence: str = Field(min_length=1, description="how the value reads in a prompt; {value} is replaced")
+    max_length: int | None = Field(None, description="type text: longest allowed value")
+    prompt_section: PromptSection | None = Field(None, description="where the value is shown to LLM people")
+    sentence: str | None = Field(None, description="how the value reads in a prompt: {value} is replaced, "
+                                                   "and {name} by another parameter's value")
+    sentences: dict[str, str] | None = Field(None, description="choice/bool: one sentence per value")
 
 
 class ExampleInput(Block):
@@ -385,8 +398,8 @@ def _reference_errors(t: Template) -> list[str]:
             errors.append(f"{owner}: correct_record needs one person and one bool parameter")
         if "set_attribute" in kinds:
             for effect in action.effects:
-                if effect.attribute and effect.attribute not in {p.name for p in action.params}:
-                    errors.append(f"{owner}: set_attribute needs a parameter named '{effect.attribute}'")
+                if effect.attribute and effect.value_param not in {p.name for p in action.params}:
+                    errors.append(f"{owner}: set_attribute needs a parameter named '{effect.value_param}'")
 
     for rt in t.request_types:
         owner = f"request type '{rt.id}'"
@@ -441,8 +454,9 @@ def _reference_errors(t: Template) -> list[str]:
             if p.attribute is None:
                 errors.append(f"{owner} is an attribute, so it needs 'attribute'")
             ref(owner, "attribute", p.attribute, attributes)
-        if "{value}" not in p.sentence:
-            errors.append(f"{owner}: sentence must contain {{value}}")
+        if p.type == "text" and not p.max_length:
+            errors.append(f"{owner} is text, so it needs max_length")
+        errors.extend(_sentence_errors(p, params))
 
     return errors
 
@@ -458,3 +472,23 @@ def _choices_within(errors: list[str], params: dict[str, Parameter], name: str |
     for choice in p.choices:
         if choice not in known:
             errors.append(f"parameter '{name}' has unknown choice '{choice}'")
+
+
+def _sentence_errors(p: Parameter, params: dict[str, Parameter]) -> list[str]:
+    owner = f"parameter '{p.name}'"
+    errors = []
+    if p.sentence is not None and p.sentences is not None:
+        errors.append(f"{owner} has both sentence and sentences")
+    if p.prompt_section and p.sentence is None and p.sentences is None:
+        errors.append(f"{owner} is shown in the {p.prompt_section} section, so it needs a sentence")
+    if p.sentences is not None:
+        expected = set(p.choices or []) if p.type == "choice" else {"true", "false"} if p.type == "bool" else None
+        if expected is None:
+            errors.append(f"{owner}: only choice and bool parameters can have one sentence per value")
+        elif set(p.sentences) != expected:
+            errors.append(f"{owner}: sentences must cover exactly {', '.join(sorted(expected))}")
+    for text in [p.sentence or "", *(p.sentences or {}).values()]:
+        for _, field, _, _ in string.Formatter().parse(text):
+            if field and field != "value" and field not in params:
+                errors.append(f"{owner}: sentence refers to unknown parameter '{field}'")
+    return errors

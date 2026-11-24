@@ -53,7 +53,7 @@ def test_broken_reference_is_named(raw: dict) -> None:
      "check 'exam_eligibility' needs role 'advisor' to have the checker rule"),
     (lambda t: t["request_types"][0].update(capacity_param="threshold_pct"),
      "request type 'exception' needs a parameter of kind environment, but 'threshold_pct' is policy"),
-    (lambda t: t["parameters"][5]["choices"].append("coin_flip"),
+    (lambda t: next(p for p in t["parameters"] if p["name"] == "decision_rule")["choices"].append("coin_flip"),
      "parameter 'decision_rule' has unknown choice 'coin_flip'"),
     (lambda t: t["people"].append({"id": "dean", "role": "dean"}), "person 'dean' refers to unknown role 'dean'"),
 ])

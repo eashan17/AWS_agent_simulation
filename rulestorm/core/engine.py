@@ -256,10 +256,10 @@ class Engine:
                 for precondition in action.preconditions:
                     for step in steps:
                         self._precondition(precondition, actor, target, duty, step, effect.request_type)
-            if effect.kind == "set_attribute" and params.get(effect.attribute) is not None:
+            if effect.kind == "set_attribute" and params.get(effect.value_param) is not None:
                 attribute = next(a for a in self.t.attributes if a.id == effect.attribute)
-                if not attribute.min <= params[effect.attribute] <= attribute.max:
-                    raise Refused(f"bad parameters: {effect.attribute} must be {attribute.min}-{attribute.max}")
+                if not attribute.min <= params[effect.value_param] <= attribute.max:
+                    raise Refused(f"bad parameters: {effect.value_param} must be {attribute.min}-{attribute.max}")
             if effect.kind in ("endorse", "decide_request"):
                 raise Refused(f"unsupported effect {effect.kind}")  # slices L9a-L9b
 
@@ -325,7 +325,7 @@ class Engine:
             self.plans[(effect.duty, actor, step)] = (plan, event.event_id)
             return event
         if kind == "set_attribute":
-            new = params.get(effect.attribute)
+            new = params.get(effect.value_param)
             if new is None:
                 return None
             key = (actor, effect.attribute)

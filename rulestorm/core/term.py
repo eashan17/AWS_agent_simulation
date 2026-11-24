@@ -224,7 +224,7 @@ class Term:
             if event.type == "action_rejected":
                 outcomes.append(f"refused: {p['action']} {p['params']} (reason: {p['reason']})")
             elif event.type == "request_filed":
-                outcomes.append(f"done: {word} {p['request_id']} filed for "
+                outcomes.append(f"done: {word} {p['request_id']} submitted for "
                                 f"{self.t.calendar.step_label}s {p['steps']}, now pending")
             else:
                 outcomes.append(f"done: {event.type} {p}")

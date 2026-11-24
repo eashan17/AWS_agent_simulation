@@ -12,7 +12,9 @@
     "requests": "exceptions",
     "count": "attendance %",
     "check_passed": "eligible",
-    "check_failed": "not eligible"
+    "check_failed": "not eligible",
+    "setting": "a simulated term of one course",
+    "missed_plural": "absences"
   },
   "example_input": {
     "text": "Students must maintain at least 80% attendance in each course to be eligible for examinations. Exceptional circumstances may be considered through formally approved exceptions.",
@@ -133,12 +135,14 @@
       "params": [
         {
           "name": "session",
-          "type": "step"
+          "type": "step",
+          "hint": "<current session>"
         },
         {
-          "name": "slack_min",
+          "name": "travel_buffer_min",
           "type": "int",
-          "required": false
+          "required": false,
+          "hint": "0-180 to change your travel slack"
         }
       ],
       "effects": [
@@ -148,7 +152,8 @@
         },
         {
           "kind": "set_attribute",
-          "attribute": "slack_min"
+          "attribute": "slack_min",
+          "param": "travel_buffer_min"
         }
       ],
       "preconditions": [
@@ -162,7 +167,8 @@
       "params": [
         {
           "name": "session",
-          "type": "step"
+          "type": "step",
+          "hint": "<current session>"
         }
       ],
       "effects": [
@@ -182,11 +188,13 @@
       "params": [
         {
           "name": "sessions",
-          "type": "step_list"
+          "type": "step_list",
+          "hint": "[<your completed, absent sessions>]"
         },
         {
           "name": "reason",
-          "type": "str"
+          "type": "str",
+          "hint": "\"<short>\""
         }
       ],
       "effects": [
@@ -207,7 +215,7 @@
         {
           "name": "message",
           "type": "str",
-          "required": false
+          "hint": "\"<short>\""
         }
       ],
       "effects": [
@@ -223,15 +231,18 @@
       "params": [
         {
           "name": "student",
-          "type": "person"
+          "type": "person",
+          "hint": "\"<archetype>\""
         },
         {
           "name": "session",
-          "type": "step"
+          "type": "step",
+          "hint": "<n>"
         },
         {
           "name": "present",
-          "type": "bool"
+          "type": "bool",
+          "hint": "true|false"
         }
       ],
       "effects": [
@@ -250,7 +261,8 @@
       "params": [
         {
           "name": "session",
-          "type": "step"
+          "type": "step",
+          "hint": "<a session that has not taken place>"
         }
       ],
       "effects": [
@@ -269,12 +281,13 @@
       "params": [
         {
           "name": "student",
-          "type": "person"
+          "type": "person",
+          "hint": "\"<archetype>\""
         },
         {
           "name": "advice",
           "type": "str",
-          "required": false
+          "hint": "\"<short>\""
         }
       ],
       "effects": [
@@ -303,7 +316,7 @@
   "counts": [
     {
       "id": "attendance_pct",
-      "label": "attendance %",
+      "label": "attendance",
       "kind": "rate",
       "duty": "attend_class",
       "exclude": [
@@ -379,7 +392,8 @@
       "type": "int",
       "min": 50,
       "max": 100,
-      "sentence": "Students need at least {value}% attendance to be eligible for the exam."
+      "sentence": "minimum attendance for exam eligibility: {value}% ({scope})",
+      "prompt_section": "policy"
     },
     {
       "name": "scope",
@@ -388,8 +402,15 @@
       "choices": [
         "per_course",
         "overall"
-      ],
-      "sentence": "Attendance is counted {value}."
+      ]
+    },
+    {
+      "name": "exception_rule",
+      "kind": "policy",
+      "type": "text",
+      "max_length": 300,
+      "prompt_section": "policy",
+      "sentence": "exception rule: {value}"
     },
     {
       "name": "request_timing",
@@ -399,19 +420,31 @@
         "after_missed",
         "in_advance"
       ],
-      "sentence": "Exception requests timing: {value}."
+      "prompt_section": "request_rules",
+      "sentences": {
+        "after_missed": "Requests can cover only classes already recorded as missed.",
+        "in_advance": "Requests must be filed before the class; a class already held can't be covered."
+      }
     },
     {
       "name": "partial_at_submit",
       "kind": "policy",
       "type": "bool",
-      "sentence": "A request with some sessions that can't be covered keeps the valid ones: {value}."
+      "prompt_section": "request_rules",
+      "sentences": {
+        "true": "A request that lists some classes it can't cover keeps the ones it can.",
+        "false": "A request that lists any class it can't cover is refused whole."
+      }
     },
     {
       "name": "partial_at_decide",
       "kind": "policy",
       "type": "bool",
-      "sentence": "The office can approve part of a request: {value}."
+      "prompt_section": "request_rules",
+      "sentences": {
+        "true": "The attendance office can approve some classes of a request and reject the rest.",
+        "false": "The attendance office approves or rejects each request whole."
+      }
     },
     {
       "name": "decision_rule",
@@ -422,7 +455,12 @@
         "approve_if_filed_before_occurrence",
         "approve_all"
       ],
-      "sentence": "The office decides requests by this rule: {value}."
+      "prompt_section": "request_rules",
+      "sentences": {
+        "approve_if_covered_missed": "The attendance office approves a request only if every class it covers is a recorded absence.",
+        "approve_if_filed_before_occurrence": "The attendance office approves a request only for classes it was filed before.",
+        "approve_all": "The attendance office approves every request it processes."
+      }
     },
     {
       "name": "office_capacity_per_week",
@@ -438,26 +476,26 @@
       "type": "int",
       "min": 1,
       "max": 10,
-      "sentence": "Eligibility is checked at the end of week {value}."
+      "sentence": "eligibility is checked in week {value}",
+      "prompt_section": "policy"
     },
     {
       "name": "disruptions",
       "kind": "environment",
-      "type": "disruptions",
-      "sentence": "Disruptions this term: {value}."
+      "type": "disruptions"
     },
     {
       "name": "profiles",
       "kind": "people",
-      "type": "profiles",
-      "sentence": "Who you are: {value}."
+      "type": "profiles"
     },
     {
       "name": "slack_min",
       "kind": "people",
       "type": "attribute",
       "attribute": "slack_min",
-      "sentence": "You leave {value} minutes of slack before class."
+      "sentence": "travel buffer: {value} min (a longer transport delay makes you late)",
+      "prompt_section": "you"
     }
   ]
 }
