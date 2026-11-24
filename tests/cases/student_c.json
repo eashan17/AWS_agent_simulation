@@ -13,6 +13,17 @@
     {"student": "commuter", "sessions": [7], "reason": "transport disruption"}
   ],
   "admin_capacity": 2,
+  "template": "attendance",
+  "count": "attendance_pct",
+  "values": {
+    "threshold_pct": 80,
+    "request_timing": "after_missed",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "decision_rule": "approve_if_covered_missed",
+    "office_capacity_per_week": 2,
+    "checkpoint_week": 10
+  },
   "permission_check": {
     "role": "student",
     "actor": "working",

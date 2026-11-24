@@ -9,6 +9,7 @@
     "duty_met": "present",
     "duty_missed": "absent",
     "request": "exception request",
+    "requests": "exceptions",
     "count": "attendance %",
     "check_passed": "eligible",
     "check_failed": "not eligible"
@@ -132,7 +133,7 @@
       "params": [
         {
           "name": "session",
-          "type": "int"
+          "type": "step"
         },
         {
           "name": "slack_min",
@@ -161,7 +162,7 @@
       "params": [
         {
           "name": "session",
-          "type": "int"
+          "type": "step"
         }
       ],
       "effects": [
@@ -181,7 +182,7 @@
       "params": [
         {
           "name": "sessions",
-          "type": "int_list"
+          "type": "step_list"
         },
         {
           "name": "reason",
@@ -226,7 +227,7 @@
         },
         {
           "name": "session",
-          "type": "int"
+          "type": "step"
         },
         {
           "name": "present",
@@ -249,7 +250,7 @@
       "params": [
         {
           "name": "session",
-          "type": "int"
+          "type": "step"
         }
       ],
       "effects": [

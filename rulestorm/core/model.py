@@ -52,6 +52,8 @@ EFFECT_NEEDS: dict[str, str | None] = {
     "file_request": "request_type", "endorse": "request_type", "decide_request": "request_type",
     "message": "to", "respond": None,
 }
+# Effects about particular occurrences of a duty: the action must name the step(s).
+OCCURRENCE_EFFECTS = {"plan_meet", "plan_miss", "correct_record", "cancel_occurrence", "file_request"}
 
 
 class Block(BaseModel):
@@ -101,7 +103,8 @@ class Duty(Block):
 
 class ActionParam(Block):
     name: str = Field(min_length=1)
-    type: Literal["int", "str", "bool", "int_list", "person"]
+    # step / step_list name the occurrence(s) an action is about; person names a target person
+    type: Literal["int", "str", "bool", "step", "step_list", "person"]
     required: bool = True
 
 
@@ -369,6 +372,16 @@ def _reference_errors(t: Template) -> list[str]:
         for dup, n in Counter(p.name for p in action.params).items():
             if n > 1:
                 errors.append(f"{owner} has parameter '{dup}' {n} times")
+        types = Counter(p.type for p in action.params)
+        kinds = {e.kind for e in action.effects}
+        if kinds & OCCURRENCE_EFFECTS and types["step"] + types["step_list"] != 1:
+            errors.append(f"{owner} needs exactly one step or step_list parameter")
+        if "correct_record" in kinds and (types["person"] != 1 or types["bool"] != 1):
+            errors.append(f"{owner}: correct_record needs one person and one bool parameter")
+        if "set_attribute" in kinds:
+            for effect in action.effects:
+                if effect.attribute and effect.attribute not in {p.name for p in action.params}:
+                    errors.append(f"{owner}: set_attribute needs a parameter named '{effect.attribute}'")
 
     for rt in t.request_types:
         owner = f"request type '{rt.id}'"

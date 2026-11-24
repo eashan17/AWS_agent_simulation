@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> None:
     engine_commands = engine.add_subparsers(dest="engine_command", required=True)
     check_cmd = engine_commands.add_parser("check", help="play a fixed test case through the engine")
     check_cmd.add_argument("--case", required=True, help="case JSON file, e.g. tests/cases/student_c.json")
+    check_cmd.add_argument("--core", action="store_true", help="use the general engine and the case's template")
 
     llm = commands.add_parser("llm", help="model adapter")
     llm_commands = llm.add_subparsers(dest="llm_command", required=True)
@@ -90,10 +91,17 @@ def main(argv: list[str] | None = None) -> None:
         if not result.valid:
             raise SystemExit(1)
     elif args.command == "engine" and args.engine_command == "check":
-        from rulestorm.engine import run_case
-
         case = json.loads(Path(args.case).read_text(encoding="utf-8"))
-        for line in run_case(case):
+        if args.core:
+            from rulestorm.core.engine import run_case as run_core_case
+            from rulestorm.core.model import load_template
+
+            lines = run_core_case(case, load_template(case["template"]))
+        else:
+            from rulestorm.engine import run_case
+
+            lines = run_case(case)
+        for line in lines:
             print(line)
     elif args.command == "llm" and args.llm_command == "smoke":
         from rulestorm import smoke
