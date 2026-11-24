@@ -251,7 +251,9 @@ def test_fill_gets_what_is_left_of_the_shared_budget(policy) -> None:
     interpret(policy, model)
     pick_budget, fill_budget = model.timeouts
     assert pick_budget == pytest.approx(55.0, abs=0.1)
-    assert fill_budget == pytest.approx(54.5, abs=0.1)
+    # The fill gets what's left: at most 55 - 0.5 (the pick's half second), and less if building the
+    # fill prompt and schema took a moment (about 0.1-0.3 s the first time; the Windows clock is coarse).
+    assert 53.5 <= fill_budget <= 54.55
 
 
 def test_out_of_scope_cannot_be_approved(store, policy) -> None:
