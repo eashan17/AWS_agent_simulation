@@ -32,6 +32,11 @@ def main(argv: list[str] | None = None) -> None:
     approve_cmd = blueprint_commands.add_parser("approve", help="approve and freeze a valid blueprint")
     approve_cmd.add_argument("blueprint_id")
 
+    template = commands.add_parser("template", help="rule-world templates (data)")
+    template_commands = template.add_subparsers(dest="template_command", required=True)
+    template_check_cmd = template_commands.add_parser("check", help="check a template the engine can trust")
+    template_check_cmd.add_argument("template", help="a shipped template name (attendance) or a JSON file path")
+
     engine = commands.add_parser("engine", help="deterministic rule engine")
     engine_commands = engine.add_subparsers(dest="engine_command", required=True)
     check_cmd = engine_commands.add_parser("check", help="play a fixed test case through the engine")
@@ -76,6 +81,14 @@ def main(argv: list[str] | None = None) -> None:
         print(f"id: {record.id}")
         print(f"status: {record.status}")
         print(f"approved: {str(record.approved).lower()}")
+    elif args.command == "template" and args.template_command == "check":
+        from rulestorm.core.model import check_file
+
+        result = check_file(args.template)
+        for line in result.lines():
+            print(line)
+        if not result.valid:
+            raise SystemExit(1)
     elif args.command == "engine" and args.engine_command == "check":
         from rulestorm.engine import run_case
 

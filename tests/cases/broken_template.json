@@ -1,0 +1,462 @@
+{
+  "id": "broken_attendance",
+  "version": 1,
+  "title": "Attendance and exam eligibility",
+  "scope": "Minimum attendance rules for a course, with exception requests handled by an office and an eligibility check at a set point in the term.",
+  "terms": {
+    "period": "week",
+    "step": "session",
+    "duty_met": "present",
+    "duty_missed": "absent",
+    "request": "exception request",
+    "count": "attendance %",
+    "check_passed": "eligible",
+    "check_failed": "not eligible"
+  },
+  "example_input": {
+    "text": "Students must maintain at least 80% attendance in each course to be eligible for examinations. Exceptional circumstances may be considered through formally approved exceptions.",
+    "purpose": "Improve class participation, encourage consistent attendance and maintain academic standards.",
+    "environment": "One institution and one course over a term. Students include a long-distance commuter, a resident student, a student with fixed work hours and a student with family responsibilities. Faculty, an academic advisor, an attendance administrator and an examination officer are involved. Transport disruptions happen during the term. The attendance office can process only a few exception requests a week, and eligibility is checked at a set point in the term."
+  },
+  "calendar": {
+    "periods": 10,
+    "steps_per_period": 2,
+    "period_label": "week",
+    "step_label": "session"
+  },
+  "roles": [
+    {
+      "id": "student",
+      "label": "Student",
+      "llm": true,
+      "actions": [
+        "attend",
+        "skip",
+        "submit_exception_request",
+        "ask_advisor"
+      ]
+    },
+    {
+      "id": "faculty",
+      "label": "Faculty",
+      "llm": true,
+      "rules": [
+        "recorder"
+      ],
+      "actions": [
+        "edit_attendance",
+        "cancel_session"
+      ]
+    },
+    {
+      "id": "advisor",
+      "label": "Academic advisor",
+      "llm": true,
+      "actions": [
+        "advise_student"
+      ]
+    },
+    {
+      "id": "attendance_admin",
+      "label": "Attendance office",
+      "llm": false,
+      "rules": [
+        "queue_processor"
+      ]
+    },
+    {
+      "id": "exam_officer",
+      "label": "Examination officer",
+      "llm": false,
+      "rules": [
+        "checker"
+      ]
+    }
+  ],
+  "people": [
+    {
+      "id": "commuter",
+      "role": "student"
+    },
+    {
+      "id": "resident",
+      "role": "student"
+    },
+    {
+      "id": "working",
+      "role": "student"
+    },
+    {
+      "id": "family",
+      "role": "student"
+    },
+    {
+      "id": "faculty",
+      "role": "faculty"
+    },
+    {
+      "id": "advisor",
+      "role": "advisor"
+    },
+    {
+      "id": "attendance_admin",
+      "role": "attendance_admin"
+    },
+    {
+      "id": "exam_officer",
+      "role": "exam_officer"
+    }
+  ],
+  "attributes": [
+    {
+      "id": "slack_min",
+      "label": "travel buffer (minutes of slack before class)",
+      "role": "student",
+      "min": 0,
+      "max": 180
+    }
+  ],
+  "duties": [
+    {
+      "id": "attend_class",
+      "label": "attend class",
+      "owed_by": "student",
+      "recorded_by": "faculty",
+      "obstacle_attribute": "slack_min"
+    }
+  ],
+  "actions": [
+    {
+      "id": "attend",
+      "label": "plan to attend the class (optionally change your travel buffer)",
+      "params": [
+        {
+          "name": "session",
+          "type": "int"
+        },
+        {
+          "name": "slack_min",
+          "type": "int",
+          "required": false
+        }
+      ],
+      "effects": [
+        {
+          "kind": "plan_meet",
+          "duty": "lecture"
+        },
+        {
+          "kind": "set_attribute",
+          "attribute": "slack_min"
+        }
+      ],
+      "preconditions": [
+        "own_occurrence",
+        "occurrence_not_yet"
+      ]
+    },
+    {
+      "id": "skip",
+      "label": "plan to skip the class",
+      "params": [
+        {
+          "name": "session",
+          "type": "int"
+        }
+      ],
+      "effects": [
+        {
+          "kind": "plan_miss",
+          "duty": "attend_class"
+        }
+      ],
+      "preconditions": [
+        "own_occurrence",
+        "occurrence_not_yet"
+      ]
+    },
+    {
+      "id": "submit_exception_request",
+      "label": "ask the attendance office to excuse sessions",
+      "params": [
+        {
+          "name": "sessions",
+          "type": "int_list"
+        },
+        {
+          "name": "reason",
+          "type": "str"
+        }
+      ],
+      "effects": [
+        {
+          "kind": "file_request",
+          "request_type": "exception"
+        }
+      ],
+      "preconditions": [
+        "own_occurrence",
+        "not_already_covered"
+      ]
+    },
+    {
+      "id": "ask_advisor",
+      "label": "message your academic advisor",
+      "params": [
+        {
+          "name": "message",
+          "type": "str",
+          "required": false
+        }
+      ],
+      "effects": [
+        {
+          "kind": "message",
+          "to": "advisor"
+        }
+      ]
+    },
+    {
+      "id": "edit_attendance",
+      "label": "correct a recorded attendance mark",
+      "params": [
+        {
+          "name": "student",
+          "type": "person"
+        },
+        {
+          "name": "session",
+          "type": "int"
+        },
+        {
+          "name": "present",
+          "type": "bool"
+        }
+      ],
+      "effects": [
+        {
+          "kind": "correct_record",
+          "duty": "attend_class"
+        }
+      ],
+      "preconditions": [
+        "occurrence_recorded"
+      ]
+    },
+    {
+      "id": "cancel_session",
+      "label": "cancel an upcoming session",
+      "params": [
+        {
+          "name": "session",
+          "type": "int"
+        }
+      ],
+      "effects": [
+        {
+          "kind": "cancel_occurrence",
+          "duty": "attend_class"
+        }
+      ],
+      "preconditions": [
+        "occurrence_not_yet"
+      ]
+    },
+    {
+      "id": "advise_student",
+      "label": "advise a student",
+      "params": [
+        {
+          "name": "student",
+          "type": "person"
+        },
+        {
+          "name": "advice",
+          "type": "str",
+          "required": false
+        }
+      ],
+      "effects": [
+        {
+          "kind": "respond"
+        }
+      ]
+    }
+  ],
+  "request_types": [
+    {
+      "id": "exception",
+      "label": "exception request",
+      "filed_by": "student",
+      "covers": "attend_class",
+      "handled_by": "attendance_admin",
+      "processed": "period_end",
+      "decided_by": "rule",
+      "decision_rule_param": "decision_rule",
+      "timing_param": "request_timing",
+      "partial_at_submit_param": "partial_at_submit",
+      "partial_at_decide_param": "partial_at_decide",
+      "capacity_param": "office_capacity_per_week"
+    }
+  ],
+  "counts": [
+    {
+      "id": "attendance_pct",
+      "label": "attendance %",
+      "kind": "rate",
+      "duty": "attend_class",
+      "exclude": [
+        "approved_request",
+        "cancelled"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "exam_eligibility",
+      "label": "exam eligibility",
+      "run_by": "exam_officer",
+      "count": "attendance_pct",
+      "comparison": ">=",
+      "threshold_param": "threshold_pct",
+      "at_param": "checkpoint_week"
+    }
+  ],
+  "disruptions": [
+    {
+      "id": "transport",
+      "label": "transport disruption",
+      "kind": "obstacle",
+      "duty": "attend_class"
+    },
+    {
+      "id": "admin_capacity",
+      "label": "attendance office capacity crunch",
+      "kind": "capacity",
+      "request_type": "exception"
+    },
+    {
+      "id": "session_cancelled",
+      "label": "session cancelled",
+      "kind": "cancellation",
+      "duty": "attend_class"
+    }
+  ],
+  "triggers": [
+    {
+      "kind": "obstacle_hit"
+    },
+    {
+      "kind": "own_duty_missed"
+    },
+    {
+      "kind": "count_near_threshold",
+      "within": 5,
+      "notifies": [
+        "advisor"
+      ]
+    },
+    {
+      "kind": "request_pending",
+      "periods": 1,
+      "notifies": [
+        "advisor"
+      ]
+    },
+    {
+      "kind": "many_missed",
+      "min_people": 2,
+      "notifies": [
+        "faculty"
+      ]
+    }
+  ],
+  "parameters": [
+    {
+      "name": "threshold_pct",
+      "kind": "policy",
+      "type": "int",
+      "min": 50,
+      "max": 100,
+      "sentence": "Students need at least {value}% attendance to be eligible for the exam."
+    },
+    {
+      "name": "scope",
+      "kind": "policy",
+      "type": "choice",
+      "choices": [
+        "per_course",
+        "overall"
+      ],
+      "sentence": "Attendance is counted {value}."
+    },
+    {
+      "name": "request_timing",
+      "kind": "policy",
+      "type": "choice",
+      "choices": [
+        "after_missed",
+        "in_advance"
+      ],
+      "sentence": "Exception requests timing: {value}."
+    },
+    {
+      "name": "partial_at_submit",
+      "kind": "policy",
+      "type": "bool",
+      "sentence": "A request with some sessions that can't be covered keeps the valid ones: {value}."
+    },
+    {
+      "name": "partial_at_decide",
+      "kind": "policy",
+      "type": "bool",
+      "sentence": "The office can approve part of a request: {value}."
+    },
+    {
+      "name": "decision_rule",
+      "kind": "policy",
+      "type": "choice",
+      "choices": [
+        "approve_if_covered_missed",
+        "approve_if_filed_before_occurrence",
+        "approve_all"
+      ],
+      "sentence": "The office decides requests by this rule: {value}."
+    },
+    {
+      "name": "office_capacity_per_week",
+      "kind": "environment",
+      "type": "int",
+      "min": 0,
+      "max": 50,
+      "sentence": "The attendance office can process {value} requests a week."
+    },
+    {
+      "name": "checkpoint_week",
+      "kind": "environment",
+      "type": "int",
+      "min": 1,
+      "max": 10,
+      "sentence": "Eligibility is checked at the end of week {value}."
+    },
+    {
+      "name": "disruptions",
+      "kind": "environment",
+      "type": "disruptions",
+      "sentence": "Disruptions this term: {value}."
+    },
+    {
+      "name": "profiles",
+      "kind": "people",
+      "type": "profiles",
+      "sentence": "Who you are: {value}."
+    },
+    {
+      "name": "slack_min",
+      "kind": "people",
+      "type": "attribute",
+      "attribute": "slack_min",
+      "sentence": "You leave {value} minutes of slack before class."
+    }
+  ]
+}
