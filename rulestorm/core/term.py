@@ -53,6 +53,9 @@ class DecisionContext(BaseModel):
     partial_decisions: bool = False
     # A consenting person: the requests waiting for their consent, in the same shape.
     awaiting_consent: list[dict[str, Any]] = Field(default_factory=list)
+    # Every request the person filed, with what became of it: so they know which steps each one
+    # covered (in a real run, people assumed a request for the last step also covered this one).
+    own_requests: list[dict[str, Any]] = Field(default_factory=list)
 
     def action_limit(self) -> int:
         """Everyone may propose 3 actions; someone with more requests waiting for them (to consent
@@ -302,6 +305,7 @@ class Term:
             uncovered_missed=self.uncovered_missed(person),
             offered_requests=offered, decision_capacity=capacity, partial_decisions=partial,
             awaiting_consent=awaiting,
+            own_requests=[_own_view(r) for r in e.requests.values() if r.person == person],
         )
 
     def outcomes_of(self, person: str) -> list[str]:
@@ -333,6 +337,11 @@ class Term:
                            for r in e.requests.values()):
                     missed.append(step)
         return sorted(missed)
+
+
+def _own_view(r) -> dict[str, Any]:
+    return {"request_id": r.request_id, "steps": r.steps, "status": r.status, "endorsement": r.endorsement,
+            "approved_steps": r.approved_steps}
 
 
 def _request_view(r) -> dict[str, Any]:

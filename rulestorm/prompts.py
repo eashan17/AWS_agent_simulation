@@ -60,6 +60,9 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
         missed = terms.get("missed_plural", "missed occurrences")
         lines.append(f"Your recorded {missed} that no {request_word} covers: "
                      f"{', '.join(f'{cal.step_label} {n}' for n in c.uncovered_missed) or 'none'}")
+        if c.own_requests:
+            lines.append(f"Your {request_word}s (each covers only the {cal.step_label}s listed): "
+                         + "; ".join(own_request(template, r) for r in c.own_requests))
     elif c.pending_requests:
         lines.append(f"Pending {request_word}s: {', '.join(c.pending_requests)}")
     if c.awaiting_consent:
@@ -95,6 +98,24 @@ def decision_lines(template: Template, c: DecisionContext) -> list[str]:
                  + (f"You may approve only some {cal.step_label}s of a {word}."
                     if c.partial_decisions else f"Approve or reject each {word} whole."))
     return lines
+
+
+def own_request(template: Template, r: dict[str, Any]) -> str:
+    """`R1 (night 12): approved`, `R2 (nights 8, 9): approved for night 8 only`, `R3 (night 9): rejected
+    (consent refused)`, `R4 (night 14): pending, awaiting consent`."""
+    step = template.calendar.step_label
+
+    def steps(ns: list[int]) -> str:
+        return f"{step}{'s' if len(ns) > 1 else ''} {', '.join(map(str, ns))}"
+
+    status = r["status"]
+    if status == "approved" and r["approved_steps"] != r["steps"]:
+        status = f"approved for {steps(r['approved_steps'])} only"
+    elif status == "rejected" and r["endorsement"] == "refused":
+        status = "rejected (consent refused)"
+    elif status == "pending" and r["endorsement"] == "awaiting":
+        status = "pending, awaiting consent"
+    return f"{r['request_id']} ({steps(r['steps'])}): {status}"
 
 
 def request_line(template: Template, r: dict[str, Any]) -> str:

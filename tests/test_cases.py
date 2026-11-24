@@ -137,6 +137,10 @@ def test_four_requests_in_one_night_are_consented_and_decided_before_it_is_recor
         assert endorsed.step == decided.step == 12  # the same night it was asked for
         assert f.seq < endorsed.seq < decided.seq < recorded.seq  # all before security records the night
     assert all(engine.count("late_returns", p).value == 0 for p in STRUCK)  # every late night excused
+    # the next time a struck resident decides, their prompt says which night their request covered
+    rid = next(f.payload["request_id"] for f in filed if f.payload["person"] == "intern")
+    later = [p for p in agents.prompts["intern"] if "(week 3, night 13)" in p]
+    assert later and f"Your late-entry requests (each covers only the nights listed): {rid} (night 12): approved" in later[0]
 
 
 def test_the_action_limit_follows_the_requests_waiting(curfew) -> None:
@@ -152,3 +156,16 @@ def test_the_action_limit_follows_the_requests_waiting(curfew) -> None:
     assert len(decision_schema(5).model_validate(five).actions) == 5
     with pytest.raises(ValueError):
         AgentDecision.model_validate(five)  # everyone else keeps 3
+
+
+def test_own_requests_say_what_each_covered_and_what_became_of_it(curfew) -> None:
+    from rulestorm.prompts import own_request
+
+    def view(**kw):
+        return {"request_id": "R1", "steps": [12], "status": "approved", "endorsement": "given",
+                "approved_steps": [12], **kw}
+
+    assert own_request(curfew, view()) == "R1 (night 12): approved"
+    assert own_request(curfew, view(steps=[8, 9], approved_steps=[8])) == "R1 (nights 8, 9): approved for night 8 only"
+    assert own_request(curfew, view(status="rejected", endorsement="refused", approved_steps=[])) ==         "R1 (night 12): rejected (consent refused)"
+    assert own_request(curfew, view(status="pending", endorsement="awaiting", approved_steps=[])) ==         "R1 (night 12): pending, awaiting consent"
