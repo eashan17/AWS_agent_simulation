@@ -62,7 +62,7 @@ A template may only use these. Anything outside them needs new engine code, by d
 |---|---|---|
 | **Calendar** | number of periods (e.g. weeks), steps per period (sessions / nights), labels, and a **fixed phase order**: period start (capacity disruptions, then pending-request triggers) → each step (obstacles → decisions, including endorsements (the consenting people are asked again, in a short phase of their own, about requests filed in that step: added in L9d) → requests with `processed: each_step` → recording) → period end (requests with `processed: period_end` → checks) | Steps through time in exactly that order. For attendance it is today's order, which decides "pending at the checkpoint"; for curfew it means a permission is filed, consented to and decided before that night is recorded |
 | **Role** | id, label, `llm: bool` plus `rules: [recorder / queue_processor / checker]` (a role may be both, like faculty: an LLM that also records attendance), allowed action IDs | LLM roles decide when triggered, and their prompt lists only their allowed actions. Rules aren't actions: they run automatically at their phase and are never offered to an LLM |
-| **Person** | id, role, label; profile (description, goals, constraints) and numeric attributes, from the blueprint | Holds memory, strategy and attribute values |
+| **Person** | id, role, label; profile (description, at most 2 goals, at most 2 constraints) and numeric attributes, from the blueprint | Holds memory, strategy and attribute values |
 | **Attribute** | id, label, range, which role has it (e.g. `slack_min`) | Read by obstacle rules; changed only by an action with a `set_attribute` effect |
 | **Duty** | id, label, owed by role, each step, the actions that plan to meet or miss it, `recorded_by` role, obstacle rule (`delay > attribute` means missed) | Creates each occurrence. **Recording is not an action:** at the recording phase the recorder rule records met or missed for everyone, applying each person's plan and any obstacle, with `caused_by`. A person with no plan is treated as planning to meet it |
 | **Action** | id, label, allowed roles, parameters, one or more effects from a fixed library (`plan_meet, plan_miss, set_attribute, file_request, endorse, decide_request, message, respond, correct_record, cancel_occurrence`), preconditions from a fixed list (`own_occurrence`, `occurrence_recorded`, `occurrence_not_yet`, `not_already_covered`, …). `plan_meet` and `plan_miss` only record the person's plan for an upcoming occurrence; the outcome comes at recording. Example: `attend` = `plan_meet` plus an optional `set_attribute` on `slack_min` (today's "change your travel buffer") | Refuses anything not allowed (an `action_rejected` event with the reason code and a plain `detail`) and commits the rest. The engine writes the detail itself from the fixed reason library and the template's labels (for example "session 5 had not been recorded yet when you sent this"); templates hold no refusal sentences, and the person's prompt shows the detail, not the code |
@@ -136,7 +136,7 @@ The template has its own pre-filled example policy (for example: "Residents must
   2. **Fill:** that template's own Pydantic values model, built from its parameter specs.
 
   Both share the 55 s wall-clock budget. The pick is shown on the review screen as one more labelled assumption.
-- **Labels and size:** labels are grouped by section (policy rules, people, environment) so the lists stay short. The fill's `max_tokens` is set from a measured p95.
+- **Labels and size:** labels are grouped by section (policy rules, people, environment) so the lists stay short. Profiles are short on purpose (a description under 12 words, at most 2 goals and 2 constraints of under 6 words), so a fill with 8 people stays near 900 output tokens. The fill's `max_tokens` is set from a measured p95.
 - **Silent policy rules:** when the policy text doesn't say (for example, whether exceptions can be requested in advance), the AI proposes a value and labels it an **assumption**. This is how "after the absence only" stops being hard-coded.
 - **Spend guard:** blueprint and variant calls take the `blueprint_calls` daily cap atomically before calling Bedrock (HTTP 429 when it's used up).
 - **Demo:** it never needs a live blueprint call; the fixture bundles its approved blueprint.
@@ -158,6 +158,7 @@ The template has its own pre-filled example policy (for example: "Residents must
   - the runner and caps (7a/7b, not built yet), deploy, and the UI plan.
 - **Ported in its own slice:**
   - **Agent prompts:** generated from the template, keeping the 6b fixes (the slack line, the absences no request covers, the outcomes of the person's last actions). A golden-prompt test (built in L5 as an exact copy) is narrowed at the switch-over (L7): an exact match only for the lines carrying the 6b fixes, and the same facts (not the same wording) for the rest. That keeps one template's old wording from shaping the engine.
+    Added on the general engine (L9b–L9d): a "Now:" line naming the current step, with the step on every event line; each person's own requests with the steps they cover and what became of them; for a consenting person, the requests waiting for their consent; for an LLM decider at an open slot, the offered requests and the allowed outcomes; and the number of actions they may propose.
   - **`explore.py`:** reads the template's terms and event types, and its prompt gains the queue maths and a general **misses until the check fails** figure (from the count kind, threshold and check timing), which replaces the attendance-only `absences_to_fall_below`.
 - **Not built yet:** detectors (slice 8) and evidence (slice 9). They're written on the general model from the start.
 - **Switch-over rule:** the old engine is deleted only after a real attendance run on `core/` matches 6b. That means decisions only for triggered people, similar counts (about 13 decisions, 14–17 calls) and no new kinds of rejection reason.
@@ -166,7 +167,7 @@ The template has its own pre-filled example policy (for example: "Residents must
 
 ## Model adapter contract
 `decide(prompt, schema) -> schema instance`. Unchanged:
-- **JSON and validation:** JSON in the prompt, written compactly on one line (asked for since 24 Nov: pretty-printed replies were 40% whitespace and took a curfew fill to 40–44 s), Pydantic validation, one retry with the error included.
+- **JSON and validation:** JSON in the prompt, written compactly on one line (asked for since 24 Nov: pretty-printed replies were 40% whitespace and took a curfew fill to 40–44 s; now 28.9–30.0 s), Pydantic validation, one retry with the error included. A fill's retry still only just fits the 55 s budget: after a 30 s first try about 25 s remain, and a fill takes about 27 s.
 - **Timeouts:** adaptive boto retries, `connect_timeout=5`. Agent calls use `read_timeout` 25 s and get up to 5 attempts. Each decision phase has a 40 s deadline; calls unfinished then are timeout "no actions".
 - **Blueprint calls:** no boto retries, at most 2 attempts per call, and all calls share one 55 s wall-clock budget (each attempt runs in a background thread and is abandoned at the deadline). A retry is skipped if under 15 s remain.
 - **Actions per decision:** 0 to 3, or one per request waiting for that person (to consent to, or to decide at an open slot) if more; the reply's token limit grows by 80 for each action above 3 (added in L9d, after a guardian with four requests could consent to only three).
@@ -213,7 +214,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 ## Speed target
 - **Hero moment:** opening a stored run, its findings and a finding's evidence each answer in under 1 second.
 - **Blueprint:** under 30 s typical (pick about 3 s, fill about 22–27 s; measured 24 Nov: curfew 28.9–30.0 s, attendance 24.7 s), 55 s hard limit, with a progress message.
-- **Fresh run:** progress within 5 s, updates every 3 s. A whole run under 5 min (attendance measured at 20–54 s; curfew is measured in its slice).
+- **Fresh run:** progress within 5 s, updates every 3 s. A whole run under 5 min (attendance measured at 20–54 s; curfew at 34–62 s with 19–23 calls, L9d).
 
 ## Settled questions
 - **Level 2 (24 Nov):** chosen over Level 1. Generality comes from fixed building blocks plus templates as data. AI-drafted templates (Level 3) aren't in this build.
