@@ -3,7 +3,7 @@
     period start: capacity disruptions, then pending-request triggers
     each step:    obstacles and cancellations -> triggered people decide -> requests processed
                   `each_step` -> the recorder rule records the duty
-    period end:   requests processed `period_end` -> checks (if due)
+    period end:   requests processed `period_end` -> checks (if due; a ladder every period)
 
 Only LLM people decide, and only when one of the template's triggers names them. Every
 decision records `caused_by=[its triggers]`, and every action it produces records
@@ -118,7 +118,9 @@ class Term:
         for rt in self.t.request_types:
             if rt.processed == "period_end":
                 e.process_queue(rt.id, period)
-        e.run_checks(period)
+        for event in e.run_checks(period):
+            if "outcome" in event.payload:
+                self.escalated(event)
 
     def run_step(self, period: int, step: int) -> None:
         e = self.engine
@@ -147,6 +149,23 @@ class Term:
                                payload={"duty": duty, "people": [m.payload["person"] for m in missed]},
                                caused_by=[m.event_id for m in missed])
                 self.notify("many_missed", event)
+
+    def escalated(self, event: Event) -> None:
+        """A ladder outcome reaches the person and the roles its step lists (and the trigger's)."""
+        if "escalation_outcome" not in self.of_kind:
+            return
+        self.notify("escalation_outcome", event, event.payload["person"])
+        for role in event.payload["notifies"]:
+            for other in sorted(p for p, r in self.engine.role_of.items() if r == role):
+                self.trigger(other, event)
+
+    def awaiting_consent(self, event: Event) -> None:
+        """A filed request that needs consent reaches every person of its endorsed_by role."""
+        role = event.payload.get("awaiting_endorsement_by")
+        if event.type != "request_filed" or role is None:
+            return
+        for person in sorted(p for p, r in self.engine.role_of.items() if r == role):
+            self.notify("endorsement_awaiting", event, person)
 
     def check_near_threshold(self, period: int, person: str, latest: Event) -> None:
         """Fires once each time a person's count comes within `within` of a check's threshold."""
@@ -194,6 +213,7 @@ class Term:
                 done = e.propose(context.person, proposal.action, period, caused_by=[recorded.event_id],
                                  **proposal.params)
                 self.message_received(done, period)
+                self.awaiting_consent(done)
 
     def message_received(self, event: Event, period: int) -> None:
         """A message to a role, or a response to a person, triggers who it is for at the next
@@ -271,9 +291,11 @@ def dry_run_values(template: Template) -> dict[str, Any]:
     """Values made only from the parameter specs, for the dry run: never used in a real run."""
     llm_people = [p.id for p in template.people if next(r for r in template.roles if r.id == p.role).llm]
     values: dict[str, Any] = {}
+    # Ladder thresholds at their minimum, so the dry run reaches (and exercises) every step.
+    ladder = {s.threshold_param for c in template.checks for s in c.ladder or []}
     for p in template.parameters:
         if p.type == "int":
-            values[p.name] = (p.min + p.max) // 2
+            values[p.name] = p.min if p.name in ladder else (p.min + p.max) // 2
         elif p.type == "bool":
             values[p.name] = False
         elif p.type == "choice":
@@ -325,6 +347,8 @@ def scripted_decider(template: Template) -> Decider:
                 params[spec.name] = owers[0] if owers else context.person
             elif spec.type == "bool":
                 params[spec.name] = True
+            elif spec.type == "request":
+                params[spec.name] = (context.pending_requests or ["R1"])[0]
             elif spec.type == "str":
                 params[spec.name] = "dry run"
         return params

@@ -107,10 +107,11 @@ class Duty(Block):
 
 class ActionParam(Block):
     name: str = Field(min_length=1)
-    # step / step_list name the occurrence(s) an action is about; person names a target person
-    type: Literal["int", "str", "bool", "step", "step_list", "person"]
+    # step / step_list name the occurrence(s) an action is about; person names a target person;
+    # request names a filed request (endorse)
+    type: Literal["int", "str", "bool", "step", "step_list", "person", "request"]
     required: bool = True
-    hint: str = Field("", description="how the value is described to an LLM person, e.g. <current session>")
+    hint: str = Field("", description="how the value is described to an LLM person, e.g. <current step>")
 
 
 class Effect(Block):
@@ -166,7 +167,9 @@ class Check(Block):
     label: str = Field(min_length=1)
     run_by: str
     count: str
-    comparison: Literal[">=", "<="]
+    # How a count passes: `>=` / `<=` a threshold, or strictly `>` / `<` it. A ladder step is
+    # reached once the count no longer passes that step's threshold (a tally `<` 2 reaches it at 2).
+    comparison: Literal[">=", "<=", ">", "<"]
     threshold_param: str | None = None
     at_param: str | None = Field(None, description="the period the single-threshold check runs in")
     ladder: list[LadderStep] | None = None
@@ -268,7 +271,7 @@ class TemplateCheck(BaseModel):
 
 
 def template_path(name_or_path: str) -> Path:
-    """A bare name (`attendance`) is a shipped template; anything else is a file path."""
+    """A bare name (a template ID) is a shipped template; anything else is a file path."""
     path = Path(name_or_path)
     if path.suffix == "" and path.parent == Path("."):
         return TEMPLATES_DIR / f"{name_or_path}.json"
@@ -393,6 +396,18 @@ def _reference_errors(t: Template) -> list[str]:
             errors.append(f"{owner} needs exactly one step or step_list parameter")
         if "correct_record" in kinds and (types["person"] != 1 or types["bool"] != 1):
             errors.append(f"{owner}: correct_record needs one person and one bool parameter")
+        if "endorse" in kinds and (types["request"] != 1 or types["bool"] != 1):
+            errors.append(f"{owner}: endorse needs one request and one bool parameter (consent given or not)")
+        for effect in action.effects:
+            if effect.kind != "endorse" or effect.request_type not in request_types:
+                continue
+            rt = next(r for r in t.request_types if r.id == effect.request_type)
+            takers = sorted(r.id for r in t.roles if action.id in r.actions)
+            if rt.endorsed_by is None:
+                errors.append(f"{owner}: request type '{rt.id}' has no endorsed_by role to give consent")
+            elif takers != [rt.endorsed_by]:
+                errors.append(f"{owner}: only its endorsed_by role '{rt.endorsed_by}' may take it, "
+                              f"not {', '.join(takers)}")
         if "set_attribute" in kinds:
             for effect in action.effects:
                 if effect.attribute and effect.attribute not in {p.name for p in action.params}:

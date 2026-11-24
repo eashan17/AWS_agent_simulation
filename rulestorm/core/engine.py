@@ -50,6 +50,9 @@ class Request(BaseModel):
     dropped: list[dict[str, Any]] = Field(default_factory=list, description="partial_at_submit: steps left out")
     approved_steps: list[int] = Field(default_factory=list)  # partial_at_decide: may be a subset
     rejected_steps: list[int] = Field(default_factory=list)
+    # Consent (request types with endorsed_by): a request waits for it before it is queued;
+    # refused consent ends it (status rejected).
+    endorsement: Literal["awaiting", "given", "refused"] | None = None
 
 
 class DisruptionValue(BaseModel):
@@ -104,7 +107,10 @@ def count_value(kind: str, met: int, missed: int) -> float | None:
 
 def passes(value: float | None, comparison: str, threshold: float) -> bool:
     """Whether a count's value passes a check (no value yet never passes)."""
-    return value is not None and (value >= threshold if comparison == ">=" else value <= threshold)
+    if value is None:
+        return False
+    return {">=": value >= threshold, "<=": value <= threshold,
+            ">": value > threshold, "<": value < threshold}[comparison]
 
 
 class Refused(Exception):
@@ -149,6 +155,7 @@ class Engine:
         self.capacity_override: dict[tuple[str, int], tuple[int, str]] = {}  # (request type, period) -> (cap, event)
         self.obstacles_by_step: dict[int, list[Obstacle]] = {}
         self.processed_slots: set[tuple[str, int, int | None]] = set()
+        self.ladder_reached: dict[tuple[str, str], int] = {}  # (check, person) -> ladder steps reached
 
     def _disruptions(self) -> list[DisruptionValue]:
         names = [p.name for p in self.t.parameters if p.type == "disruptions"]
@@ -259,6 +266,8 @@ class Engine:
                 raise Refused(f"bad parameters: {spec.name} must be text")
             if spec.type == "person" and value not in self.role_of:
                 raise Refused(f"bad parameters: unknown person {value!r}")
+            if spec.type == "request" and (not isinstance(value, str) or value not in self.requests):
+                raise Refused(f"bad parameters: unknown {self.t.terms.get('request', 'request')} {value!r}")
             steps = value if spec.type == "step_list" else [value] if spec.type == "step" else []
             for step in steps:
                 if not 1 <= step <= self.total_steps:
@@ -291,8 +300,15 @@ class Engine:
                 attribute = next(a for a in self.t.attributes if a.id == effect.attribute)
                 if not attribute.min <= params[effect.attribute] <= attribute.max:
                     raise Refused(f"bad parameters: {effect.attribute} must be {attribute.min}-{attribute.max}")
-            if effect.kind in ("endorse", "decide_request"):
-                raise Refused(f"unsupported effect {effect.kind}")  # slices L9a-L9b
+            if effect.kind == "endorse":
+                request = self.requests[self._param_of_type(action, params, "request")]
+                if (request.request_type != effect.request_type or request.status != "pending"
+                        or request.endorsement != "awaiting"):
+                    word = self.t.terms.get("request", "request")
+                    raise Refused("precondition: awaiting_endorsement",
+                                  f"{word} {request.request_id} is not waiting for consent")
+            if effect.kind == "decide_request":
+                raise Refused(f"unsupported effect {effect.kind}")  # slice L9b
 
         events = [self._apply(effect, actor, target, action, period, steps, params, caused_by, dropped)
                   for effect in action.effects]
@@ -380,6 +396,8 @@ class Engine:
             return event
         if kind == "file_request":
             return self._file_request(actor, effect.request_type, action, period, steps, params, caused_by, dropped)
+        if kind == "endorse":
+            return self._endorse(actor, action, period, params, caused_by)
         if kind == "correct_record":
             key = (effect.duty, target, step)
             before = self.records[key]
@@ -410,14 +428,37 @@ class Engine:
         reason = next((v for p in action.params if p.type == "str" and (v := params.get(p.name))), "")
         event = self.emit("request_filed", actor, period, self.current_step,
                           payload={"request_id": request_id, "request_type": request_type, "person": actor,
-                                   "steps": sorted(steps), "dropped": dropped, "reason": reason[:300]},
+                                   "steps": sorted(steps), "dropped": dropped, "reason": reason[:300],
+                                   "awaiting_endorsement_by": rt.endorsed_by},
                           state_change={f"request.{request_id}": {"from": None, "to": "pending"}},
                           caused_by=[*caused_by, *covered])
         self.requests[request_id] = Request(
             request_id=request_id, request_type=request_type, person=actor, steps=sorted(steps),
             reason=reason[:300], filed_period=period, filed_event=event.event_id, dropped=dropped,
-            recorded_at_filing=[s for s in steps if s in self.recorded_steps[rt.covers]])
+            recorded_at_filing=[s for s in steps if s in self.recorded_steps[rt.covers]],
+            endorsement="awaiting" if rt.endorsed_by else None)
         return event
+
+    def _endorse(self, actor, action, period, params, caused_by) -> Event:
+        """Consent given: the request joins its queue. Refused: the request ends, rejected."""
+        request = self.requests[self._param_of_type(action, params, "request")]
+        given = self._param_of_type(action, params, "bool")
+        reason = next((v for p in action.params if p.type == "str" and (v := params.get(p.name))), "")
+        payload = {"action": action.id, "request_id": request.request_id, "person": request.person,
+                   "consent": given, "reason": reason[:300]}
+        key = f"request.{request.request_id}"
+        causes = [*caused_by, request.filed_event]
+        if given:
+            request.endorsement = "given"
+            return self.emit("request_endorsed", actor, period, self.current_step, payload=payload,
+                             state_change={f"{key}.endorsement": {"from": "awaiting", "to": "given"}},
+                             caused_by=causes)
+        request.endorsement, request.status, request.decided_period = "refused", "rejected", period
+        request.rejected_steps = list(request.steps)
+        return self.emit("request_endorsement_refused", actor, period, self.current_step, payload=payload,
+                         state_change={f"{key}.endorsement": {"from": "awaiting", "to": "refused"},
+                                       key: {"from": "pending", "to": "rejected"}},
+                         caused_by=causes)
 
     def decide_request(self, request_id: str, outcome: Literal["approved", "rejected"], actor: str,
                        period: int, rule: str, caused_by: list[str] | None = None,
@@ -457,7 +498,8 @@ class Engine:
         rule = self.value(rt.decision_rule_param)
         partial = self.value(rt.partial_at_decide_param)
         actor = self.person_with_role(rt.handled_by)
-        pending = [r for r in self.requests.values() if r.request_type == request_type and r.status == "pending"]
+        pending = [r for r in self.requests.values() if r.request_type == request_type and r.status == "pending"
+                   and r.endorsement in (None, "given")]  # a request awaiting consent isn't queued yet
         processed, held = pending[:capacity], pending[capacity:]
         decisions = []
         for request in processed:
@@ -547,37 +589,59 @@ class Engine:
     # --- the checker rule -----------------------------------------------------------------------
 
     def run_checks(self, period: int) -> list[Event]:
-        """Single-threshold checks due this period, for everyone the count applies to. Each records
-        both figures (as is, and if pending requests were approved), its count's missed records and
-        the pending requests."""
+        """Checks due this period, for everyone the count applies to. A single-threshold check runs
+        once, in its period, and records passed or failed. A ladder runs every period and records
+        each step a person newly reaches, in ladder order (a jump of several steps records each);
+        its `passed` is false only at the last step. Each records both figures (as is, and if
+        pending requests were approved), its count's missed records and the pending requests."""
         events = []
         for check in self.t.checks:
-            if check.ladder is not None:
-                raise NotImplementedError("escalation ladders arrive in slice L9a")
-            if self.value(check.at_param) != period:
-                continue
-            threshold = self.value(check.threshold_param)
             duty = self.duties[self.counts[check.count].duty]
+            if check.ladder is None:
+                if self.value(check.at_param) != period:
+                    continue
+                threshold = self.value(check.threshold_param)
+                for person in self.people_owing(duty):
+                    now = self.count(check.count, person)
+                    passed = passes(now.value, check.comparison, threshold)
+                    events.append(self._check_event(check, duty, person, period, now, threshold, passed,
+                                                    {}, {"from": None, "to": "passed" if passed else "failed"}))
+                continue
             for person in self.people_owing(duty):
                 now = self.count(check.count, person)
-                if_approved = self.count(check.count, person, assume_pending_approved=True)
-                passed = passes(now.value, check.comparison, threshold)
-                # Missed records link here directly unless a request covers them: those link
-                # through the request (pending) or don't count (approved), so each missed
-                # occurrence reaches the check by one path.
-                covered = {s for r in now.pending for s in self.requests[r].steps}
-                covered |= {s for r in now.approved for s in self.requests[r].approved_steps}
-                missed = [self.record_event[(duty.id, person, s)] for s in sorted(self.recorded_steps[duty.id])
-                          if self.records.get((duty.id, person, s)) == "missed" and s not in covered]
-                events.append(self.emit(
-                    "check_evaluated", self.person_with_role(check.run_by), period,
-                    payload={"check": check.id, "person": person, "count": now.model_dump(),
-                             "count_if_pending_approved": if_approved.model_dump(),
-                             "comparison": check.comparison, "threshold": threshold,
-                             "pending_requests": now.pending, "passed": passed},
-                    state_change={f"check.{check.id}.{person}": {"from": None, "to": "passed" if passed else "failed"}},
-                    caused_by=[*missed, *self.pending_causes(now.pending)]))
+                steps = check.ladder
+                reached = [i for i, step in enumerate(steps)
+                           if not passes(now.value, check.comparison, self.value(step.threshold_param))]
+                top = max(reached) + 1 if reached else 0
+                before = self.ladder_reached.get((check.id, person), 0)
+                for i in range(before, top):
+                    step = steps[i]
+                    extra = {"outcome": step.outcome, "ladder_step": i + 1, "ladder_steps": len(steps),
+                             "notifies": step.notifies}
+                    change = {"from": steps[i - 1].outcome if i else None, "to": step.outcome}
+                    events.append(self._check_event(check, duty, person, period, now,
+                                                    self.value(step.threshold_param), i < len(steps) - 1,
+                                                    extra, change))
+                self.ladder_reached[(check.id, person)] = max(before, top)
         return events
+
+    def _check_event(self, check, duty, person, period, now, threshold, passed, extra, change) -> Event:
+        if_approved = self.count(check.count, person, assume_pending_approved=True)
+        # Missed records link here directly unless a request covers them: those link through the
+        # request (pending) or don't count (approved), so each missed occurrence reaches the
+        # check by one path.
+        covered = {s for r in now.pending for s in self.requests[r].steps}
+        covered |= {s for r in now.approved for s in self.requests[r].approved_steps}
+        missed = [self.record_event[(duty.id, person, s)] for s in sorted(self.recorded_steps[duty.id])
+                  if self.records.get((duty.id, person, s)) == "missed" and s not in covered]
+        return self.emit(
+            "check_evaluated", self.person_with_role(check.run_by), period,
+            payload={"check": check.id, "person": person, "count": now.model_dump(),
+                     "count_if_pending_approved": if_approved.model_dump(),
+                     "comparison": check.comparison, "threshold": threshold,
+                     "pending_requests": now.pending, "passed": passed, **extra},
+            state_change={f"check.{check.id}.{person}": change},
+            caused_by=[*missed, *self.pending_causes(now.pending)])
 
     # --- the recorder rule --------------------------------------------------------------------
 
