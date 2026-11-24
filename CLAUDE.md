@@ -10,7 +10,7 @@ If it is installed, invoke it before the first tool call and run its Session Sta
 If it is not installed, skip this and start the task. No other skill runs until the task calls for it.
 
 ## Stack (ask before changing)
-Python 3.12 · FastAPI (API) · Pydantic · Amazon Bedrock via boto3 (ap-south-1, in-Region models only) · SQLite on the EC2 disk (one storage interface) · Pandas
+Python 3.12 · FastAPI (API) · Pydantic · Amazon Bedrock via boto3 (ap-southeast-2 Sydney, in-Region models only; Region fixed by the account) · SQLite on the EC2 disk (one storage interface) · Pandas
 UI framework: not chosen yet; decided in /build-plan. No Streamlit. No Vercel, no Supabase.
 Hosting: one EC2 instance in the live AWS account, behind CloudFront (see docs/BRIEF.md, Technical decisions). Only EC2 and Bedrock may spend credits; anything else must stay inside an always-free allowance.
 Terminal proofs: `python -m rulestorm.cli <command>` (the CLI calls the same core code the API and UI will use)
@@ -48,7 +48,7 @@ Skills are account skills: never edit their synced files. When one gets a step w
 - Keep status updates to 3 lines.
 
 ## Safety
-No AWS keys in code, .env or the repo. On EC2 the instance IAM role gives access; locally each teammate uses their own IAM user through a named AWS profile (`AWS_PROFILE`). .env holds settings only. Never call Bedrock from the browser. Never deploy to the live account from 30 Nov to 5 Dec (Round 1 judging).
+No AWS keys in code, .env or the repo. On EC2 the instance IAM role gives access; locally each teammate signs in with `aws login` to a named AWS profile (`AWS_PROFILE`, e.g. `rulestorm-dev`), which gives temporary credentials and no access keys. .env holds settings only. Never call Bedrock from the browser. Never deploy to the live account from 30 Nov to 5 Dec (Round 1 judging).
 
 ## Commands
 Setup (once): `python -m venv .venv` then `.venv\Scripts\python -m pip install -e ".[dev]"` (Windows) or `.venv/bin/python -m pip install -e ".[dev]"`
