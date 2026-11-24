@@ -1,0 +1,25 @@
+You are the advisor agent `advisor` in a simulated term of one course (week 4, session 7). Decide what you do now, as this person would.
+
+Who you are (from the approved blueprint):
+- description: advises 40 students
+- goals: keep advisees eligible
+
+Policy:
+- minimum attendance for exam eligibility: 80% (per_course)
+- exception rule: formally approved exceptions
+- eligibility is checked in week 6
+
+What just happened (the events that triggered you):
+- E-0061 week 4 request_pending: {"request_id": "R1", "student": "commuter", "weeks_pending": 1}
+- E-0062 week 4 request_pending: {"request_id": "R2", "student": "working", "weeks_pending": 1}
+Pending exception requests: R1, R2
+
+What happened to the actions of your last decision:
+- done: advice_given {'student': 'working', 'advice': 'file the request today'}
+
+Your recent decisions:
+- week 3: advise_student because two students missed class
+
+Actions you may propose (0 to 3; an empty list means you do nothing):
+- advise_student: params {"student": "<archetype>", "advice": "<short>"}
+Each action is {"action": <name>, "params": {...}}. Give a short reason and your current strategy.

@@ -1,0 +1,52 @@
+{
+  "description": "Test-only fixed decision contexts for the golden-prompt test (slice L5). Policy values match tests/test_blueprint.py VALID.",
+  "policy": {"threshold_pct": 80, "scope": "per_course", "exception_rule": "formally approved exceptions", "checkpoint_week": 6},
+  "contexts": {
+    "commuter": {
+      "person": "commuter", "role": "student", "period": 4, "step": 7,
+      "profile": {"description": "travels two hours by bus", "goals": ["keep eligibility"], "constraints": ["long commute"]},
+      "travel_buffer_min": 30,
+      "attendance": {"attended": 4, "countable": 6, "pct": 66.7, "pending": ["R1"], "approved": [], "rejected": []},
+      "uncovered": [6],
+      "triggers": [
+        {"event_id": "E-0058", "seq": 58, "week": 3, "type": "attendance_recorded", "actor": "faculty",
+         "payload": {"student": "commuter", "session": 6, "late": false},
+         "state_change": {"attendance.commuter.6": {"from": null, "to": "absent"}}, "caused_by": []},
+        {"event_id": "E-0061", "seq": 61, "week": 4, "type": "request_pending", "actor": "engine",
+         "payload": {"request_id": "R1", "student": "commuter", "weeks_pending": 1}, "caused_by": ["E-0049"]}
+      ],
+      "last_outcomes": [
+        "refused: submit_exception_request {'sessions': [6, 7], 'reason': 'bus strike'} (reason: session 7 has not happened by week 3)",
+        "done: exception request R1 submitted for sessions [5], now pending"
+      ],
+      "memory": [
+        "week 3: attend because the exam matters (strategy: leave earlier)",
+        "week 3: submit_exception_request because the strike made me late"
+      ]
+    },
+    "advisor": {
+      "person": "advisor", "role": "advisor", "period": 4, "step": 7,
+      "profile": {"description": "advises 40 students", "goals": ["keep advisees eligible"]},
+      "pending_requests": ["R1", "R2"],
+      "triggers": [
+        {"event_id": "E-0061", "seq": 61, "week": 4, "type": "request_pending", "actor": "engine",
+         "payload": {"request_id": "R1", "student": "commuter", "weeks_pending": 1}, "caused_by": ["E-0049"]},
+        {"event_id": "E-0062", "seq": 62, "week": 4, "type": "request_pending", "actor": "engine",
+         "payload": {"request_id": "R2", "student": "working", "weeks_pending": 1}, "caused_by": ["E-0050"]}
+      ],
+      "last_outcomes": ["done: advice_given {'student': 'working', 'advice': 'file the request today'}"],
+      "memory": ["week 3: advise_student because two students missed class"]
+    },
+    "faculty": {
+      "person": "faculty", "role": "faculty", "period": 3, "step": 6,
+      "profile": {"description": "teaches the course", "goals": ["keep participation up"]},
+      "pending_requests": [],
+      "triggers": [
+        {"event_id": "E-0047", "seq": 47, "week": 3, "type": "attendance_falling", "actor": "engine",
+         "payload": {"session": 5, "absent": ["commuter", "working"]}, "caused_by": ["E-0043", "E-0044"]}
+      ],
+      "last_outcomes": [],
+      "memory": []
+    }
+  }
+}
