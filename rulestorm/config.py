@@ -11,6 +11,8 @@ DEFAULT_REGION = "ap-southeast-2"
 DEFAULT_MODEL_ID = "deepseek.v3.2"
 # DeepSeek V3.2's slowest measured call was 9.0 s (docs/BRIEF.md), so 25 s leaves ~3x headroom.
 DEFAULT_READ_TIMEOUT_S = 25
+# BRIEF cost check: a 150-call run is about USD 0.28 on DeepSeek V3.2. Reset from measured runs.
+DEFAULT_MAX_LLM_CALLS_PER_RUN = 150
 
 
 def load_env_file(path: str = ".env") -> None:
@@ -46,6 +48,11 @@ def is_test_env() -> bool:
 
 def read_timeout_s() -> float:
     return float(setting("BEDROCK_READ_TIMEOUT", str(DEFAULT_READ_TIMEOUT_S)))
+
+
+
+def max_llm_calls_per_run() -> int:
+    return int(setting("MAX_LLM_CALLS_PER_RUN", str(DEFAULT_MAX_LLM_CALLS_PER_RUN)))
 
 
 load_env_file()

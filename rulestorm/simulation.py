@@ -50,11 +50,12 @@ class PhaseDecision(BaseModel):
     agent: str
     proposals: list[Proposal] = Field(default_factory=list)
     reason: str = ""
+    strategy: str = ""
     error: str | None = None  # set when the agent's call failed: recorded as "no action"
 
 
 # Given every triggered agent's context for one phase, return their decisions.
-# Slice 5 tests pass a scripted decider; slice 6a adds the Bedrock agents.
+# Slice 5 tests pass a scripted decider; the LLM agents are rulestorm.agents.Agents.decide_phase.
 Decider = Callable[[list[DecisionContext]], list[PhaseDecision]]
 
 
@@ -170,6 +171,7 @@ class Term:
                     "session": session,
                     "proposals": [p.model_dump() for p in decision.proposals],
                     "reason": decision.reason,
+                    "strategy": decision.strategy,
                     "no_action": not decision.proposals,
                     "error": decision.error,
                 },
