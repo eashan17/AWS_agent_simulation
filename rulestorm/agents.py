@@ -1,11 +1,12 @@
-"""The 6 LLM agents (4 students, faculty, advisor) that decide through the model adapter.
+"""The LLM people of a template that decide through the model adapter.
 
-The attendance admin and examination officer are rule agents in code (rulestorm/simulation.py).
+Which roles are LLM people, their allowed actions and their prompt all come from the template
+(rulestorm/prompts.py); their profiles come from the approved blueprint's values. Rule roles
+(recorder, queue processor, checker) run in the engine and are never asked.
 
-An agent decides only when the term loop triggers it. Its prompt is built from its blueprint
-profile (description and goals; students also constraints), its role and the policy
-parameters, plus the phase's shared snapshot and a compact memory of its own last decisions.
-No goals or personalities are written here: they all come from the approved blueprint.
+A person decides only when the term loop (rulestorm/core/term.py) triggers them. Their prompt is
+built from the template, their blueprint profile and the phase's shared snapshot, plus a compact
+memory of their own last decisions. No goals or personalities are written here.
 
 Spend and time guards (docs/ARCHITECTURE.md, Model adapter contract):
 - a per-run cap on model calls, taken atomically per call (a validation retry is a call too);
@@ -20,55 +21,41 @@ import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_futures
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from rulestorm import config, llm
-from rulestorm.education import ROLE_ACTIONS
-from rulestorm.engine import Engine
-from rulestorm.policy import Blueprint
-from rulestorm.simulation import DecisionContext, PhaseDecision, Proposal, Term
+from rulestorm.core.engine import Engine
+from rulestorm.core.model import Template
+from rulestorm.core.term import DecisionContext, PhaseDecision, Proposal, Term
+from rulestorm.prompts import render_prompt
 
-LLM_ROLES = frozenset({"student", "faculty", "advisor"})
 PHASE_DEADLINE_S = 40.0
 MAX_PARALLEL = 4
 AGENT_MAX_TOKENS = 400
 DEGRADED_ERROR_SHARE = 0.10
 MEMORY_SIZE = 3
 
-# Actions an LLM agent may propose, with their parameters. Recording attendance is the
-# faculty's rule in code, so it is not offered. The engine still checks every proposal.
-ACTION_PARAMS: dict[str, str] = {
-    "attend": '{"session": <current session>}; optional "travel_buffer_min": 0-180 to change your travel slack',
-    "skip": '{"session": <current session>}',
-    "submit_exception_request": '{"sessions": [<your completed, absent sessions>], "reason": "<short>"}',
-    "ask_advisor": '{"message": "<short>"}',
-    "edit_attendance": '{"student": "<archetype>", "session": <n>, "present": true|false}',
-    "cancel_session": '{"session": <a session that has not taken place>}',
-    "advise_student": '{"student": "<archetype>", "advice": "<short>"}',
-}
-RULE_ACTIONS = frozenset({"record_attendance"})
-
 
 class AgentDecision(BaseModel):
-    """What one LLM agent returns for one phase. An empty `actions` list means "no action"."""
+    """What one LLM person returns for one phase. An empty `actions` list means "no action"."""
 
     actions: list[Proposal] = Field(default_factory=list, max_length=3)
     reason: str = Field(min_length=1, max_length=300, description="why, in your own words")
     strategy: str = Field("", max_length=200, description="your current strategy, one short sentence")
 
 
-class OldFormatOnly(RuntimeError):
-    """This code still reads only the old attendance blueprint (until slices L7/L8)."""
-
-
 class CallCapReached(Exception):
     """The run's call cap is used up; the call is refused before it reaches the model."""
 
 
+class NotPortedYet(RuntimeError):
+    """This feature still needs its port to the template format (stress variants: slice L8)."""
+
+
 class CallBudget:
-    """Per-run model-call cap, taken atomically so parallel agents can never exceed it."""
+    """Per-run model-call cap, taken atomically so parallel people can never exceed it."""
 
     def __init__(self, cap: int) -> None:
         self.cap = cap
@@ -109,79 +96,33 @@ def is_cap_error(error: str | None) -> bool:
 
 
 class Agents:
-    """The decider for the term loop: `Agents(...).decide_phase` matches simulation.Decider."""
+    """The decider for the term loop: `Agents(...).decide_phase` matches core.term.Decider."""
 
     def __init__(
         self,
-        blueprint: Blueprint,
+        template: Template,
+        values: dict[str, Any],
         model: llm.Model | None = None,
         cap: int | None = None,
         phase_deadline_s: float = PHASE_DEADLINE_S,
         max_parallel: int = MAX_PARALLEL,
     ) -> None:
-        self.bp = blueprint
+        self.template = template
+        self.values = values
+        self.llm_roles = {r.id for r in template.roles if r.llm}
         self.budget = CallBudget(config.max_llm_calls_per_run() if cap is None else cap)
         self.model = CappedModel(model or llm.get_model(), self.budget)
         self.phase_deadline_s = phase_deadline_s
         self.max_parallel = max_parallel
         self.memory: dict[str, list[str]] = {}
-        self.prompts: dict[str, list[str]] = {}  # agent -> prompts sent, for checks and the decision log
+        self.prompts: dict[str, list[str]] = {}  # person -> prompts sent, for checks and the decision log
         self.timeouts = 0
         self._tokens_lock = threading.Lock()
         self.input_tokens = 0
         self.output_tokens = 0
 
-    # --- prompt ----------------------------------------------------------------------------
-
     def prompt(self, c: DecisionContext) -> str:
-        p = self.bp.policy
-        lines = [
-            f"You are the {c.role} agent `{c.agent}` in a simulated term of one course "
-            f"(week {c.week}, session {c.session}). Decide what you do now, as this person would.",
-            "",
-            "Who you are (from the approved blueprint):",
-            f"- description: {c.profile.description}" if c.profile else "- description: (none)",
-        ]
-        if c.profile:
-            lines.append("- goals: " + "; ".join(c.profile.goals))
-            constraints = getattr(c.profile, "constraints", None)
-            if constraints:
-                lines.append("- constraints: " + "; ".join(constraints))
-        if c.travel_buffer_min is not None:
-            lines.append(f"- travel buffer: {c.travel_buffer_min} min (a longer transport delay makes you late)")
-        lines += [
-            "",
-            "Policy:",
-            f"- minimum attendance for exam eligibility: {p.threshold_pct}% ({p.scope})",
-            f"- exception rule: {p.exception_rule}",
-            f"- eligibility is checked in week {self.bp.scenario.checkpoint_week}",
-            "",
-            "What just happened (the events that triggered you):",
-            *(f"- {t.event_id} week {t.week} {t.type}: {json.dumps(t.payload, ensure_ascii=False)}"
-              + (f" changed {json.dumps(t.state_change, ensure_ascii=False)}" if t.state_change else "")
-              for t in c.triggers),
-        ]
-        if c.attendance is not None:
-            lines.append(f"Your attendance so far: {c.attendance.text()}; pending requests: "
-                         f"{', '.join(c.attendance.pending) or 'none'}")
-        elif c.pending_requests:
-            lines.append(f"Pending exception requests: {', '.join(c.pending_requests)}")
-        if c.role == "student":
-            lines.append("Your recorded absences that no exception request covers: "
-                         f"{', '.join(f'session {n}' for n in c.uncovered_absences) or 'none'}")
-        if c.last_outcomes:
-            lines += ["", "What happened to the actions of your last decision:", *(f"- {o}" for o in c.last_outcomes)]
-        memory = self.memory.get(c.agent)
-        if memory:
-            lines += ["", "Your recent decisions:", *(f"- {m}" for m in memory)]
-        lines += [
-            "",
-            "Actions you may propose (0 to 3; an empty list means you do nothing):",
-            *(f"- {a}: params {ACTION_PARAMS[a]}" for a in sorted(ROLE_ACTIONS[c.role] - RULE_ACTIONS)),
-            "Each action is {\"action\": <name>, \"params\": {...}}. "
-            "Give a short reason and your current strategy.",
-        ]
-        return "\n".join(lines)
+        return render_prompt(self.template, self.values, c, self.memory.get(c.person, ()))
 
     # --- one phase -------------------------------------------------------------------------
 
@@ -191,21 +132,21 @@ class Agents:
             self.input_tokens += outcome.input_tokens
             self.output_tokens += outcome.output_tokens
         if outcome.no_action:
-            return PhaseDecision(agent=context.agent, error=outcome.error or "no reply")
-        return PhaseDecision(agent=context.agent, proposals=outcome.value.actions, reason=outcome.value.reason,
+            return PhaseDecision(person=context.person, error=outcome.error or "no reply")
+        return PhaseDecision(person=context.person, proposals=outcome.value.actions, reason=outcome.value.reason,
                              strategy=outcome.value.strategy)
 
     def decide_phase(self, contexts: list[DecisionContext]) -> list[PhaseDecision]:
-        """Triggered LLM agents decide in parallel on the same snapshot; results come back
-        sorted by agent ID, so the engine validates them in an order independent of timing."""
+        """Triggered LLM people decide in parallel on the same snapshot; results come back
+        sorted by person ID, so the engine validates them in an order independent of timing."""
         decisions: dict[str, PhaseDecision] = {}
         calls = []
         for c in contexts:
-            if c.role not in LLM_ROLES:  # rule agents act in code, never through the model
-                decisions[c.agent] = PhaseDecision(agent=c.agent, reason="rule agent")
+            if c.role not in self.llm_roles:  # rule roles act in the engine, never through the model
+                decisions[c.person] = PhaseDecision(person=c.person, reason="rule role")
                 continue
             prompt = self.prompt(c)
-            self.prompts.setdefault(c.agent, []).append(prompt)
+            self.prompts.setdefault(c.person, []).append(prompt)
             calls.append((c, prompt))
 
         if calls:
@@ -215,20 +156,21 @@ class Agents:
             pool.shutdown(wait=False, cancel_futures=True)  # a late call's reply is discarded
             for future, c in futures.items():
                 if future in done:
-                    decisions[c.agent] = future.result()
+                    decisions[c.person] = future.result()
                 else:
                     self.timeouts += 1
-                    decisions[c.agent] = PhaseDecision(
-                        agent=c.agent, error=f"timeout: no reply within the {self.phase_deadline_s:g} s phase deadline")
+                    decisions[c.person] = PhaseDecision(
+                        person=c.person, error=f"timeout: no reply within the {self.phase_deadline_s:g} s phase deadline")
 
+        period_label = self.template.calendar.period_label
         for d in decisions.values():
-            if d.error is None and d.reason != "rule agent":
+            if d.error is None and d.reason != "rule role":
                 actions = ", ".join(p.action for p in d.proposals) or "nothing"
-                note = f"week {contexts[0].week}: {actions} because {d.reason[:120]}"
+                note = f"{period_label} {contexts[0].period}: {actions} because {d.reason[:120]}"
                 if d.strategy:
                     note += f" (strategy: {d.strategy[:80]})"
-                self.memory[d.agent] = [*self.memory.get(d.agent, []), note][-MEMORY_SIZE:]
-        return [decisions[a] for a in sorted(decisions)]
+                self.memory[d.person] = [*self.memory.get(d.person, []), note][-MEMORY_SIZE:]
+        return [decisions[p] for p in sorted(decisions)]
 
 
 # --- a whole run -----------------------------------------------------------------------------
@@ -284,14 +226,15 @@ def summarise(engine: Engine, agents: Agents) -> RunSummary:
     )
 
 
-def run_term(blueprint: Blueprint, agents: Agents | None = None, on_week=None) -> tuple[Engine, RunSummary]:
-    """One simulated term with the LLM agents. Returns the engine (event log) and the summary."""
-    agents = agents or Agents(blueprint)
-    engine = Term(blueprint, agents.decide_phase).run(on_week)
+def run_term(template: Template, values: dict[str, Any], agents: Agents | None = None,
+             on_period=None) -> tuple[Engine, RunSummary]:
+    """One simulated term with the LLM people. Returns the engine (event log) and the summary."""
+    agents = agents or Agents(template, values)
+    engine = Term(template, values, agents.decide_phase).run(on_period)
     return engine, summarise(engine, agents)
 
 
-def run_local(store, blueprint_id: str, out_dir: str = "runs", on_week=None) -> tuple[str, RunSummary, float, str]:
+def run_local(store, blueprint_id: str, out_dir: str = "runs", on_period=None) -> tuple[str, RunSummary, float, str]:
     """A real term on the approved blueprint, in this process (the background runner is slice 7a).
     Writes the event log, the blueprint and the summary to <out_dir>/<run_id>.json (UTF-8) so a
     run can be read by hand. Returns (run_id, summary, seconds, path)."""
@@ -299,23 +242,28 @@ def run_local(store, blueprint_id: str, out_dir: str = "runs", on_week=None) -> 
     import uuid
     from pathlib import Path
 
+    from rulestorm.core.model import load_template
     from rulestorm.policy import require_approved
 
     record = require_approved(store, blueprint_id)
-    if not isinstance(record.blueprint, Blueprint):
-        raise OldFormatOnly("runs on the template format come with slice L7")
+    bp = record.blueprint
+    template = load_template(bp.template_id)
+    if template.version != bp.template_version:
+        raise ValueError(f"blueprint {blueprint_id} was made with {bp.template_id}@{bp.template_version}, "
+                         f"but the template is now {template.ref}")
     run_id = f"L-{uuid.uuid4().hex[:8]}"
     started = time.monotonic()
-    engine, summary = run_term(record.blueprint, on_week=on_week)
+    engine, summary = run_term(template, bp.values, on_period=on_period)
     seconds = round(time.monotonic() - started, 1)
     path = Path(out_dir) / f"{run_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
         "run_id": run_id,
         "blueprint_id": blueprint_id,
+        "template": template.ref,
         "seconds": seconds,
         "summary": summary.model_dump(),
-        "blueprint": record.blueprint.model_dump(),
+        "blueprint": bp.model_dump(),
         "events": [e.model_dump() for e in engine.events],
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     return run_id, summary, seconds, str(path)

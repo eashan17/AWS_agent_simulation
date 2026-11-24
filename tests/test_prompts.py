@@ -1,10 +1,14 @@
-"""Slice L5: prompts generated from the template reproduce the old engine's prompts (frozen in
-tests/golden/ before any prompt code changed), plus a request-rules block.
+"""Slices L5 / L7: prompts generated from the template keep what the old engine's prompts gave
+the real 6b runs (frozen in tests/golden/ before any prompt code changed), plus a request-rules
+block.
 
-Built as an exact copy of every line. Slice L7 narrows it (docs/SLICES.md, general-feature
-rule): an exact match only for the lines carrying the 6b fixes, the same facts for the rest."""
+Narrowed in slice L7 (docs/SLICES.md, general-feature rule): an exact match only for the lines
+that carry the 6b fixes (the missed occurrences no request covers, what happened to the last
+decision's actions, the slack line, the allowed-actions list); every other frozen line only has
+to keep its facts (IDs, numbers, names and values), not its wording."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -60,24 +64,71 @@ def golden(name: str) -> list[str]:
     return (GOLDEN / f"{name}.txt").read_text(encoding="utf-8").splitlines()
 
 
-def without_request_rules(lines: list[str]) -> list[str]:
-    start = lines.index("Request rules:") - 1  # the blank line before it
-    end = lines.index("", start + 1)
-    return lines[:start] + lines[end:]
+NAMES = ["commuter", "advisor", "faculty"]
+# Facts in a frozen line: event and request IDs, numbers and percentages, backticked names and
+# snake_case identifiers (types, payload keys, action names).
+FACT = re.compile(r"E-\d{4}|\bR\d+\b|\d+(?:\.\d+)?%?|`\w+`|\b[a-z]+(?:_[a-z]+)+\b")
 
 
-@pytest.mark.parametrize("name", ["commuter", "advisor", "faculty"])
-def test_generated_prompt_reproduces_every_frozen_line(template, name: str) -> None:
-    lines = render_prompt(template, VALUES, context(name), DATA["contexts"][name]["memory"]).splitlines()
-    assert without_request_rules(lines) == golden(name)
+def generated(template, name: str) -> list[str]:
+    return render_prompt(template, VALUES, context(name), DATA["contexts"][name]["memory"]).splitlines()
 
 
-@pytest.mark.parametrize("name", ["commuter", "advisor", "faculty"])
+def fix_lines(lines: list[str]) -> list[str]:
+    """The lines that carry the 6b fixes, in order."""
+    keep, block = [], None
+    for line in lines:
+        if line.startswith("What happened to the actions of your last decision:"):
+            block = "outcomes"
+        elif line.startswith("Actions you may propose"):
+            block = "actions"
+        elif line == "":
+            block = None if block == "outcomes" else block
+        if block or line.startswith("Your recorded ") or line.startswith("- travel buffer:"):
+            keep.append(line)
+    return keep
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_the_6b_fix_lines_match_exactly(template, name: str) -> None:
+    expected = fix_lines(golden(name))
+    assert expected  # every fixture has at least its allowed-actions list
+    assert fix_lines(generated(template, name)) == expected
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_every_other_frozen_line_keeps_its_facts(template, name: str) -> None:
+    prompt = "\n".join(generated(template, name))
+    fixed = set(fix_lines(golden(name)))
+    for line in golden(name):
+        if line in fixed:
+            continue
+        missing = [fact for fact in FACT.findall(line) if fact not in prompt]
+        assert not missing, f"facts of {line!r} missing: {missing}"
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_the_blueprint_and_context_values_all_reach_the_prompt(template, name: str) -> None:
+    c = DATA["contexts"][name]
+    prompt = "\n".join(generated(template, name))
+    facts = [c["person"], c["role"], str(c["period"]), str(c["step"]), c["profile"]["description"],
+             *c["profile"]["goals"], *c["profile"].get("constraints", []), *c["memory"],
+             *(t["event_id"] for t in c["triggers"]), *(t["type"] for t in c["triggers"]),
+             str(DATA["policy"]["threshold_pct"]), DATA["policy"]["scope"], DATA["policy"]["exception_rule"],
+             str(DATA["policy"]["checkpoint_week"])]
+    if c["role"] == "student":
+        facts += ["4/6 = 66.7%", *c["attendance"]["pending"], str(c["travel_buffer_min"])]
+    else:
+        facts += c["pending_requests"]
+    assert [f for f in facts if f not in prompt] == []
+
+
+@pytest.mark.parametrize("name", NAMES)
 def test_request_rules_block_follows_the_policy_block(template, name: str) -> None:
-    lines = render_prompt(template, VALUES, context(name), DATA["contexts"][name]["memory"]).splitlines()
+    lines = generated(template, name)
     start = lines.index("Request rules:") - 1
     assert lines[start:start + len(REQUEST_RULES)] == REQUEST_RULES
-    assert lines[start - 1] == "- eligibility is checked in week 6"  # right after the policy block
+    assert lines.index("Policy:") < start < lines.index("What just happened (the events that triggered you):")
 
 
 def test_request_rules_change_with_the_policy_values(template) -> None:

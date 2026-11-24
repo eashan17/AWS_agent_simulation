@@ -6,8 +6,8 @@ from fastapi.testclient import TestClient
 
 from rulestorm.api import app, get_store
 from rulestorm.llm import FakeModel
+from rulestorm.blueprint import TemplateBlueprint
 from rulestorm.policy import (
-    Blueprint,
     BlueprintFrozen,
     BlueprintInvalid,
     BlueprintNotApproved,
@@ -17,7 +17,7 @@ from rulestorm.policy import (
     require_approved,
 )
 from rulestorm.store import Store
-from test_blueprint import FILL, PICK, VALID
+from test_blueprint import FILL, PICK
 
 
 @pytest.fixture
@@ -45,20 +45,20 @@ def test_approve_sets_approved(store, blueprint) -> None:
 
 
 def test_approved_blueprint_cannot_be_edited(store, blueprint) -> None:
-    edited = Blueprint.model_validate(VALID).model_copy(deep=True)
-    edited.scenario.admin_capacity_per_week = 9
-    assert store.update_blueprint(blueprint.id, edited).blueprint.scenario.admin_capacity_per_week == 9
+    edited = TemplateBlueprint.model_validate(blueprint.blueprint.model_dump())
+    edited.values["office_capacity_per_week"] = 9
+    assert store.update_blueprint(blueprint.id, edited).blueprint.values["office_capacity_per_week"] == 9
 
     approve_blueprint(store, blueprint.id)
     with pytest.raises(BlueprintFrozen):
-        store.update_blueprint(blueprint.id, Blueprint.model_validate(VALID))
+        store.update_blueprint(blueprint.id, edited)
     # The database refuses it too, even for code that skips the store method.
     conn = sqlite3.connect(store.db_path)
     with pytest.raises(sqlite3.IntegrityError, match="frozen"):
         conn.execute("UPDATE blueprints SET record = '{}' WHERE id = ?", (blueprint.id,))
     with pytest.raises(sqlite3.IntegrityError, match="frozen"):
         conn.execute("DELETE FROM blueprints WHERE id = ?", (blueprint.id,))
-    assert store.get_blueprint(blueprint.id).blueprint.scenario.admin_capacity_per_week == 9
+    assert store.get_blueprint(blueprint.id).blueprint.values["office_capacity_per_week"] == 9
 
 
 def test_invalid_blueprint_cannot_be_approved(store) -> None:

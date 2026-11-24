@@ -7,8 +7,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from rulestorm.blueprint import TemplateBlueprint
 from rulestorm.policy import (
-    Blueprint,
     BlueprintDraft,
     BlueprintFrozen,
     BlueprintNotFound,
@@ -175,7 +175,7 @@ class Store:
             )
         return cursor.rowcount == 1
 
-    def update_blueprint(self, blueprint_id: str, blueprint: Blueprint) -> BlueprintRecord:
+    def update_blueprint(self, blueprint_id: str, blueprint: TemplateBlueprint) -> BlueprintRecord:
         """Edit a blueprint before approval (e.g. corrected assumptions). Refused once approved."""
         record = self.get_blueprint(blueprint_id)
         if record is None:

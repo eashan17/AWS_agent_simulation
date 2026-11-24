@@ -19,7 +19,8 @@ PROFILES = {
 # (slack 30, so late if they attend) and the working student; the office can process nothing,
 # so requests stay pending until the week-6 checkpoint.
 VALUES = {
-    "threshold_pct": 80, "scope": "per_course", "request_timing": "after_missed",
+    "threshold_pct": 80, "scope": "per_course", "exception_rule": "formally approved exceptions",
+    "request_timing": "after_missed",
     "partial_at_submit": False, "partial_at_decide": False, "decision_rule": "approve_if_covered_missed",
     "office_capacity_per_week": 0, "checkpoint_week": 6,
     "disruptions": [

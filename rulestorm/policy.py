@@ -1,4 +1,4 @@
-"""Policy input, the Blueprint schema and `interpret` (policy text -> checked Blueprint).
+"""Policy input, the stored blueprint records and `interpret` (policy text -> checked blueprint).
 
 `interpret` makes two model calls, always in this order, sharing one 55 s wall-clock budget:
 1. pick: the policy texts plus every template's scope line -> a template ID, or "none" with a
@@ -7,19 +7,18 @@
    (rulestorm/blueprint.py), with every value labelled a fact or an assumption.
 Each blueprint request first takes one unit of the daily `blueprint_calls` cap.
 
-The old attendance `Blueprint` (policy + scenario) below is still read by the old engine and the
-stress variants until slices L7 and L8 move them onto the template format.
+Records saved before slice L6b (the old attendance format) are not read; that dev data isn't
+migrated (docs/ARCHITECTURE.md).
 """
 
 import time
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError, create_model, model_validator
+from pydantic import BaseModel, Field, ValidationError, create_model
 
 from rulestorm import config, llm
 from rulestorm.blueprint import TemplateBlueprint, fill_prompt, fill_schema, to_blueprint
 from rulestorm.core.model import Template, shipped_templates
-from rulestorm.education import ARCHETYPES, TERM_WEEKS, Archetype
 
 if TYPE_CHECKING:
     from rulestorm.store import Store
@@ -49,100 +48,6 @@ class Policy(PolicyInput):
     created_at: str
 
 
-# --- Blueprint -----------------------------------------------------------------------------
-
-# Every one of these must be labelled in facts or assumptions, so the policymaker can see
-# which values came from their text and which the AI proposed.
-LABELLED_FIELDS = (
-    "policy.threshold_pct",
-    "scenario.admin_capacity_per_week",
-    "scenario.checkpoint_week",
-    "scenario.disruptions",
-    "scenario.students",
-    "scenario.faculty",
-    "scenario.advisor",
-)
-
-
-class PolicyParameters(BaseModel):
-    threshold_pct: int = Field(ge=50, le=100, description="minimum attendance % for eligibility")
-    scope: Literal["per_course", "overall"]
-    exception_rule: str = Field(min_length=1, max_length=300)
-    outcomes_to_monitor: list[str] = Field(min_length=1, max_length=8)
-
-
-class Profile(BaseModel):
-    """Who an LLM agent is and what it wants. The role is fixed by the education model; the
-    profile comes from the user's text or an AI assumption the user approves (slice 3c)."""
-
-    description: str = Field(
-        min_length=1, max_length=200, description="who this person is, in this institution's setting"
-    )
-    goals: list[str] = Field(min_length=1, max_length=3, description="what this person wants this term")
-
-
-class StudentProfile(Profile):
-    archetype: Archetype
-    constraints: list[str] = Field(min_length=1, max_length=5)
-    travel_buffer_min: int = Field(
-        ge=0, le=180, description="minutes of slack before class; a longer delay makes them late"
-    )
-
-
-class Disruption(BaseModel):
-    week: int = Field(ge=1, le=TERM_WEEKS)
-    type: Literal["transport", "admin_capacity"]
-    description: str = Field(min_length=1, max_length=200)
-    delay_min: int = Field(0, ge=0, le=180, description="transport only: delay in minutes")
-    affected: list[Archetype] = Field(default_factory=list, description="transport only")
-    admin_capacity_during: int | None = Field(
-        None, ge=0, le=50, description="admin_capacity only: requests the office can process that week"
-    )
-
-    @model_validator(mode="after")
-    def _fields_match_type(self) -> "Disruption":
-        if self.type == "transport" and (self.delay_min <= 0 or not self.affected):
-            raise ValueError("a transport disruption needs delay_min > 0 and a non-empty affected list")
-        if self.type == "admin_capacity" and self.admin_capacity_during is None:
-            raise ValueError("an admin_capacity disruption needs admin_capacity_during")
-        return self
-
-
-class Scenario(BaseModel):
-    students: list[StudentProfile] = Field(min_length=4, max_length=4)
-    faculty: Profile
-    advisor: Profile
-    admin_capacity_per_week: int = Field(ge=0, le=50)
-    checkpoint_week: int = Field(ge=1, le=TERM_WEEKS)
-    disruptions: list[Disruption] = Field(min_length=1, max_length=10)
-
-    @model_validator(mode="after")
-    def _one_student_per_archetype(self) -> "Scenario":
-        if sorted(s.archetype for s in self.students) != sorted(ARCHETYPES):
-            raise ValueError(f"students must be exactly one of each archetype: {', '.join(ARCHETYPES)}")
-        return self
-
-
-class Label(BaseModel):
-    field: str = Field(min_length=1, max_length=80, description="blueprint path, e.g. scenario.checkpoint_week")
-    statement: str = Field(min_length=1, max_length=200)
-
-
-class Blueprint(BaseModel):
-    policy: PolicyParameters
-    scenario: Scenario
-    facts: list[Label] = Field(min_length=1, max_length=8, description="values stated in the user's text")
-    assumptions: list[Label] = Field(min_length=1, max_length=8, description="values the AI proposed")
-
-    @model_validator(mode="after")
-    def _key_values_labelled(self) -> "Blueprint":
-        labelled = [label.field for label in self.facts + self.assumptions]
-        missing = [f for f in LABELLED_FIELDS if not any(x.startswith(f) for x in labelled)]
-        if missing:
-            raise ValueError(f"label these in facts or assumptions: {', '.join(missing)}")
-        return self
-
-
 class BlueprintDraft(BaseModel):
     """The result of interpreting a policy, before it is stored."""
 
@@ -154,8 +59,7 @@ class BlueprintDraft(BaseModel):
     template_id: str | None = None
     template_version: int | None = None
     pick_reason: str | None = None
-    # The template format (slice L6b); the old attendance format while L7/L8 port its readers.
-    blueprint: TemplateBlueprint | Blueprint | None = None
+    blueprint: TemplateBlueprint | None = None
     attempts: int
     seconds: float
     # Measured per request: why a reply had to be retried, and the tokens used (sets max_tokens).

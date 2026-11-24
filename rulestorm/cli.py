@@ -4,7 +4,6 @@ import argparse
 import json
 from pathlib import Path
 
-from rulestorm.education import EXAMPLE_POLICY
 from rulestorm.policy import (
     BlueprintInvalid,
     BlueprintNotFound,
@@ -24,7 +23,8 @@ def main(argv: list[str] | None = None) -> None:
 
     policy = commands.add_parser("policy", help="policy input")
     policy_commands = policy.add_subparsers(dest="policy_command", required=True)
-    policy_commands.add_parser("example", help="save the pre-filled 80%% example and print it")
+    example_cmd = policy_commands.add_parser("example", help="save a template's pre-filled example and print it")
+    example_cmd.add_argument("--template", default="attendance", help="template name (default: attendance)")
     save_cmd = policy_commands.add_parser("save", help="save your own policy texts and print them")
     save_cmd.add_argument("--text", required=True, help="the policy rule (max 2,000 characters)")
     save_cmd.add_argument("--purpose", required=True, help="why it exists (max 2,000 characters)")
@@ -46,7 +46,8 @@ def main(argv: list[str] | None = None) -> None:
     engine_commands = engine.add_subparsers(dest="engine_command", required=True)
     check_cmd = engine_commands.add_parser("check", help="play a fixed test case through the engine")
     check_cmd.add_argument("--case", required=True, help="case JSON file, e.g. tests/cases/student_c.json")
-    check_cmd.add_argument("--core", action="store_true", help="use the general engine and the case's template")
+    check_cmd.add_argument("--core", action="store_true",
+                           help="the general engine (the only engine since slice L7; kept for the proofs)")
 
     llm = commands.add_parser("llm", help="model adapter")
     llm_commands = llm.add_subparsers(dest="llm_command", required=True)
@@ -69,7 +70,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "hello":
         print("hello")
     elif args.command == "policy" and args.policy_command == "example":
-        saved = Store().save_policy(PolicyInput(**EXAMPLE_POLICY))
+        from rulestorm.core.model import load_template
+
+        example = load_template(args.template).example_input
+        saved = Store().save_policy(PolicyInput(**example.model_dump()))
         print(saved.model_dump_json(indent=2))
     elif args.command == "policy" and args.policy_command == "save":
         from pydantic import ValidationError
@@ -108,15 +112,10 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(1)
     elif args.command == "engine" and args.engine_command == "check":
         case = json.loads(Path(args.case).read_text(encoding="utf-8"))
-        if args.core:
-            from rulestorm.core.engine import run_case as run_core_case
-            from rulestorm.core.model import load_template
+        from rulestorm.core.engine import run_case
+        from rulestorm.core.model import load_template
 
-            lines = run_core_case(case, load_template(case["template"]))
-        else:
-            from rulestorm.engine import run_case
-
-            lines = run_case(case)
+        lines = run_case(case, load_template(case["template"]))
         for line in lines:
             print(line)
     elif args.command == "llm" and args.llm_command == "smoke":
@@ -171,49 +170,24 @@ def describe_blueprint(record) -> list[str]:
 
 
 def explore_command(command: str, blueprint_id: str) -> None:
+    """Stress variants answer "not yet" until slice L8 ports them to the template format."""
     from rulestorm import explore
-    from rulestorm.agents import OldFormatOnly
+    from rulestorm.agents import NotPortedYet
     from rulestorm.policy import BlueprintNotApproved
 
     store = Store()
     try:
         if command == "propose":
-            result = explore.propose_variants(store, blueprint_id)
-            print(f"parent: {result.parent_id}")
-            print(f"status: {result.status} | attempts: {result.attempts} | seconds: {result.seconds}")
-            for error in result.errors:
-                print(f"error: {error}")
-            for v in result.variants:
-                print(f"- {v.id} [{v.status}] {v.variant}")
-                print(f"  weak point: {v.weak_point}")
-                if v.blueprint:
-                    sc = v.blueprint.scenario
-                    print(f"  admin capacity {sc.admin_capacity_per_week} a week | checkpoint week {sc.checkpoint_week}")
-                    for d in sc.disruptions:
-                        extra = (f"delay {d.delay_min} min, affects {', '.join(d.affected)}" if d.type == "transport"
-                                 else f"capacity {d.admin_capacity_during} that week")
-                        print(f"    week {d.week} {d.type}: {d.description} ({extra})")
-                    print("  labelled as AI assumptions: "
-                          + ", ".join(a.field for a in v.blueprint.assumptions if a.statement.startswith("Stress variant")))
-                for error in v.errors:
-                    print(f"  error: {error}")
-            print("approve each variant to run with: python -m rulestorm.cli blueprint approve <id>")
+            explore.propose_variants(store, blueprint_id)
         else:
-            rows = explore.run_variants(store, blueprint_id, on_variant=lambda v: print(f"running {v.id} ({v.variant})...", flush=True))
-            print("variant | run | status | requests filed | queue over capacity | pending at checkpoint | not eligible | broke")
-            for r in rows:
-                print(f"{r.blueprint_id} {r.variant} | {r.run_id or '-'} | {r.status} | {r.requests_filed} | "
-                      f"{r.queue_over_capacity} | {r.pending_at_checkpoint} | {', '.join(r.not_eligible) or '-'} | "
-                      f"{'yes' if r.broke else 'no'}")
-            ran = [r for r in rows if r.run_id]
-            print(f"broke the policy: {sum(r.broke for r in ran)} of {len(ran)} variants run")
+            explore.run_variants(store, blueprint_id)
     except BlueprintNotFound:
         raise SystemExit(f"blueprint not found: {blueprint_id}")
     except BlueprintNotApproved:
         raise SystemExit(f"blueprint not approved: {blueprint_id}")
     except DailyCapReached as exc:
         raise SystemExit(str(exc))
-    except OldFormatOnly as exc:
+    except NotPortedYet as exc:
         raise SystemExit(f"not yet: {exc}")
 
 
@@ -221,13 +195,9 @@ def run_local_command(blueprint_id: str) -> None:
     from rulestorm.agents import run_local
     from rulestorm.policy import BlueprintNotApproved
 
-    from rulestorm.agents import OldFormatOnly
-
     try:
         run_id, summary, seconds, path = run_local(
-            Store(), blueprint_id, on_week=lambda week: print(f"week {week} done", flush=True))
-    except OldFormatOnly as exc:
-        raise SystemExit(f"not yet: {exc}")
+            Store(), blueprint_id, on_period=lambda period: print(f"period {period} done", flush=True))
     except BlueprintNotFound:
         raise SystemExit(f"blueprint not found: {blueprint_id}")
     except BlueprintNotApproved:

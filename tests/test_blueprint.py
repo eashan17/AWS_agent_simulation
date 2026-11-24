@@ -48,45 +48,6 @@ FILL = {
     ],
 }
 
-# The old attendance format (policy + scenario), still read by the old engine, its tests and the
-# stress variants until slices L7 and L8.
-VALID = {
-    "policy": {
-        "threshold_pct": 80,
-        "scope": "per_course",
-        "exception_rule": "formally approved exceptions",
-        "outcomes_to_monitor": ["attendance", "eligibility"],
-    },
-    "scenario": {
-        "students": [
-            {"archetype": "commuter", "description": "travels two hours by bus", "goals": ["keep eligibility"], "constraints": ["long commute"], "travel_buffer_min": 30},
-            {"archetype": "resident", "description": "lives in the hostel", "goals": ["good grades"], "constraints": ["none"], "travel_buffer_min": 10},
-            {"archetype": "working", "description": "works evening shifts", "goals": ["keep the job"], "constraints": ["fixed work hours"], "travel_buffer_min": 15},
-            {"archetype": "family", "description": "cares for a parent", "goals": ["balance home and study"], "constraints": ["care duties"], "travel_buffer_min": 20},
-        ],
-        "faculty": {"description": "teaches the course", "goals": ["keep participation up"]},
-        "advisor": {"description": "advises 40 students", "goals": ["keep advisees eligible"]},
-        "admin_capacity_per_week": 2,
-        "checkpoint_week": 6,
-        "disruptions": [
-            {"week": 3, "type": "transport", "description": "bus strike", "delay_min": 45,
-             "affected": ["commuter", "working"]},
-            {"week": 5, "type": "admin_capacity", "description": "staff away",
-             "admin_capacity_during": 1},
-        ],
-    },
-    "facts": [{"field": "policy.threshold_pct", "statement": "80% stated in the policy"}],
-    "assumptions": [
-        {"field": "scenario.admin_capacity_per_week", "statement": "a few a week -> 2"},
-        {"field": "scenario.checkpoint_week", "statement": "mid-term check"},
-        {"field": "scenario.disruptions", "statement": "transport disruptions happen"},
-        {"field": "scenario.students", "statement": "buffers proposed"},
-        {"field": "scenario.faculty", "statement": "faculty profile proposed"},
-        {"field": "scenario.advisor", "statement": "advisor profile proposed"},
-    ],
-}
-
-
 def fill(**changes) -> dict:
     """FILL with some values changed (or removed with None)."""
     reply = copy.deepcopy(FILL)
@@ -229,29 +190,6 @@ def test_filled_values_run_a_term_on_the_engine(template) -> None:
     engine = simulate(template, values, decider)
     assert any(e.type == "obstacle" for e in engine.events)
     assert any(e.type == "check_evaluated" for e in engine.events)
-
-
-def test_stored_records_hold_either_format(store, policy) -> None:
-    from rulestorm.policy import Blueprint, BlueprintDraft
-
-    new = store.save_blueprint(interpret(policy, FakeModel([PICK, json.dumps(FILL)])))
-    old = store.save_blueprint(BlueprintDraft(policy_id=policy.id, model_id="fake", status="valid",
-                                              blueprint=Blueprint.model_validate(VALID), attempts=1, seconds=0.0))
-    assert isinstance(store.get_blueprint(new.id).blueprint, TemplateBlueprint)
-    assert isinstance(store.get_blueprint(old.id).blueprint, Blueprint)
-
-
-def test_old_format_readers_refuse_a_template_blueprint(store, policy) -> None:
-    from rulestorm import explore
-    from rulestorm.agents import OldFormatOnly, run_local
-    from rulestorm.policy import approve_blueprint, create_blueprint
-
-    record = create_blueprint(store, policy.id, FakeModel([PICK, json.dumps(FILL)]))
-    approve_blueprint(store, record.id)
-    with pytest.raises(OldFormatOnly, match="L7"):
-        run_local(store, record.id)
-    with pytest.raises(OldFormatOnly, match="L8"):
-        explore.propose_variants(store, record.id, FakeModel([]))
 
 
 def test_post_blueprint_route(store, policy) -> None:
