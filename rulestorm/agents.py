@@ -17,13 +17,14 @@ Spend and time guards (docs/ARCHITECTURE.md, Model adapter contract):
 """
 
 import json
+import re
 import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_futures
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from rulestorm import config, llm
 from rulestorm.core.engine import Engine
@@ -36,14 +37,38 @@ MAX_PARALLEL = 4
 AGENT_MAX_TOKENS = 400
 DEGRADED_ERROR_SHARE = 0.10
 MEMORY_SIZE = 3
+REASON_CHARS = 300
+STRATEGY_CHARS = 200
+
+
+def shorten(limit: int):
+    """An over-long reason or strategy keeps its whole sentences that fit (else its whole words),
+    marked with "…", instead of failing the reply: one wordy reply once made a run `degraded`."""
+    def keep(text):
+        if not isinstance(text, str) or len(text) <= limit:
+            return text
+        room = limit - 1  # for the "…"
+        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+        kept = ""
+        for sentence in sentences:
+            joined = f"{kept} {sentence}".strip()
+            if len(joined) > room:
+                break
+            kept = joined
+        if not kept:  # the first sentence alone is too long: stop at the last whole word
+            kept = text[:room].rsplit(" ", 1)[0].rstrip(",;:")
+        return kept + "…"
+    return BeforeValidator(keep)
 
 
 class AgentDecision(BaseModel):
     """What one LLM person returns for one phase. An empty `actions` list means "no action"."""
 
     actions: list[Proposal] = Field(default_factory=list, max_length=3)
-    reason: str = Field(min_length=1, max_length=300, description="why, in your own words")
-    strategy: str = Field("", max_length=200, description="your current strategy, one short sentence")
+    reason: Annotated[str, shorten(REASON_CHARS)] = Field(min_length=1, max_length=REASON_CHARS,
+                                                          description="why, in your own words")
+    strategy: Annotated[str, shorten(STRATEGY_CHARS)] = Field("", max_length=STRATEGY_CHARS,
+                                                              description="your current strategy, one short sentence")
 
 
 class CallCapReached(Exception):

@@ -237,3 +237,24 @@ def test_without_the_trigger_in_the_template_advice_triggers_nobody(template) ->
     engine, _ = run_term(quiet, VALUES, agents_for(quiet, RoutedModel(reply), cap=1000))
     advice = [e.event_id for e in engine.events if e.type == "response_given"]
     assert advice and not any(set(advice) & set(e.caused_by) for e in engine.events if e.type == "decision")
+
+
+def test_an_over_long_reason_keeps_its_whole_sentences_instead_of_failing() -> None:
+    from rulestorm.agents import AgentDecision
+
+    long = "First I check the queue. " * 10 + "Then I wait."  # 262 + 12 characters, then more
+    reply = {"actions": [], "reason": long + " " + "x" * 100, "strategy": "keep going"}
+    decision = AgentDecision.model_validate(reply)
+    assert len(decision.reason) <= 300 and decision.reason.endswith("Then I wait.…")
+    one_sentence = {"actions": [], "reason": "word " * 100}
+    cut = AgentDecision.model_validate(one_sentence).reason
+    assert len(cut) <= 300 and cut.endswith("word…")  # no half words
+    short = AgentDecision.model_validate({"actions": [], "reason": "fine"}).reason
+    assert short == "fine"  # short reasons are untouched
+
+
+def test_a_wordy_reply_is_a_decision_not_an_error(template) -> None:
+    wordy = json.dumps({"actions": [], "reason": "I weigh it all. " * 40, "strategy": "s " * 150})
+    agents = agents_for(template, RoutedModel(lambda person, prompt: wordy), cap=10)
+    out = agents.decide_phase([context("faculty", "faculty")])
+    assert out[0].error is None and len(out[0].reason) <= 300 and len(out[0].strategy) <= 200
