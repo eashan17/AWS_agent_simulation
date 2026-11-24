@@ -1,4 +1,5 @@
-"""Slice 7a: runs in the background, one at a time, followed by polling (fake model; no Bedrock)."""
+"""Slices 7a and 7b: runs in the background, one at a time, followed by polling; daily caps,
+interrupted runs and clean errors (fake model; no Bedrock)."""
 
 import json
 import threading
@@ -154,3 +155,105 @@ def test_only_one_of_several_racing_requests_starts_a_run(store, approved) -> No
     started = [r for r in results if r is None]
     assert len(started) == 1  # the other three were told which run is running
     assert len({r for r in results if r is not None}) == 1
+
+
+# --- slice 7b: spending stays capped and broken runs are visible, not stuck ---------------------
+
+LEAKY = ("User: arn:aws:sts::123456789012:assumed-role/rulestorm-ec2/i-0abc12 is not authorized "
+         "to perform bedrock:Converse; access key AKIAABCDEFGHIJKLMNOP")
+
+
+def test_a_running_run_at_startup_becomes_failed_interrupted(store, approved, tmp_path) -> None:
+    from rulestorm.runner import INTERRUPTED
+
+    store.create_run("L-cutoff", approved.id, "attendance@1", 10, "fake")
+    app.dependency_overrides[get_store] = lambda: store
+    app.dependency_overrides[get_agent_model] = lambda: RoutedModel()
+    app.dependency_overrides[get_runs_dir] = lambda: str(tmp_path / "runs")
+    try:
+        with TestClient(app) as http:  # `with` runs the app's startup
+            cut = http.get("/api/runs/L-cutoff").json()
+            assert cut["status"] == "failed" and cut["error"] == INTERRUPTED and cut["finished_at"]
+            assert http.post("/api/runs", json={"blueprint_id": approved.id}).status_code == 200  # not blocked
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_four_threads_racing_for_one_remaining_call_exactly_one_succeeds(store, monkeypatch) -> None:
+    from rulestorm.agents import CallBudget, CallCapReached, CappedModel
+
+    monkeypatch.setenv("MAX_LLM_CALLS_PER_DAY", "5")
+    for _ in range(4):
+        assert store.take_daily("llm_calls", 5)  # 1 call left today
+    reached = []
+    model = CappedModel(RoutedModel(lambda person, prompt: (reached.append(1), NOTHING)[1]), CallBudget(100), store)
+    barrier, results = threading.Barrier(4), []
+
+    def call() -> None:
+        barrier.wait()
+        try:
+            model.complete("You are the student agent `commuter`", 100)
+            results.append("ok")
+        except CallCapReached as exc:
+            results.append(str(exc))
+
+    threads = [threading.Thread(target=call) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results.count("ok") == 1 and len(reached) == 1  # exactly one reached the model
+    assert results.count("daily call cap of 5 reached") == 3
+    assert store.daily_usage()["llm_calls"] == 5
+    assert model.budget.used == 1 and model.budget.cap_hits == 1  # the run's own budget counts only the real call
+
+
+def test_a_failed_runs_get_shows_a_clean_short_error_and_the_log_has_it_all(client, approved, monkeypatch,
+                                                                            caplog) -> None:
+    from rulestorm import runner
+    from rulestorm.core.term import Term
+
+    http, model = client
+    model.gate.set()
+
+    class Broken(Term):
+        def run(self, on_period=None):
+            raise PermissionError(LEAKY)
+
+    monkeypatch.setattr(runner, "Term", Broken)
+    with caplog.at_level("ERROR", logger="rulestorm.runner"):
+        run_id = http.post("/api/runs", json={"blueprint_id": approved.id}).json()["run_id"]
+        done = wait_until_finished(http, run_id)
+    shown = done["error"]
+    assert done["status"] == "failed" and shown.startswith("PermissionError: User: <arn> is not authorized")
+    for secret in ("123456789012", "arn:aws", "AKIAABCDEFGHIJKLMNOP", "rulestorm-ec2"):
+        assert secret not in shown and secret not in json.dumps(http.get(f"/api/runs/{run_id}").json())
+    assert len(shown) <= len("PermissionError: ") + runner.SHORT_ERROR_CHARS + 1
+    assert any("123456789012" in r.getMessage() + str(r.exc_info) for r in caplog.records)  # full error: log only
+
+
+def test_a_model_error_in_the_timeline_is_cleaned_too() -> None:
+    from rulestorm import llm
+    from rulestorm.agents import AgentDecision
+
+    class Denied:
+        model_id = "fake"
+
+        def complete(self, prompt, max_tokens, timeout_s=None):
+            raise PermissionError(LEAKY)
+
+    error = llm.decide("prompt", AgentDecision, model=Denied()).error
+    assert error.startswith("PermissionError: User: <arn> is not authorized") and "<access key>" in error
+    assert "123456789012" not in error and "arn:aws" not in error
+
+
+def test_the_daily_run_cap_gives_429_but_a_running_run_still_gives_409(client, approved, monkeypatch) -> None:
+    http, model = client
+    first = http.post("/api/runs", json={"blueprint_id": approved.id}).json()["run_id"]
+    monkeypatch.setenv("MAX_RUNS_PER_DAY", "0")
+    busy = http.post("/api/runs", json={"blueprint_id": approved.id})
+    assert busy.status_code == 409 and busy.json()["run_id"] == first  # the running run comes first, costs nothing
+    model.gate.set()
+    wait_until_finished(http, first)
+    capped = http.post("/api/runs", json={"blueprint_id": approved.id})
+    assert capped.status_code == 429 and "daily run limit" in capped.json()["detail"]

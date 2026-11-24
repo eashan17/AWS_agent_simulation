@@ -1,5 +1,6 @@
 """HTTP API served from the EC2 instance."""
 
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -23,12 +24,21 @@ from rulestorm.policy import (
 )
 from rulestorm.store import Store
 
-app = FastAPI(title="RuleStorm")
-
-
 @lru_cache
 def get_store() -> Store:
     return Store()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """At startup, a run left `running` by a restart becomes failed (interrupted) (slice 7b)."""
+    from rulestorm.runner import recover_interrupted
+
+    recover_interrupted(app.dependency_overrides.get(get_store, get_store)())
+    yield
+
+
+app = FastAPI(title="RuleStorm", lifespan=lifespan)
 
 
 def get_blueprint_model() -> llm.Model:
@@ -133,6 +143,8 @@ def post_run(body: RunRequest, store: Store = Depends(get_store),
         raise HTTPException(status_code=409, detail="blueprint not approved")
     except RunActive as exc:
         return JSONResponse(status_code=409, content={"detail": "a run is already running", "run_id": exc.run_id})
+    except DailyCapReached:
+        raise HTTPException(status_code=429, detail="daily run limit reached, try again tomorrow")
     except ValueError as exc:  # the template changed since the blueprint was made
         raise HTTPException(status_code=409, detail=str(exc))
     return {"run_id": run_id, "status": "running"}

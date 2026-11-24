@@ -16,6 +16,10 @@ DEFAULT_MAX_LLM_CALLS_PER_RUN = 150
 # One unit per blueprint or stress-variant request (each up to 2 model calls per step). Set from
 # BRIEF's cost check: a blueprint request costs well under USD 0.01 on DeepSeek V3.2.
 DEFAULT_MAX_BLUEPRINT_CALLS_PER_DAY = 50
+# Daily spend guard for runs (slice 7b): a curfew or attendance term takes 19-23 calls (24 Nov), so
+# 20 runs fit well inside 2,000 calls. At about USD 0.002 a call, a full day costs about USD 4.
+DEFAULT_MAX_RUNS_PER_DAY = 20
+DEFAULT_MAX_LLM_CALLS_PER_DAY = 2000
 
 
 def load_env_file(path: str = ".env") -> None:
@@ -58,10 +62,22 @@ def max_llm_calls_per_run() -> int:
     return int(setting("MAX_LLM_CALLS_PER_RUN", str(DEFAULT_MAX_LLM_CALLS_PER_RUN)))
 
 
+def _daily_cap(name: str, default: int) -> int:
+    """0 is a real value (none today), so only an unset variable takes the default."""
+    value = os.environ.get(name, "").strip()
+    return int(value) if value else default
+
+
 def max_blueprint_calls_per_day() -> int:
-    """0 is a real value (no blueprint calls today), so only an unset variable takes the default."""
-    value = os.environ.get("MAX_BLUEPRINT_CALLS_PER_DAY", "").strip()
-    return int(value) if value else DEFAULT_MAX_BLUEPRINT_CALLS_PER_DAY
+    return _daily_cap("MAX_BLUEPRINT_CALLS_PER_DAY", DEFAULT_MAX_BLUEPRINT_CALLS_PER_DAY)
+
+
+def max_runs_per_day() -> int:
+    return _daily_cap("MAX_RUNS_PER_DAY", DEFAULT_MAX_RUNS_PER_DAY)
+
+
+def max_llm_calls_per_day() -> int:
+    return _daily_cap("MAX_LLM_CALLS_PER_DAY", DEFAULT_MAX_LLM_CALLS_PER_DAY)
 
 
 load_env_file()

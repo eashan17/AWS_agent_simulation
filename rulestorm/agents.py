@@ -103,6 +103,12 @@ class CallBudget:
             self.used += 1
             return True
 
+    def give_back(self) -> None:
+        """A slot taken for a call that another cap then stopped: the call never happened."""
+        with self._lock:
+            self.used -= 1
+            self.refused += 1
+
     @property
     def cap_hits(self) -> int:
         """How many times the cap stopped this run: 0 or 1 (it never resets within a run)."""
@@ -110,16 +116,21 @@ class CallBudget:
 
 
 class CappedModel:
-    """Wraps a model so every call (first try and retry) first takes a slot from the budget."""
+    """Wraps a model so every call (first try and retry) first takes a slot from the run's budget
+    and, with a store, one unit of today's call cap (slice 7b), both atomically."""
 
-    def __init__(self, model: llm.Model, budget: CallBudget) -> None:
+    def __init__(self, model: llm.Model, budget: CallBudget, store=None) -> None:
         self.model = model
         self.budget = budget
+        self.store = store
         self.model_id = model.model_id
 
     def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> llm.Reply:
         if not self.budget.take():
             raise CallCapReached(f"run call cap of {self.budget.cap} reached")
+        if self.store is not None and not self.store.take_daily("llm_calls", config.max_llm_calls_per_day()):
+            self.budget.give_back()
+            raise CallCapReached(f"daily call cap of {config.max_llm_calls_per_day()} reached")
         return self.model.complete(prompt, max_tokens, timeout_s)
 
 
@@ -138,12 +149,13 @@ class Agents:
         cap: int | None = None,
         phase_deadline_s: float = PHASE_DEADLINE_S,
         max_parallel: int = MAX_PARALLEL,
+        store=None,
     ) -> None:
         self.template = template
         self.values = values
         self.llm_roles = {r.id for r in template.roles if r.llm}
         self.budget = CallBudget(config.max_llm_calls_per_run() if cap is None else cap)
-        self.model = CappedModel(model or llm.get_model(), self.budget)
+        self.model = CappedModel(model or llm.get_model(), self.budget, store)  # store: daily call cap
         self.phase_deadline_s = phase_deadline_s
         self.max_parallel = max_parallel
         self.memory: dict[str, list[str]] = {}
@@ -305,7 +317,7 @@ def run_local(store, blueprint_id: str, out_dir: str = "runs", on_period=None) -
                          f"but the template is now {template.ref}")
     run_id = f"L-{uuid.uuid4().hex[:8]}"
     started = time.monotonic()
-    engine, summary = run_term(template, bp.values, on_period=on_period)
+    engine, summary = run_term(template, bp.values, Agents(template, bp.values, store=store), on_period=on_period)
     seconds = round(time.monotonic() - started, 1)
     path = write_run_file(out_dir, run_id, blueprint_id, template.ref, seconds, summary, bp, engine.events)
     return run_id, summary, seconds, path

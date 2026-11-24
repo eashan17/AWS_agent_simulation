@@ -8,6 +8,7 @@ It never raises for model or AWS errors, so one bad call cannot crash a run.
 """
 
 import json
+import logging
 import re
 import threading
 import time
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from rulestorm import config
 
 T = TypeVar("T", bound=BaseModel)
+log = logging.getLogger("rulestorm.llm")
 
 MAX_ERROR_CHARS = 500
 # With a deadline, a retry starts only if at least this much time is left: a blueprint reply
@@ -54,6 +56,22 @@ class Outcome(Generic[T]):
     @property
     def no_action(self) -> bool:
         return self.value is None
+
+
+# What an AWS error may carry that must never reach the API or the timeline: ARNs (which hold
+# the account ID and role names), bare 12-digit account IDs and access key IDs.
+_SECRETS = (
+    (re.compile(r"arn:aws[\w-]*:[^\s'\",)]*"), "<arn>"),
+    (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), "<access key>"),
+    (re.compile(r"\b\d{12}\b"), "<account>"),
+)
+
+
+def redact(text: str) -> str:
+    """The text with ARNs, account IDs and access key IDs replaced (slice 7b)."""
+    for pattern, replacement in _SECRETS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def _short(text: str) -> str:
@@ -144,7 +162,8 @@ def decide(
                 )
     except Exception as exc:  # throttling, timeout, access error: recorded, never raised
         outcome.value = None
-        outcome.error = f"{type(exc).__name__}: {_short(str(exc))}"
+        log.warning("model call failed: %s: %s", type(exc).__name__, exc)  # in full, server log only
+        outcome.error = f"{type(exc).__name__}: {_short(redact(str(exc)))}"
     outcome.seconds = round(time.monotonic() - started, 2)
     return outcome
 

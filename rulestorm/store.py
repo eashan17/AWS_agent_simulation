@@ -218,6 +218,19 @@ class Store:
         running = conn.execute("SELECT id FROM runs WHERE status = 'running' LIMIT 1").fetchone()
         return running["id"] if running else None
 
+    def running_run(self) -> str | None:
+        row = self._conn().execute("SELECT id FROM runs WHERE status = 'running' LIMIT 1").fetchone()
+        return row["id"] if row else None
+
+    def fail_running_runs(self, error: str) -> list[str]:
+        """Every run still marked running becomes failed with `error`; returns their IDs."""
+        conn = self._conn()
+        with conn:
+            ids = [r["id"] for r in conn.execute("SELECT id FROM runs WHERE status = 'running'").fetchall()]
+            conn.execute("UPDATE runs SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running'",
+                         (error, _now()))
+        return ids
+
     def update_run(self, run_id: str, **fields) -> None:
         unknown = set(fields) - set(RUN_FIELDS)
         if unknown:
