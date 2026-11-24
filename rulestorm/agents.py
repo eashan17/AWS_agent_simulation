@@ -20,21 +20,23 @@ import json
 import re
 import threading
 from collections import Counter
+from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_futures
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, Field, create_model
 
 from rulestorm import config, llm
 from rulestorm.core.engine import Engine
 from rulestorm.core.model import Template
-from rulestorm.core.term import DecisionContext, PhaseDecision, Proposal, Term
+from rulestorm.core.term import MIN_ACTIONS, DecisionContext, PhaseDecision, Proposal, Term
 from rulestorm.prompts import render_prompt
 
 PHASE_DEADLINE_S = 40.0
 MAX_PARALLEL = 4
 AGENT_MAX_TOKENS = 400
+TOKENS_PER_EXTRA_ACTION = 80  # a person allowed more than 3 actions gets room to write them
 DEGRADED_ERROR_SHARE = 0.10
 MEMORY_SIZE = 3
 REASON_CHARS = 300
@@ -64,11 +66,20 @@ def shorten(limit: int):
 class AgentDecision(BaseModel):
     """What one LLM person returns for one phase. An empty `actions` list means "no action"."""
 
-    actions: list[Proposal] = Field(default_factory=list, max_length=3)
+    actions: list[Proposal] = Field(default_factory=list, max_length=MIN_ACTIONS)
     reason: Annotated[str, shorten(REASON_CHARS)] = Field(min_length=1, max_length=REASON_CHARS,
                                                           description="why, in your own words")
     strategy: Annotated[str, shorten(STRATEGY_CHARS)] = Field("", max_length=STRATEGY_CHARS,
                                                               description="your current strategy, one short sentence")
+
+
+@lru_cache(maxsize=None)
+def decision_schema(limit: int) -> type[AgentDecision]:
+    """AgentDecision with room for `limit` actions (DecisionContext.action_limit)."""
+    if limit <= MIN_ACTIONS:
+        return AgentDecision
+    return create_model(f"AgentDecision{limit}", __base__=AgentDecision,
+                        actions=(list[Proposal], Field(default_factory=list, max_length=limit)))
 
 
 class CallCapReached(Exception):
@@ -148,7 +159,9 @@ class Agents:
     # --- one phase -------------------------------------------------------------------------
 
     def decide_one(self, context: DecisionContext, prompt: str) -> PhaseDecision:
-        outcome = llm.decide(prompt, AgentDecision, model=self.model, max_tokens=AGENT_MAX_TOKENS)
+        limit = context.action_limit()
+        outcome = llm.decide(prompt, decision_schema(limit), model=self.model,
+                             max_tokens=AGENT_MAX_TOKENS + TOKENS_PER_EXTRA_ACTION * max(0, limit - MIN_ACTIONS))
         with self._tokens_lock:
             self.input_tokens += outcome.input_tokens
             self.output_tokens += outcome.output_tokens

@@ -60,7 +60,7 @@ A template may only use these. Anything outside them needs new engine code, by d
 
 | Block | Shape | Engine behaviour |
 |---|---|---|
-| **Calendar** | number of periods (e.g. weeks), steps per period (sessions / nights), labels, and a **fixed phase order**: period start (capacity disruptions, then pending-request triggers) → each step (obstacles → decisions, including endorsements → requests with `processed: each_step` → recording) → period end (requests with `processed: period_end` → checks) | Steps through time in exactly that order. For attendance it is today's order, which decides "pending at the checkpoint"; for curfew it means a permission is filed, consented to and decided before that night is recorded |
+| **Calendar** | number of periods (e.g. weeks), steps per period (sessions / nights), labels, and a **fixed phase order**: period start (capacity disruptions, then pending-request triggers) → each step (obstacles → decisions, including endorsements (the consenting people are asked again, in a short phase of their own, about requests filed in that step: added in L9d) → requests with `processed: each_step` → recording) → period end (requests with `processed: period_end` → checks) | Steps through time in exactly that order. For attendance it is today's order, which decides "pending at the checkpoint"; for curfew it means a permission is filed, consented to and decided before that night is recorded |
 | **Role** | id, label, `llm: bool` plus `rules: [recorder / queue_processor / checker]` (a role may be both, like faculty: an LLM that also records attendance), allowed action IDs | LLM roles decide when triggered, and their prompt lists only their allowed actions. Rules aren't actions: they run automatically at their phase and are never offered to an LLM |
 | **Person** | id, role, label; profile (description, goals, constraints) and numeric attributes, from the blueprint | Holds memory, strategy and attribute values |
 | **Attribute** | id, label, range, which role has it (e.g. `slack_min`) | Read by obstacle rules; changed only by an action with a `set_attribute` effect |
@@ -169,6 +169,7 @@ The template has its own pre-filled example policy (for example: "Residents must
 - **JSON and validation:** JSON in the prompt, Pydantic validation, one retry with the error included.
 - **Timeouts:** adaptive boto retries, `connect_timeout=5`. Agent calls use `read_timeout` 25 s and get up to 5 attempts. Each decision phase has a 40 s deadline; calls unfinished then are timeout "no actions".
 - **Blueprint calls:** no boto retries, at most 2 attempts per call, and all calls share one 55 s wall-clock budget (each attempt runs in a background thread and is abandoned at the deadline). A retry is skipped if under 15 s remain.
+- **Actions per decision:** 0 to 3, or one per request waiting for that person (to consent to, or to decide at an open slot) if more; the reply's token limit grows by 80 for each action above 3 (added in L9d, after a guardian with four requests could consent to only three).
 - **Run status:** `llm_errors` and `cap_hits` are counted; a run ends `degraded` when more than 10% of its decisions were error no-actions or the cap stopped it.
 - **Fake model:** `RULESTORM_MODEL=fake` is for automated tests only (`RULESTORM_ENV=test`).
 

@@ -62,6 +62,9 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
                      f"{', '.join(f'{cal.step_label} {n}' for n in c.uncovered_missed) or 'none'}")
     elif c.pending_requests:
         lines.append(f"Pending {request_word}s: {', '.join(c.pending_requests)}")
+    if c.awaiting_consent:
+        lines += ["", f"{request_word.capitalize()}s waiting for your consent:",
+                  *(request_line(template, r) for r in c.awaiting_consent)]
     if c.offered_requests:
         lines += ["", *decision_lines(template, c)]
     if c.last_outcomes:
@@ -73,7 +76,7 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
     actions = {a.id: a for a in template.actions}
     lines += [
         "",
-        "Actions you may propose (0 to 3; an empty list means you do nothing):",
+        f"Actions you may propose (0 to {c.action_limit()}; an empty list means you do nothing):",
         *(f"- {a}: params {action_params(actions[a])}" for a in sorted(role.actions)),
         "Each action is {\"action\": <name>, \"params\": {...}}. "
         "Give a short reason and your current strategy.",
@@ -87,15 +90,18 @@ def decision_lines(template: Template, c: DecisionContext) -> list[str]:
     cal, word = template.calendar, template.terms.get("request", "request")
     lines = [f"{word.capitalize()}s waiting for your decision now, first come first served "
              f"(you can decide at most {c.decision_capacity} now; the rest wait):"]
-    for r in c.offered_requests:
-        steps = ", ".join(f"{cal.step_label} {s}" for s in r["steps"])
-        reason = f'; reason: "{r["reason"]}"' if r["reason"] else ""
-        lines.append(f"- {r['request_id']} from {r['person']}: {steps} (filed {cal.period_label} "
-                     f"{r['filed_period']}){reason}")
+    lines += [request_line(template, r) for r in c.offered_requests]
     lines.append(f"Allowed outcomes: {', '.join(REQUEST_OUTCOMES)}. "
                  + (f"You may approve only some {cal.step_label}s of a {word}."
                     if c.partial_decisions else f"Approve or reject each {word} whole."))
     return lines
+
+
+def request_line(template: Template, r: dict[str, Any]) -> str:
+    cal = template.calendar
+    steps = ", ".join(f"{cal.step_label} {s}" for s in r["steps"])
+    reason = f'; reason: "{r["reason"]}"' if r["reason"] else ""
+    return f"- {r['request_id']} from {r['person']}: {steps} (filed {cal.period_label} {r['filed_period']}){reason}"
 
 
 def section(template: Template, name: str) -> list[Parameter]:

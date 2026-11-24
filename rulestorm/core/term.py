@@ -1,8 +1,8 @@
 """The term loop over a template's calendar, in the fixed phase order.
 
     period start: capacity disruptions, then pending-request triggers
-    each step:    obstacles and cancellations -> triggered people decide -> requests processed
-                  `each_step` -> the recorder rule records the duty
+    each step:    obstacles and cancellations -> triggered people decide -> consent for requests
+                  filed now -> requests processed `each_step` -> the recorder rule records the duty
     period end:   requests processed `period_end` -> checks (if due; a ladder every period)
 
 A queue decided by an LLM person is processed in its own short phase at its slot: the engine
@@ -51,6 +51,13 @@ class DecisionContext(BaseModel):
     offered_requests: list[dict[str, Any]] = Field(default_factory=list)
     decision_capacity: int | None = None
     partial_decisions: bool = False
+    # A consenting person: the requests waiting for their consent, in the same shape.
+    awaiting_consent: list[dict[str, Any]] = Field(default_factory=list)
+
+    def action_limit(self) -> int:
+        """Everyone may propose 3 actions; someone with more requests waiting for them (to consent
+        to, or to decide) may propose one per request, so none is left out for lack of room."""
+        return max(MIN_ACTIONS, len(self.offered_requests) + len(self.awaiting_consent))
 
 
 class PhaseDecision(BaseModel):
@@ -63,6 +70,8 @@ class PhaseDecision(BaseModel):
 
 # Given every triggered person's context for one phase, return their decisions.
 Decider = Callable[[list[DecisionContext]], list[PhaseDecision]]
+
+MIN_ACTIONS = 3  # what everyone may propose in one decision; a handler may need more (below)
 
 
 class Term:
@@ -139,6 +148,11 @@ class Term:
                 for person in event.payload["people"]:
                     self.notify("obstacle_hit", event, person)
         self.decision_phase(period, step)
+        # Requests filed just now reach their consenting people before this step's queues and its
+        # recording, so a request filed in advance can be consented to and decided in time.
+        endorsers = {p for p, r in e.role_of.items() if r in {rt.endorsed_by for rt in self.t.request_types}}
+        if endorsers & set(self.triggers):
+            self.decision_phase(period, step, only=endorsers)
         for rt in self.t.request_types:
             if rt.processed == "each_step":
                 self.process(rt.id, period, step)
@@ -272,9 +286,10 @@ class Term:
         for rt_id in sorted(handles & set(e.open_slots)):
             slot, rt = e.open_slots[rt_id], e.request_types[rt_id]
             capacity, partial = slot["capacity"], bool(e.value(rt.partial_at_decide_param))
-            offered += [{"request_id": r.request_id, "person": r.person, "steps": r.steps, "reason": r.reason,
-                         "filed_period": r.filed_period}
-                        for r in (e.requests[i] for i in slot["offered"] if i not in slot["decided"])]
+            offered += [_request_view(e.requests[i]) for i in slot["offered"] if i not in slot["decided"]]
+        consents = {rt.id for rt in self.t.request_types if rt.endorsed_by == role}
+        awaiting = [_request_view(r) for r in e.requests.values()
+                    if r.request_type in consents and r.status == "pending" and r.endorsement == "awaiting"]
         return DecisionContext(
             person=person, role=role, period=period, step=step,
             triggers=[e.event(t) for t in self.triggers[person]],
@@ -286,6 +301,7 @@ class Term:
             last_outcomes=self.outcomes_of(person),
             uncovered_missed=self.uncovered_missed(person),
             offered_requests=offered, decision_capacity=capacity, partial_decisions=partial,
+            awaiting_consent=awaiting,
         )
 
     def outcomes_of(self, person: str) -> list[str]:
@@ -317,6 +333,11 @@ class Term:
                            for r in e.requests.values()):
                     missed.append(step)
         return sorted(missed)
+
+
+def _request_view(r) -> dict[str, Any]:
+    return {"request_id": r.request_id, "person": r.person, "steps": r.steps, "reason": r.reason,
+            "filed_period": r.filed_period}
 
 
 def simulate(template: Template, values: dict[str, Any], decider: Decider,
