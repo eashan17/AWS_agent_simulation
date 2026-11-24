@@ -5,6 +5,10 @@
                   `each_step` -> the recorder rule records the duty
     period end:   requests processed `period_end` -> checks (if due; a ladder every period)
 
+A queue decided by an LLM person is processed in its own short phase at its slot: the engine
+offers the requests within capacity, only that queue's handled_by people are asked, and the
+slot closes before the term moves on (anything they didn't decide stays pending).
+
 Only LLM people decide, and only when one of the template's triggers names them. Every
 decision records `caused_by=[its triggers]`, and every action it produces records
 `caused_by=[decision]`. All contexts of one phase share the same snapshot and are sorted by
@@ -42,6 +46,11 @@ class DecisionContext(BaseModel):
     # missed occurrences that no request covers yet.
     last_outcomes: list[str] = Field(default_factory=list)
     uncovered_missed: list[int] = Field(default_factory=list)
+    # An LLM decider at an open slot: the requests offered to them (within capacity, first come
+    # first served), each {request_id, person, steps, reason, filed_period}, and how many.
+    offered_requests: list[dict[str, Any]] = Field(default_factory=list)
+    decision_capacity: int | None = None
+    partial_decisions: bool = False
 
 
 class PhaseDecision(BaseModel):
@@ -117,7 +126,7 @@ class Term:
 
         for rt in self.t.request_types:
             if rt.processed == "period_end":
-                e.process_queue(rt.id, period)
+                self.process(rt.id, period, None, last_step=step)
         for event in e.run_checks(period):
             if "outcome" in event.payload:
                 self.escalated(event)
@@ -132,7 +141,7 @@ class Term:
         self.decision_phase(period, step)
         for rt in self.t.request_types:
             if rt.processed == "each_step":
-                e.process_queue(rt.id, period, step)
+                self.process(rt.id, period, step)
         recorded = e.record_step(step)
 
         missed_by_duty: dict[str, list[Event]] = defaultdict(list)
@@ -149,6 +158,22 @@ class Term:
                                payload={"duty": duty, "people": [m.payload["person"] for m in missed]},
                                caused_by=[m.event_id for m in missed])
                 self.notify("many_missed", event)
+
+    def process(self, request_type: str, period: int, step: int | None, last_step: int | None = None) -> None:
+        """A rule decides at once; an LLM person decides in a phase of their own at the slot."""
+        e = self.engine
+        rt = e.request_types[request_type]
+        if rt.decided_by == "rule":
+            e.process_queue(request_type, period, step)
+            return
+        opened = e.open_decisions(request_type, period, step)
+        handlers = sorted(p for p, r in e.role_of.items() if r == rt.handled_by)
+        decisions: list[str] = []
+        if opened.payload["offered"]:
+            for person in handlers:
+                self.notify("decision_awaiting", opened, person)
+            decisions = self.decision_phase(period, step or last_step, only=set(handlers))
+        e.close_decisions(request_type, decisions)
 
     def escalated(self, event: Event) -> None:
         """A ladder outcome reaches the person and the roles its step lists (and the trigger's)."""
@@ -193,12 +218,17 @@ class Term:
 
     # --- decisions ----------------------------------------------------------------------------
 
-    def decision_phase(self, period: int, step: int) -> None:
+    def decision_phase(self, period: int, step: int, only: set[str] | None = None) -> list[str]:
+        """Everyone triggered decides (or, at an LLM decision slot, `only` its deciders; the
+        others keep their triggers for the next phase). Returns the decision event IDs."""
         e = self.engine
-        if not self.triggers:
-            return
-        contexts = [self.context(person, period, step) for person in sorted(self.triggers)]
-        self.triggers.clear()
+        people = sorted(p for p in self.triggers if only is None or p in only)
+        if not people:
+            return []
+        contexts = [self.context(person, period, step) for person in people]
+        for person in people:
+            del self.triggers[person]
+        decided = []
 
         by_person = {d.person: d for d in self.decider(contexts)}
         for context in contexts:
@@ -208,12 +238,14 @@ class Term:
                                        "reason": decision.reason, "strategy": decision.strategy,
                                        "no_action": not decision.proposals, "error": decision.error},
                               caused_by=[t.event_id for t in context.triggers])
+            decided.append(recorded.event_id)
             self.last_decision[context.person] = recorded.event_id
             for proposal in decision.proposals:
                 done = e.propose(context.person, proposal.action, period, caused_by=[recorded.event_id],
                                  **proposal.params)
                 self.message_received(done, period)
                 self.awaiting_consent(done)
+        return decided
 
     def message_received(self, event: Event, period: int) -> None:
         """A message to a role, or a response to a person, triggers who it is for at the next
@@ -236,6 +268,13 @@ class Term:
         counts = {c.id: e.count(c.id, person) for c in self.t.counts if e.owes(person, e.duties[c.duty])}
         own = [r.request_id for r in e.requests.values() if r.person == person and r.status == "pending"]
         handles = {rt.id for rt in self.t.request_types if rt.handled_by == role}
+        offered, capacity, partial = [], None, False
+        for rt_id in sorted(handles & set(e.open_slots)):
+            slot, rt = e.open_slots[rt_id], e.request_types[rt_id]
+            capacity, partial = slot["capacity"], bool(e.value(rt.partial_at_decide_param))
+            offered += [{"request_id": r.request_id, "person": r.person, "steps": r.steps, "reason": r.reason,
+                         "filed_period": r.filed_period}
+                        for r in (e.requests[i] for i in slot["offered"] if i not in slot["decided"])]
         return DecisionContext(
             person=person, role=role, period=period, step=step,
             triggers=[e.event(t) for t in self.triggers[person]],
@@ -246,6 +285,7 @@ class Term:
                                                  if r.status == "pending" and (r.request_type in handles or not handles)],
             last_outcomes=self.outcomes_of(person),
             uncovered_missed=self.uncovered_missed(person),
+            offered_requests=offered, decision_capacity=capacity, partial_decisions=partial,
         )
 
     def outcomes_of(self, person: str) -> list[str]:
@@ -348,7 +388,10 @@ def scripted_decider(template: Template) -> Decider:
             elif spec.type == "bool":
                 params[spec.name] = True
             elif spec.type == "request":
-                params[spec.name] = (context.pending_requests or ["R1"])[0]
+                offered = [r["request_id"] for r in context.offered_requests]
+                params[spec.name] = (offered or context.pending_requests or ["R1"])[0]
+            elif spec.type == "outcome":
+                params[spec.name] = "approved"
             elif spec.type == "str":
                 params[spec.name] = "dry run"
         return params

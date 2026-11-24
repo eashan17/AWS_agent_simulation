@@ -1,4 +1,5 @@
-"""Slice L9a: consent steps and escalation ladders in the general engine, on small fixed cases.
+"""Slices L9a and L9b: consent steps, escalation ladders and requests decided by an LLM person in
+the general engine, on small fixed cases.
 
 The test template is attendance with two additions (written here, not shipped): a consenting
 role whose consent every exception request needs, and, in the ladder cases, a tally of missed
@@ -239,3 +240,161 @@ def test_core_has_no_curfew_or_attendance_words() -> None:
         for words in (CURFEW_WORDS, ATTENDANCE_WORDS):
             found = re.findall(rf"\b({words})\b", text, flags=re.IGNORECASE)
             assert not found, (path.name, sorted(set(found)))
+
+
+# --- requests decided by an LLM person (slice L9b) ----------------------------------------------
+
+
+def raw_decider() -> dict:
+    """Attendance with the office as an LLM person deciding each queued request itself."""
+    raw = load_template("attendance").model_dump()
+    raw["id"] = "decider_test"
+    office = next(r for r in raw["roles"] if r["id"] == "attendance_admin")
+    office.update(llm=True, rules=[], actions=["decide_exception"])
+    raw["request_types"][0].update(decided_by="llm", decision_rule_param=None)
+    raw["actions"].append({
+        "id": "decide_exception", "label": "decide a queued request",
+        "params": [{"name": "request", "type": "request", "hint": "<request id>"},
+                   {"name": "decision", "type": "outcome", "hint": "<approved or rejected>"},
+                   {"name": "sessions", "type": "step_list", "required": False, "hint": "<sessions approved>"},
+                   {"name": "note", "type": "str", "required": False, "hint": "<why>"}],
+        "effects": [{"kind": "decide_request", "request_type": "exception"}]})
+    raw["triggers"].append({"kind": "decision_awaiting"})
+    return raw
+
+
+@pytest.fixture(scope="module")
+def decider() -> Template:
+    return Template.model_validate(raw_decider())
+
+
+def two_requests(t: Template, capacity: int = 1) -> Engine:
+    """working files for step 1, then commuter for step 2: R1 is first in the queue."""
+    e = Engine(t, {**VALUES, "office_capacity_per_week": capacity})
+    miss(e, "working", 1)
+    miss(e, "commuter", 2)
+    e.propose("working", "submit_exception_request", 1, sessions=[1], reason="shift")
+    e.propose("commuter", "submit_exception_request", 1, sessions=[2], reason="bus")
+    return e
+
+
+def test_the_decider_shape_passes_the_template_check_and_dry_run() -> None:
+    result = check_template(raw_decider())
+    assert result.valid, result.errors
+
+
+def test_an_llm_queue_needs_its_trigger_and_only_its_handler_may_decide() -> None:
+    raw = raw_decider()
+    raw["triggers"] = [t for t in raw["triggers"] if t["kind"] != "decision_awaiting"]
+    raw["roles"][0]["actions"].append("decide_exception")
+    errors = check_template(raw).errors
+    assert any("needs the decision_awaiting trigger" in e for e in errors), errors
+    assert any("only its handled_by role 'attendance_admin' may take it" in e for e in errors), errors
+
+
+def test_the_engine_enforces_capacity_order_and_the_allowed_outcomes(decider) -> None:
+    e = two_requests(decider, capacity=1)
+    outside = e.propose("attendance_admin", "decide_exception", 1, request="R1", decision="approved")
+    assert outside.payload["reason"] == "precondition: decision_slot"  # only at the queue's slot
+    opened = e.open_decisions("exception", 1)
+    assert opened.payload["offered"] == ["R1"] and opened.payload["held"] == ["R2"]  # first come, first served
+    beyond = e.propose("attendance_admin", "decide_exception", 1, request="R2", decision="approved")
+    assert beyond.type == "action_rejected" and beyond.payload["reason"] == "capacity"
+    assert beyond.payload["detail"] == ("only 1 exception requests can be decided this week, first come "
+                                        "first served; R2 is not among them")
+    odd = e.propose("attendance_admin", "decide_exception", 1, request="R1", decision="maybe later")
+    assert odd.payload["reason"] == "bad parameters: outcome"
+    assert odd.payload["detail"] == "decision must be one of approved, rejected, not 'maybe later'"
+    done = e.propose("attendance_admin", "decide_exception", 1, request="R1", decision="rejected", note="no proof")
+    assert done.type == "request_decided" and done.payload["rule"] == "llm" and done.payload["reason"] == "no proof"
+    assert opened.event_id in done.caused_by and e.requests["R1"].status == "rejected"
+    twice = e.propose("attendance_admin", "decide_exception", 1, request="R1", decision="approved")
+    assert twice.payload["reason"] == "precondition: awaiting_decision"
+    closed = e.close_decisions("exception")
+    assert closed.payload["processed"] == ["R1"] and closed.payload["pending"] == ["R2"]
+    held = e.events[-1]
+    assert held.type == "queue_over_capacity" and held.payload["held"] == ["R2"]
+    assert e.requests["R2"].status == "pending"
+
+
+def test_partial_approval_only_when_the_policy_allows_it(decider) -> None:
+    for partial, expected in ((False, "precondition: partial_at_decide"), (True, None)):
+        e = Engine(decider, {**VALUES, "office_capacity_per_week": 2, "partial_at_decide": partial})
+        miss(e, "working", 1)
+        miss(e, "working", 2)
+        e.propose("working", "submit_exception_request", 1, sessions=[1, 2], reason="shift")
+        e.open_decisions("exception", 1)
+        out = e.propose("attendance_admin", "decide_exception", 1, request="R1", decision="approved", sessions=[2])
+        if expected:
+            assert out.payload["reason"] == expected
+        else:
+            assert out.type == "request_decided" and e.requests["R1"].approved_steps == [2]
+            assert e.requests["R1"].rejected_steps == [1]
+
+
+def scripted_term(t: Template, office, capacity: int = 2) -> tuple[Engine, list[DecisionContext]]:
+    """Students file for each recorded absence (the L4 scripted people); the office decides by `office`."""
+    from test_core_term import scripted
+
+    seen: list[DecisionContext] = []
+
+    def decide(contexts):
+        seen.extend(contexts)
+        students = [scripted(c) for c in contexts if c.role != "attendance_admin"]
+        handlers = [c for c in contexts if c.role == "attendance_admin"]
+        return students + (office(handlers) if handlers else [])
+
+    engine = Term(t, {**VALUES, "office_capacity_per_week": capacity}, decide).run()
+    return engine, seen
+
+
+def test_the_deciders_prompt_lists_the_queued_requests_and_the_allowed_outcomes(decider) -> None:
+    from rulestorm.prompts import render_prompt
+
+    def approve_all(contexts):
+        return [PhaseDecision(person=c.person, reason="covered", proposals=[
+            Proposal(action="decide_exception", params={"request": r["request_id"], "decision": "approved"})
+            for r in c.offered_requests]) for c in contexts]
+
+    engine, seen = scripted_term(decider, approve_all, capacity=1)
+    first = next(c for c in seen if c.role == "attendance_admin")
+    assert [t.type for t in first.triggers] == ["decision_awaiting"]
+    prompt = render_prompt(decider, {**VALUES, "office_capacity_per_week": 1}, first)
+    offered = first.offered_requests[0]
+    assert ("Exception requests waiting for your decision now, first come first served (you can decide at most "
+            "1 now; the rest wait):") in prompt
+    assert f"- {offered['request_id']} from {offered['person']}: session {offered['steps'][0]} " in prompt
+    assert "Allowed outcomes: approved, rejected. Approve or reject each exception request whole." in prompt
+    assert "- decide_exception: params" in prompt
+    # the office decided, through its own decision, only requests it was offered
+    decided = [ev for ev in engine.events if ev.type == "request_decided"]
+    assert decided and all(engine.event(ev.caused_by[0]).actor == "attendance_admin" for ev in decided)
+    # only the office was asked at its slot: nobody else decided in that phase
+    for ev in engine.events:
+        if ev.type == "decision_awaiting" and ev.payload["offered"]:
+            phase = [d for d in engine.events if d.type == "decision" and ev.event_id in d.caused_by]
+            assert [d.actor for d in phase] == ["attendance_admin"]
+
+
+def test_a_failed_call_leaves_the_request_pending_as_no_action(decider) -> None:
+    from rulestorm.agents import Agents
+    from test_agents import NOTHING, RoutedModel
+
+    def reply(person, prompt):
+        if person == "attendance_admin":
+            raise TimeoutError("read timeout")
+        return NOTHING
+
+    agents = Agents(decider, {**VALUES, "office_capacity_per_week": 2}, model=RoutedModel(reply), cap=100)
+    engine, _ = scripted_term(decider, agents.decide_phase)
+    slot = next(ev for ev in engine.events if ev.type == "decision_awaiting" and ev.payload["offered"])
+    decision = next(ev for ev in engine.events if ev.type == "decision" and slot.event_id in ev.caused_by)
+    assert decision.actor == "attendance_admin" and decision.payload["no_action"]
+    assert "TimeoutError" in decision.payload["error"]
+    assert not any(ev.type == "request_decided" for ev in engine.events)
+    not_made = next(ev for ev in engine.events if ev.type == "decision_not_made")
+    assert not_made.payload["held"] == slot.payload["offered"] and decision.event_id in not_made.caused_by
+    assert all(engine.requests[r].status == "pending" for r in slot.payload["offered"])
+    # the check links the still-pending requests back through the failed decision
+    check = next(ev for ev in engine.events if ev.type == "check_evaluated" and ev.payload["pending_requests"])
+    assert any(engine.event(c).type == "decision_not_made" for c in check.caused_by)

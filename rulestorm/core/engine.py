@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from rulestorm.core.model import Action, Duty, Template
+from rulestorm.core.model import REQUEST_OUTCOMES, Action, Duty, Template
 
 Outcome = Literal["met", "missed"]
 NO_PLAN = "meet"  # a person with no plan is treated as planning to meet the duty
@@ -156,6 +156,9 @@ class Engine:
         self.obstacles_by_step: dict[int, list[Obstacle]] = {}
         self.processed_slots: set[tuple[str, int, int | None]] = set()
         self.ladder_reached: dict[tuple[str, str], int] = {}  # (check, person) -> ladder steps reached
+        # Request types decided by an LLM person: the slot open now (only while it is open can
+        # its offered requests be decided).
+        self.open_slots: dict[str, dict[str, Any]] = {}
 
     def _disruptions(self) -> list[DisruptionValue]:
         names = [p.name for p in self.t.parameters if p.type == "disruptions"]
@@ -268,6 +271,9 @@ class Engine:
                 raise Refused(f"bad parameters: unknown person {value!r}")
             if spec.type == "request" and (not isinstance(value, str) or value not in self.requests):
                 raise Refused(f"bad parameters: unknown {self.t.terms.get('request', 'request')} {value!r}")
+            if spec.type == "outcome" and value not in REQUEST_OUTCOMES:
+                raise Refused("bad parameters: outcome",
+                              f"{spec.name} must be one of {', '.join(REQUEST_OUTCOMES)}, not {value!r}")
             steps = value if spec.type == "step_list" else [value] if spec.type == "step" else []
             for step in steps:
                 if not 1 <= step <= self.total_steps:
@@ -308,7 +314,7 @@ class Engine:
                     raise Refused("precondition: awaiting_endorsement",
                                   f"{word} {request.request_id} is not waiting for consent")
             if effect.kind == "decide_request":
-                raise Refused(f"unsupported effect {effect.kind}")  # slice L9b
+                self._check_decision(action, effect.request_type, params, steps)
 
         events = [self._apply(effect, actor, target, action, period, steps, params, caused_by, dropped)
                   for effect in action.effects]
@@ -398,6 +404,18 @@ class Engine:
             return self._file_request(actor, effect.request_type, action, period, steps, params, caused_by, dropped)
         if kind == "endorse":
             return self._endorse(actor, action, period, params, caused_by)
+        if kind == "decide_request":
+            request_id = self._param_of_type(action, params, "request")
+            outcome = self._param_of_type(action, params, "outcome")
+            listed = self._param_of_type(action, params, "step_list")
+            reason = next((v for p in action.params if p.type == "str" and (v := params.get(p.name))), "")
+            slot = self.open_slots[effect.request_type]
+            event = self.decide_request(request_id, outcome, actor, period, "llm",
+                                        [*caused_by, slot["event"]],
+                                        sorted(listed) if outcome == "approved" and listed else None,
+                                        reason=reason[:300])
+            slot["decided"].append(request_id)
+            return event
         if kind == "correct_record":
             key = (effect.duty, target, step)
             before = self.records[key]
@@ -460,9 +478,36 @@ class Engine:
                                        key: {"from": "pending", "to": "rejected"}},
                          caused_by=causes)
 
+    def _check_decision(self, action: Action, request_type: str, params: dict[str, Any], listed: list[int]) -> None:
+        """An LLM decider may decide only requests offered at the slot open now (that is the
+        capacity, first come first served), each once, with an allowed outcome, and approve only
+        some steps of a request when the policy allows partial decisions."""
+        word = self.t.terms.get("request", "request")
+        slot = self.open_slots.get(request_type)
+        request = self.requests[self._param_of_type(action, params, "request")]
+        rt = self.request_types[request_type]
+        when = self.t.calendar.period_label if rt.processed == "period_end" else self.step_label
+        if request.request_type != request_type:
+            raise Refused("bad parameters: request type", f"{request.request_id} is not a {rt.label}")
+        if slot is None:
+            raise Refused("precondition: decision_slot", f"{word}s are decided only when their queue is processed")
+        if request.request_id in slot["decided"] or request.status != "pending":
+            raise Refused("precondition: awaiting_decision", f"{word} {request.request_id} is already decided")
+        if request.request_id not in slot["offered"]:
+            raise Refused("capacity", f"only {slot['capacity']} {word}s can be decided this {when}, first come "
+                                      f"first served; {request.request_id} is not among them")
+        outcome = self._param_of_type(action, params, "outcome")
+        if listed and outcome == "approved":
+            if not set(listed) <= set(request.steps):
+                raise Refused("bad parameters: steps",
+                              f"{request.request_id} covers only {self.step_label}s {request.steps}")
+            if set(listed) != set(request.steps) and not self.value(rt.partial_at_decide_param):
+                raise Refused("precondition: partial_at_decide",
+                              f"each {word} is approved or rejected whole under this policy")
+
     def decide_request(self, request_id: str, outcome: Literal["approved", "rejected"], actor: str,
                        period: int, rule: str, caused_by: list[str] | None = None,
-                       approved_steps: list[int] | None = None) -> Event:
+                       approved_steps: list[int] | None = None, reason: str = "") -> Event:
         """Sets a pending request's outcome (all its steps, or `approved_steps` only). Called by the
         queue processor rule or, from slice L9b, an LLM decider; the caller enforces capacity and order."""
         request = self.requests[request_id]
@@ -475,7 +520,8 @@ class Engine:
         return self.emit("request_decided", actor, period,
                          payload={"request_id": request_id, "decision": outcome, "rule": rule,
                                   "approved_steps": request.approved_steps, "rejected_steps": request.rejected_steps,
-                                  "waited_periods": period - request.filed_period},
+                                  "waited_periods": period - request.filed_period,
+                                  **({"reason": reason} if reason else {})},
                          state_change={f"request.{request_id}": {"from": "pending", "to": outcome}},
                          caused_by=[*(caused_by or []), request.filed_event])
 
@@ -486,21 +532,11 @@ class Engine:
         by the policy's decision rule; the rest wait, recorded as `queue_over_capacity`."""
         rt = self.request_types[request_type]
         if rt.decided_by != "rule":
-            raise NotImplementedError("LLM-decided requests arrive in slice L9b")
-        slot = (request_type, period, step)
-        if slot in self.processed_slots:
-            raise ValueError(f"queue '{request_type}' was already processed in this slot {slot[1:]}")
-        self.processed_slots.add(slot)
-        capacity, causes = self.value(rt.capacity_param), []
-        if (request_type, period) in self.capacity_override:
-            capacity, crunch = self.capacity_override[(request_type, period)]
-            causes = [crunch]
+            raise ValueError(f"queue '{request_type}' is decided by an LLM person: use open_decisions")
+        capacity, causes, processed, held = self._queue_slot(request_type, period, step)
         rule = self.value(rt.decision_rule_param)
         partial = self.value(rt.partial_at_decide_param)
         actor = self.person_with_role(rt.handled_by)
-        pending = [r for r in self.requests.values() if r.request_type == request_type and r.status == "pending"
-                   and r.endorsement in (None, "given")]  # a request awaiting consent isn't queued yet
-        processed, held = pending[:capacity], pending[capacity:]
         decisions = []
         for request in processed:
             good = [s for s in request.steps if self._qualifies(rule, request, s)]
@@ -523,6 +559,64 @@ class Engine:
                       caused_by=[event.event_id, *(r.filed_event for r in held)])
         return event
 
+    def _queue_slot(self, request_type: str, period: int, step: int | None):
+        """This slot's capacity (and the crunch that set it), and its queue split first come,
+        first served into the requests it can take and those that wait."""
+        slot = (request_type, period, step)
+        if slot in self.processed_slots:
+            raise ValueError(f"queue '{request_type}' was already processed in this slot {slot[1:]}")
+        self.processed_slots.add(slot)
+        capacity, causes = self.value(self.request_types[request_type].capacity_param), []
+        if (request_type, period) in self.capacity_override:
+            capacity, crunch = self.capacity_override[(request_type, period)]
+            causes = [crunch]
+        pending = [r for r in self.requests.values() if r.request_type == request_type and r.status == "pending"
+                   and r.endorsement in (None, "given")]  # a request awaiting consent isn't queued yet
+        return capacity, causes, pending[:capacity], pending[capacity:]
+
+    def open_decisions(self, request_type: str, period: int, step: int | None = None) -> Event:
+        """An LLM-decided queue's slot: offers the requests within capacity (first come, first
+        served) to the handled_by person, who decides them while the slot is open."""
+        rt = self.request_types[request_type]
+        if rt.decided_by != "llm":
+            raise ValueError(f"queue '{request_type}' is decided by rule: use process_queue")
+        capacity, causes, offered, held = self._queue_slot(request_type, period, step)
+        event = self.emit("decision_awaiting", self.person_with_role(rt.handled_by), period, step,
+                          payload={"request_type": request_type, "capacity": capacity,
+                                   "offered": [r.request_id for r in offered], "held": [r.request_id for r in held],
+                                   "outcomes": list(REQUEST_OUTCOMES),
+                                   "partial": bool(self.value(rt.partial_at_decide_param))},
+                          caused_by=[*causes, *(r.filed_event for r in offered)])
+        self.open_slots[request_type] = {"event": event.event_id, "capacity": capacity, "period": period,
+                                         "step": step, "offered": [r.request_id for r in offered],
+                                         "held": [r.request_id for r in held], "decided": []}
+        return event
+
+    def close_decisions(self, request_type: str, decisions: list[str] | None = None) -> Event:
+        """Ends the slot. Offered requests nobody decided (no action, or a failed call) stay
+        pending, recorded as `decision_not_made`; those beyond capacity as `queue_over_capacity`."""
+        slot = self.open_slots.pop(request_type)
+        rt = self.request_types[request_type]
+        actor, period, step = self.person_with_role(rt.handled_by), slot["period"], slot["step"]
+        decided = [e.event_id for e in self.events if e.type == "request_decided"
+                   and e.payload["request_id"] in slot["decided"] and slot["event"] in e.caused_by]
+        undecided = [r for r in slot["offered"] if r not in slot["decided"]]
+        event = self.emit("queue_processed", actor, period, step,
+                          payload={"request_type": request_type, "capacity": slot["capacity"],
+                                   "processed": slot["decided"], "pending": [*undecided, *slot["held"]],
+                                   "decided_by": "llm"},
+                          caused_by=[slot["event"], *decided])
+        if undecided:
+            self.emit("decision_not_made", actor, period, step,
+                      payload={"request_type": request_type, "held": undecided},
+                      caused_by=[event.event_id, *(decisions or []),
+                                 *(self.requests[r].filed_event for r in undecided)])
+        if slot["held"]:
+            self.emit("queue_over_capacity", actor, period, step,
+                      payload={"request_type": request_type, "capacity": slot["capacity"], "held": slot["held"]},
+                      caused_by=[event.event_id, *(self.requests[r].filed_event for r in slot["held"])])
+        return event
+
     def _qualifies(self, rule: str, request: Request, step: int) -> bool:
         duty = self.request_types[request.request_type].covers
         if rule == "approve_if_covered_missed":
@@ -538,7 +632,8 @@ class Engine:
         causes = []
         for request_id in request_ids:
             causes.append(self.requests[request_id].filed_event)
-            held = [e for e in self.events if e.type == "queue_over_capacity" and request_id in e.payload["held"]]
+            held = [e for e in self.events if e.type in ("queue_over_capacity", "decision_not_made")
+                    and request_id in e.payload["held"]]
             if held:
                 causes.append(held[-1].event_id)
         return causes

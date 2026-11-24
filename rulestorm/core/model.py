@@ -31,6 +31,9 @@ EffectKind = Literal[
 Precondition = Literal["own_occurrence", "occurrence_recorded", "occurrence_not_yet", "not_already_covered"]
 DecisionRule = Literal["approve_if_covered_missed", "approve_if_filed_before_occurrence", "approve_all"]
 RequestTiming = Literal["after_missed", "in_advance"]
+# What an LLM decider may decide for a request (with partial_at_decide, `approved` may list some
+# of its steps only).
+REQUEST_OUTCOMES = ("approved", "rejected")
 TriggerKind = Literal[
     "obstacle_hit",            # an obstacle hits a person
     "own_duty_missed",         # a person's own duty is recorded missed
@@ -108,8 +111,9 @@ class Duty(Block):
 class ActionParam(Block):
     name: str = Field(min_length=1)
     # step / step_list name the occurrence(s) an action is about; person names a target person;
-    # request names a filed request (endorse)
-    type: Literal["int", "str", "bool", "step", "step_list", "person", "request"]
+    # request names a filed request (endorse, decide_request); outcome is a request outcome from
+    # the fixed list (decide_request)
+    type: Literal["int", "str", "bool", "step", "step_list", "person", "request", "outcome"]
     required: bool = True
     hint: str = Field("", description="how the value is described to an LLM person, e.g. <current step>")
 
@@ -398,15 +402,24 @@ def _reference_errors(t: Template) -> list[str]:
             errors.append(f"{owner}: correct_record needs one person and one bool parameter")
         if "endorse" in kinds and (types["request"] != 1 or types["bool"] != 1):
             errors.append(f"{owner}: endorse needs one request and one bool parameter (consent given or not)")
+        if "decide_request" in kinds and (types["request"] != 1 or types["outcome"] != 1 or types["step_list"] > 1):
+            errors.append(f"{owner}: decide_request needs one request and one outcome parameter "
+                          "(and at most one step_list, the steps approved)")
         for effect in action.effects:
-            if effect.kind != "endorse" or effect.request_type not in request_types:
+            if effect.kind not in ("endorse", "decide_request") or effect.request_type not in request_types:
                 continue
             rt = next(r for r in t.request_types if r.id == effect.request_type)
             takers = sorted(r.id for r in t.roles if action.id in r.actions)
-            if rt.endorsed_by is None:
-                errors.append(f"{owner}: request type '{rt.id}' has no endorsed_by role to give consent")
-            elif takers != [rt.endorsed_by]:
-                errors.append(f"{owner}: only its endorsed_by role '{rt.endorsed_by}' may take it, "
+            if effect.kind == "endorse":
+                if rt.endorsed_by is None:
+                    errors.append(f"{owner}: request type '{rt.id}' has no endorsed_by role to give consent")
+                elif takers != [rt.endorsed_by]:
+                    errors.append(f"{owner}: only its endorsed_by role '{rt.endorsed_by}' may take it, "
+                                  f"not {', '.join(takers)}")
+            elif rt.decided_by != "llm":
+                errors.append(f"{owner}: request type '{rt.id}' is decided by rule, not by an LLM person")
+            elif takers != [rt.handled_by]:
+                errors.append(f"{owner}: only its handled_by role '{rt.handled_by}' may take it, "
                               f"not {', '.join(takers)}")
         if "set_attribute" in kinds:
             for effect in action.effects:
@@ -422,6 +435,17 @@ def _reference_errors(t: Template) -> list[str]:
             has_rule(owner, rt.handled_by, "queue_processor")
             if rt.decision_rule_param is None:
                 errors.append(f"{owner} is decided by rule, so it needs decision_rule_param")
+        else:
+            handler = next((r for r in t.roles if r.id == rt.handled_by), None)
+            if handler is not None and not handler.llm:
+                errors.append(f"{owner} is decided by an LLM person, so its handled_by role must be an LLM role")
+            deciders = [a.id for a in t.actions if any(e.kind == "decide_request" and e.request_type == rt.id
+                                                       for e in a.effects)]
+            if not deciders:
+                errors.append(f"{owner} is decided by an LLM person, so it needs an action with decide_request")
+            if not any(tr.kind == "decision_awaiting" for tr in t.triggers):
+                errors.append(f"{owner} is decided by an LLM person, so the template needs the "
+                              "decision_awaiting trigger (or nobody is asked)")
         for name in (rt.decision_rule_param, rt.timing_param, rt.partial_at_submit_param, rt.partial_at_decide_param):
             param(owner, name, {"policy"})
         param(owner, rt.capacity_param, {"environment"})

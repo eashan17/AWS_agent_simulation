@@ -15,7 +15,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from rulestorm.core.model import Action, Parameter, Template
+from rulestorm.core.model import REQUEST_OUTCOMES, Action, Parameter, Template
 from rulestorm.core.term import DecisionContext
 
 
@@ -62,6 +62,8 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
                      f"{', '.join(f'{cal.step_label} {n}' for n in c.uncovered_missed) or 'none'}")
     elif c.pending_requests:
         lines.append(f"Pending {request_word}s: {', '.join(c.pending_requests)}")
+    if c.offered_requests:
+        lines += ["", *decision_lines(template, c)]
     if c.last_outcomes:
         lines += ["", "What happened to the actions of your last decision:", *(f"- {o}" for o in c.last_outcomes)]
     if memory:
@@ -77,6 +79,23 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
         "Give a short reason and your current strategy.",
     ]
     return "\n".join(lines)
+
+
+def decision_lines(template: Template, c: DecisionContext) -> list[str]:
+    """For an LLM decider at an open slot: the requests offered (within capacity, first come
+    first served) and the outcomes the engine accepts."""
+    cal, word = template.calendar, template.terms.get("request", "request")
+    lines = [f"{word.capitalize()}s waiting for your decision now, first come first served "
+             f"(you can decide at most {c.decision_capacity} now; the rest wait):"]
+    for r in c.offered_requests:
+        steps = ", ".join(f"{cal.step_label} {s}" for s in r["steps"])
+        reason = f'; reason: "{r["reason"]}"' if r["reason"] else ""
+        lines.append(f"- {r['request_id']} from {r['person']}: {steps} (filed {cal.period_label} "
+                     f"{r['filed_period']}){reason}")
+    lines.append(f"Allowed outcomes: {', '.join(REQUEST_OUTCOMES)}. "
+                 + (f"You may approve only some {cal.step_label}s of a {word}."
+                    if c.partial_decisions else f"Approve or reject each {word} whole."))
+    return lines
 
 
 def section(template: Template, name: str) -> list[Parameter]:
