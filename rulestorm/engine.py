@@ -78,6 +78,10 @@ class Engine:
         self.completed: set[int] = set()
         self.requests: dict[str, ExceptionRequest] = {}  # insertion order = FIFO order
         self.queue_weeks: set[int] = set()
+        # Set by the term loop (rulestorm/simulation.py); unused by fixed cases.
+        self.current_session: int | None = None
+        self.travel_buffer: dict[str, int] = {}
+        self.intents: dict[tuple[str, int], tuple[str, str]] = {}  # (student, session) -> (choice, event_id)
 
     # --- event log ------------------------------------------------------------------------
 
@@ -106,6 +110,17 @@ class Engine:
 
     def event(self, event_id: str) -> Event:
         return self.events[int(event_id.removeprefix("E-")) - 1]
+
+    def ancestors(self, event_id: str) -> list[str]:
+        """Every event reachable by following `caused_by` links back, nearest first."""
+        seen: list[str] = []
+        frontier = list(self.event(event_id).caused_by)
+        while frontier:
+            current = frontier.pop(0)
+            if current not in seen:
+                seen.append(current)
+                frontier.extend(self.event(current).caused_by)
+        return seen
 
     # --- actions: agents propose, the engine validates and commits --------------------------
 
@@ -152,7 +167,47 @@ class Engine:
         if session_week(session) > week:
             raise ActionRefused(f"session {session} has not happened by week {week}")
 
-    def _do_record_attendance(self, actor, week, caused_by, student: str, session: int, present: bool) -> Event:
+    def _check_own_intent(self, student: str, session: int) -> None:
+        self._check_student(student)
+        if self.current_session is not None and session != self.current_session:
+            raise ActionRefused(f"only the current session ({self.current_session}) can be decided")
+        if (student, session) in self.present or session in self.cancelled:
+            raise ActionRefused(f"session {session} is already recorded or cancelled")
+
+    def _do_attend(self, actor, week, caused_by, session: int, travel_buffer_min: int | None = None) -> Event:
+        """A student plans to attend; optionally with a new travel buffer (a strategy change)."""
+        self._check_own_intent(actor, session)
+        state_change = {f"intent.{actor}.{session}": {"from": None, "to": "attend"}}
+        if travel_buffer_min is not None:
+            if not 0 <= travel_buffer_min <= 180:
+                raise ActionRefused("travel_buffer_min must be 0-180")
+            state_change[f"travel_buffer.{actor}"] = {"from": self.travel_buffer.get(actor), "to": travel_buffer_min}
+            self.travel_buffer[actor] = travel_buffer_min
+        event = self.emit("student_plans_attend", actor, week, payload={"session": session},
+                          state_change=state_change, caused_by=caused_by)
+        self.intents[(actor, session)] = ("attend", event.event_id)
+        return event
+
+    def _do_skip(self, actor, week, caused_by, session: int) -> Event:
+        self._check_own_intent(actor, session)
+        event = self.emit("student_plans_skip", actor, week, payload={"session": session},
+                          state_change={f"intent.{actor}.{session}": {"from": None, "to": "skip"}},
+                          caused_by=caused_by)
+        self.intents[(actor, session)] = ("skip", event.event_id)
+        return event
+
+    def _do_ask_advisor(self, actor, week, caused_by, message: str = "") -> Event:
+        self._check_student(actor)
+        return self.emit("advisor_asked", actor, week, payload={"message": message[:300]}, caused_by=caused_by)
+
+    def _do_advise_student(self, actor, week, caused_by, student: str, advice: str = "") -> Event:
+        self._check_student(student)
+        return self.emit("advice_given", actor, week, payload={"student": student, "advice": advice[:300]},
+                         caused_by=caused_by)
+
+    def _do_record_attendance(
+        self, actor, week, caused_by, student: str, session: int, present: bool, late: bool = False
+    ) -> Event:
         self._check_student(student)
         self._check_session(session, week)
         if session in self.cancelled:
@@ -165,7 +220,7 @@ class Engine:
             "attendance_recorded",
             actor,
             week,
-            payload={"student": student, "session": session},
+            payload={"student": student, "session": session, "late": late},
             state_change={f"attendance.{student}.{session}": {"from": None, "to": _mark(present)}},
             caused_by=caused_by,
         )
@@ -306,8 +361,18 @@ class Engine:
                 "eligible": eligible,
             },
             state_change={f"eligibility.{student}": {"from": None, "to": "eligible" if eligible else "not eligible"}},
-            caused_by=[*caused_by, *(self.requests[r].submitted_event for r in now.pending)],
+            caused_by=[*caused_by, *self.pending_causes(now.pending)],
         )
+
+    def pending_causes(self, request_ids: list[str]) -> list[str]:
+        """For each pending request: its submission, and the latest queue event that held it."""
+        causes = []
+        for request_id in request_ids:
+            causes.append(self.requests[request_id].submitted_event)
+            held = [e for e in self.events if e.type == "queue_over_capacity" and request_id in e.payload["held"]]
+            if held:
+                causes.append(held[-1].event_id)
+        return causes
 
     # --- calculations ----------------------------------------------------------------------
 

@@ -29,6 +29,11 @@ AGENT_ROLES: dict[str, str] = {
     "exam_officer": "exam_officer",
 }
 
+# Decision triggers (docs/ARCHITECTURE.md, Decision triggers): general mechanics, not scenario values.
+NEAR_THRESHOLD_POINTS = 5  # attendance within this many points of the threshold
+PENDING_TRIGGER_WEEKS = 1  # a request pending this long triggers the student and the advisor
+FALLING_ATTENDANCE_ABSENT = 2  # this many students absent in one session triggers the faculty
+
 # What each role may do. The engine refuses any other action with reason "permission":
 # students cannot edit attendance or approve their own exceptions.
 ROLE_ACTIONS: dict[str, frozenset[str]] = {
