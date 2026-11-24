@@ -687,7 +687,9 @@ class Engine:
         """Checks due this period, for everyone the count applies to. A single-threshold check runs
         once, in its period, and records passed or failed. A ladder runs every period and records
         each step a person newly reaches, in ladder order (a jump of several steps records each);
-        its `passed` is false only at the last step. Each records both figures (as is, and if
+        its `passed` is false only at the last step. A ladder period with no new step records the
+        person's standing only if a request for an occurrence already recorded is still pending.
+        Each records both figures (as is, and if
         pending requests were approved), its count's missed records and the pending requests."""
         events = []
         for check in self.t.checks:
@@ -718,7 +720,20 @@ class Engine:
                                                     self.value(step.threshold_param), i < len(steps) - 1,
                                                     extra, change))
                 self.ladder_reached[(check.id, person)] = max(before, top)
+                if top <= before and self._overdue(now.pending, duty):
+                    # No new step, but a request for an occurrence already recorded is still
+                    # waiting: record where they stand, so the wait is visible at the check. It has
+                    # no `outcome`, so it notifies nobody.
+                    standing = steps[before - 1].outcome if before else None
+                    extra = {"standing": standing, "ladder_step": before, "ladder_steps": len(steps)}
+                    threshold = self.value(steps[min(before, len(steps) - 1)].threshold_param)
+                    events.append(self._check_event(check, duty, person, period, now, threshold,
+                                                    before < len(steps), extra, None))
         return events
+
+    def _overdue(self, request_ids: list[str], duty) -> bool:
+        """Is any of these pending requests for an occurrence already recorded?"""
+        return any(s in self.recorded_steps[duty.id] for r in request_ids for s in self.requests[r].steps)
 
     def _check_event(self, check, duty, person, period, now, threshold, passed, extra, change) -> Event:
         if_approved = self.count(check.count, person, assume_pending_approved=True)
@@ -735,7 +750,7 @@ class Engine:
                      "count_if_pending_approved": if_approved.model_dump(),
                      "comparison": check.comparison, "threshold": threshold,
                      "pending_requests": now.pending, "passed": passed, **extra},
-            state_change={f"check.{check.id}.{person}": change},
+            state_change={f"check.{check.id}.{person}": change} if change else {},
             caused_by=[*missed, *self.pending_causes(now.pending)])
 
     # --- the recorder rule --------------------------------------------------------------------

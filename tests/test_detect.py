@@ -131,3 +131,51 @@ def test_the_findings_route_finds_a_stored_runs_problems_once(tmp_path, l4) -> N
         assert http.get("/api/runs/L-missing/findings").status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+# --- (4) a curfew ladder: a request still waiting with no new penalty step is seen at the check --
+
+def curfew_decider(contexts: list[DecisionContext]) -> list[PhaseDecision]:
+    """The researcher, hit by a lab overrun, asks for late entry; the guardian consents; the warden
+    takes no action, so the request is still waiting after the night is recorded."""
+    out = []
+    for c in contexts:
+        proposals = []
+        for t in c.triggers:
+            if t.type == "obstacle" and c.person == "researcher":
+                proposals.append(Proposal(action="request_late_entry", params={"nights": [c.step], "reason": "lab"}))
+            elif t.type == "request_filed" and c.role == "guardian":
+                proposals.append(Proposal(action="give_consent", params={"request": t.payload["request_id"],
+                                                                         "consent": True}))
+        out.append(PhaseDecision(person=c.person, proposals=proposals, reason="scripted"))
+    return out
+
+
+def test_a_curfew_request_still_waiting_before_any_penalty_is_a_bottleneck_finding() -> None:
+    import json
+    from pathlib import Path
+
+    curfew = load_template("hostel_curfew")
+    values = json.loads((Path(__file__).parent / "cases" / "curfew_r2.json").read_text(encoding="utf-8"))["values"]
+    values = {**values, "disruptions": [{"kind": "lab_overrun", "period": 1, "steps": [2], "people": ["researcher"],
+                                         "delay": 60, "description": "experiment overruns"}]}
+    engine = simulate(curfew, values, curfew_decider)
+    events = events_of(engine)
+    by_id = {e["event_id"]: e for e in events}
+    checks = [e for e in events if e["type"] == "check_evaluated"]
+    assert checks and {e["payload"]["person"] for e in checks} == {"researcher"}  # only the one who waits
+    first = checks[0]["payload"]
+    assert checks[0]["period"] == 1 and first["standing"] is None and first["ladder_step"] == 0
+    assert "outcome" not in first and first["count"]["value"] == 1 and first["pending_requests"] == ["R1"]
+    # where they stand notifies nobody: no decision is ever caused by a check event
+    assert not [e for e in events if e["type"] == "decision" and set(e["caused_by"]) & {c["event_id"] for c in checks}]
+    findings = detect("L-curfew", events, curfew)
+    assert [(f.kind, f.person, f.period) for f in findings] == [("pending_at_check", "researcher", 1)]
+    f = findings[0]
+    assert f.title == "Late-entry backlog leaves residents facing curfew penalties" and f.outcome == "in good standing"
+    types = [by_id[i]["type"] for i in f.chain]
+    assert types[0] == "obstacle" and types[-1] == "check_evaluated"
+    assert {"request_filed", "decision_not_made"} <= set(types)  # filed, then nobody decided it
+    # (the late night itself links to the check through the pending request, which was filed
+    # before that night was recorded, so it is not on the chain: IDEAS, linking a record to the
+    # request that covers it)

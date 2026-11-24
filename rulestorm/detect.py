@@ -119,7 +119,7 @@ def _about_someone_else(event: dict[str, Any], person: str, subjects: set[str], 
 
 
 def _outcome(template: Template, payload: dict[str, Any]) -> str:
-    if payload.get("outcome"):
-        return payload["outcome"]
+    if payload.get("outcome") or payload.get("standing"):  # a ladder step reached, or where they stand
+        return payload.get("outcome") or payload["standing"]
     key = "check_passed" if payload["passed"] else "check_failed"
     return template.terms.get(key, "passed" if payload["passed"] else "failed")
