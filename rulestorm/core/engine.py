@@ -44,6 +44,23 @@ class Request(BaseModel):
     filed_event: str
     status: Literal["pending", "approved", "rejected"] = "pending"
     decided_period: int | None = None
+    recorded_at_filing: list[int] = Field(default_factory=list, description="covered steps already recorded")
+    dropped: list[dict[str, Any]] = Field(default_factory=list, description="partial_at_submit: steps left out")
+    approved_steps: list[int] = Field(default_factory=list)  # partial_at_decide: may be a subset
+    rejected_steps: list[int] = Field(default_factory=list)
+
+
+class DisruptionValue(BaseModel):
+    """One disruption from the blueprint. `kind` is a disruption ID from the template;
+    `steps` are positions within the period (1 = its first step)."""
+
+    kind: str
+    period: int = Field(ge=1)
+    steps: list[int] = Field(default_factory=list)
+    people: list[str] = Field(default_factory=list)
+    delay: int = Field(0, ge=0)
+    capacity: int | None = Field(None, ge=0)
+    description: str = ""
 
 
 class Obstacle(BaseModel):
@@ -105,6 +122,32 @@ class Engine:
                     self.attributes[(person, p.attribute)] = value
         # Set by the term loop; while set, plans can be made only for this step.
         self.current_step: int | None = None
+        self.disruption_kinds = {d.id: d for d in template.disruptions}
+        self.disruptions = self._disruptions()
+        self.capacity_override: dict[tuple[str, int], tuple[int, str]] = {}  # (request type, period) -> (cap, event)
+        self.obstacles_by_step: dict[int, list[Obstacle]] = {}
+        self.processed_slots: set[tuple[str, int, int | None]] = set()
+
+    def _disruptions(self) -> list[DisruptionValue]:
+        names = [p.name for p in self.t.parameters if p.type == "disruptions"]
+        found = [DisruptionValue.model_validate(d) for name in names for d in self.values.get(name) or []]
+        spp = self.t.calendar.steps_per_period
+        for d in found:
+            kind = self.disruption_kinds.get(d.kind)
+            if kind is None:
+                raise ValueError(f"unknown disruption kind '{d.kind}'")
+            if d.period > self.t.calendar.periods or any(not 1 <= s <= spp for s in d.steps):
+                raise ValueError(f"disruption '{d.kind}' is outside the calendar")
+            unknown = [p for p in d.people if p not in self.role_of]
+            if unknown:
+                raise ValueError(f"disruption '{d.kind}' names unknown people: {', '.join(unknown)}")
+            if kind.kind == "obstacle" and (not d.steps or not d.people or d.delay <= 0):
+                raise ValueError(f"obstacle '{d.kind}' needs steps, people and a delay above 0")
+            if kind.kind == "cancellation" and not d.steps:
+                raise ValueError(f"cancellation '{d.kind}' needs steps")
+            if kind.kind == "capacity" and d.capacity is None:
+                raise ValueError(f"capacity disruption '{d.kind}' needs a capacity")
+        return found
 
     # --- values and the calendar ----------------------------------------------------------
 
@@ -201,20 +244,18 @@ class Engine:
         target = self._param_of_type(action, params, "person") or actor
 
         # Every check runs before anything is committed, so a refusal changes nothing.
+        dropped: list[dict[str, Any]] = []
         for effect in action.effects:
             duty = self._duty_of(effect)
             if effect.kind in ("plan_meet", "plan_miss") and self.current_step is not None:
                 if any(s != self.current_step for s in steps):
                     raise Refused("precondition: current_step")
-            if duty is not None:
+            if effect.kind == "file_request":
+                steps, dropped = self._request_steps(actor, action, effect.request_type, duty, steps)
+            elif duty is not None:
                 for precondition in action.preconditions:
                     for step in steps:
                         self._precondition(precondition, actor, target, duty, step, effect.request_type)
-            if effect.kind == "file_request":
-                timing = self.value(self.request_types[effect.request_type].timing_param)
-                need = "occurrence_recorded" if timing == "after_missed" else "occurrence_not_yet"
-                for step in steps:
-                    self._precondition(need, actor, actor, duty, step, effect.request_type)
             if effect.kind == "set_attribute" and params.get(effect.attribute) is not None:
                 attribute = next(a for a in self.t.attributes if a.id == effect.attribute)
                 if not attribute.min <= params[effect.attribute] <= attribute.max:
@@ -222,10 +263,30 @@ class Engine:
             if effect.kind in ("endorse", "decide_request"):
                 raise Refused(f"unsupported effect {effect.kind}")  # slices L9a-L9b
 
-        events = [self._apply(effect, actor, target, action, period, steps, params, caused_by)
+        events = [self._apply(effect, actor, target, action, period, steps, params, caused_by, dropped)
                   for effect in action.effects]
         events = [e for e in events if e is not None]
         return events[0]
+
+    def _request_steps(self, actor: str, action: Action, request_type: str, duty: Duty,
+                       steps: list[int]) -> tuple[list[int], list[dict[str, Any]]]:
+        """Checks each covered step against the action's preconditions and the policy's request
+        timing. With partial_at_submit the failing steps are dropped and the rest kept;
+        without it, one failing step refuses the whole request."""
+        rt = self.request_types[request_type]
+        timing = self.value(rt.timing_param)
+        needed = [*action.preconditions, "occurrence_recorded" if timing == "after_missed" else "occurrence_not_yet"]
+        kept, dropped = [], []
+        for step in steps:
+            try:
+                for precondition in needed:
+                    self._precondition(precondition, actor, actor, duty, step, request_type)
+                kept.append(step)
+            except Refused as exc:
+                dropped.append({"step": step, "reason": str(exc)})
+        if dropped and (not kept or not self.value(rt.partial_at_submit_param)):
+            raise Refused(dropped[0]["reason"])
+        return kept, dropped
 
     def _duty_of(self, effect) -> Duty | None:
         if effect.duty:
@@ -248,11 +309,11 @@ class Engine:
             raise Refused("already covered" if name == "not_already_covered" else f"precondition: {name}")
 
     def _covered(self, person: str, step: int, request_type: str | None) -> bool:
-        return any(r.person == person and r.status != "rejected" and step in r.steps
+        return any(r.person == person and step in (r.steps if r.status == "pending" else r.approved_steps)
                    and (request_type is None or r.request_type == request_type)
                    for r in self.requests.values())
 
-    def _apply(self, effect, actor, target, action, period, steps, params, caused_by) -> Event | None:
+    def _apply(self, effect, actor, target, action, period, steps, params, caused_by, dropped) -> Event | None:
         kind = effect.kind
         step = steps[0] if steps else None
         if kind in ("plan_meet", "plan_miss"):
@@ -275,7 +336,7 @@ class Engine:
             self.attributes[key] = new
             return event
         if kind == "file_request":
-            return self._file_request(actor, effect.request_type, action, period, steps, params, caused_by)
+            return self._file_request(actor, effect.request_type, action, period, steps, params, caused_by, dropped)
         if kind == "correct_record":
             key = (effect.duty, target, step)
             before = self.records[key]
@@ -299,41 +360,187 @@ class Engine:
         return self.emit("message_sent" if kind == "message" else "response_given", actor, period,
                          self.current_step, payload={"action": action.id, "to": to, **text}, caused_by=caused_by)
 
-    def _file_request(self, actor, request_type, action, period, steps, params, caused_by) -> Event:
+    def _file_request(self, actor, request_type, action, period, steps, params, caused_by, dropped) -> Event:
         rt = self.request_types[request_type]
         request_id = f"R{len(self.requests) + 1}"
         covered = [self.record_event[(rt.covers, actor, s)] for s in steps if (rt.covers, actor, s) in self.record_event]
         reason = next((v for p in action.params if p.type == "str" and (v := params.get(p.name))), "")
         event = self.emit("request_filed", actor, period, self.current_step,
                           payload={"request_id": request_id, "request_type": request_type, "person": actor,
-                                   "steps": sorted(steps), "reason": reason[:300]},
+                                   "steps": sorted(steps), "dropped": dropped, "reason": reason[:300]},
                           state_change={f"request.{request_id}": {"from": None, "to": "pending"}},
                           caused_by=[*caused_by, *covered])
-        self.requests[request_id] = Request(request_id=request_id, request_type=request_type, person=actor,
-                                            steps=sorted(steps), reason=reason[:300], filed_period=period,
-                                            filed_event=event.event_id)
+        self.requests[request_id] = Request(
+            request_id=request_id, request_type=request_type, person=actor, steps=sorted(steps),
+            reason=reason[:300], filed_period=period, filed_event=event.event_id, dropped=dropped,
+            recorded_at_filing=[s for s in steps if s in self.recorded_steps[rt.covers]])
         return event
 
     def decide_request(self, request_id: str, outcome: Literal["approved", "rejected"], actor: str,
-                       period: int, rule: str, caused_by: list[str] | None = None) -> Event:
-        """Sets a pending request's outcome. Called by the queue processor rule (slice L3) or an
-        LLM decider (slice L9b); the caller enforces capacity and order."""
+                       period: int, rule: str, caused_by: list[str] | None = None,
+                       approved_steps: list[int] | None = None) -> Event:
+        """Sets a pending request's outcome (all its steps, or `approved_steps` only). Called by the
+        queue processor rule or, from slice L9b, an LLM decider; the caller enforces capacity and order."""
         request = self.requests[request_id]
         if request.status != "pending":
             raise ValueError(f"request {request_id} is already {request.status}")
         request.status, request.decided_period = outcome, period
+        approved = sorted(request.steps if approved_steps is None else approved_steps) if outcome == "approved" else []
+        request.approved_steps = approved
+        request.rejected_steps = [s for s in request.steps if s not in approved]
         return self.emit("request_decided", actor, period,
                          payload={"request_id": request_id, "decision": outcome, "rule": rule,
+                                  "approved_steps": request.approved_steps, "rejected_steps": request.rejected_steps,
                                   "waited_periods": period - request.filed_period},
                          state_change={f"request.{request_id}": {"from": "pending", "to": outcome}},
                          caused_by=[*(caused_by or []), request.filed_event])
+
+    # --- the queue processor rule -------------------------------------------------------------
+
+    def process_queue(self, request_type: str, period: int, step: int | None = None) -> Event:
+        """First come, first served within this slot's capacity. Each processed request is decided
+        by the policy's decision rule; the rest wait, recorded as `queue_over_capacity`."""
+        rt = self.request_types[request_type]
+        if rt.decided_by != "rule":
+            raise NotImplementedError("LLM-decided requests arrive in slice L9b")
+        slot = (request_type, period, step)
+        if slot in self.processed_slots:
+            raise ValueError(f"queue '{request_type}' was already processed in this slot {slot[1:]}")
+        self.processed_slots.add(slot)
+        capacity, causes = self.value(rt.capacity_param), []
+        if (request_type, period) in self.capacity_override:
+            capacity, crunch = self.capacity_override[(request_type, period)]
+            causes = [crunch]
+        rule = self.value(rt.decision_rule_param)
+        partial = self.value(rt.partial_at_decide_param)
+        actor = self.person_with_role(rt.handled_by)
+        pending = [r for r in self.requests.values() if r.request_type == request_type and r.status == "pending"]
+        processed, held = pending[:capacity], pending[capacity:]
+        decisions = []
+        for request in processed:
+            good = [s for s in request.steps if self._qualifies(rule, request, s)]
+            if len(good) == len(request.steps):
+                decided = self.decide_request(request.request_id, "approved", actor, period, rule, causes)
+            elif good and partial:
+                decided = self.decide_request(request.request_id, "approved", actor, period, rule, causes, good)
+            else:
+                decided = self.decide_request(request.request_id, "rejected", actor, period, rule, causes)
+            decisions.append(decided.event_id)
+        event = self.emit("queue_processed", actor, period, step,
+                          payload={"request_type": request_type, "capacity": capacity,
+                                   "processed": [r.request_id for r in processed],
+                                   "pending": [r.request_id for r in held]},
+                          caused_by=[*causes, *decisions])
+        if held:
+            self.emit("queue_over_capacity", actor, period, step,
+                      payload={"request_type": request_type, "capacity": capacity,
+                               "held": [r.request_id for r in held]},
+                      caused_by=[event.event_id, *(r.filed_event for r in held)])
+        return event
+
+    def _qualifies(self, rule: str, request: Request, step: int) -> bool:
+        duty = self.request_types[request.request_type].covers
+        if rule == "approve_if_covered_missed":
+            return self.records.get((duty, request.person, step)) == "missed"
+        if rule == "approve_if_filed_before_occurrence":
+            return step not in request.recorded_at_filing
+        if rule == "approve_all":
+            return True
+        raise ValueError(f"unknown decision rule '{rule}'")
+
+    def pending_causes(self, request_ids: list[str]) -> list[str]:
+        """For each pending request: its filing, and the latest queue event that held it."""
+        causes = []
+        for request_id in request_ids:
+            causes.append(self.requests[request_id].filed_event)
+            held = [e for e in self.events if e.type == "queue_over_capacity" and request_id in e.payload["held"]]
+            if held:
+                causes.append(held[-1].event_id)
+        return causes
+
+    # --- disruptions ----------------------------------------------------------------------------
+
+    def start_period(self, period: int) -> list[Event]:
+        """Capacity disruptions for this period: they change that period's queue processing."""
+        events = []
+        for d in self.disruptions:
+            kind = self.disruption_kinds[d.kind]
+            if kind.kind != "capacity" or d.period != period:
+                continue
+            base = self.value(self.request_types[kind.request_type].capacity_param)
+            event = self.emit("capacity_changed", "environment", period,
+                              payload={"disruption": d.kind, "description": d.description,
+                                       "request_type": kind.request_type, "capacity": d.capacity},
+                              state_change={f"capacity.{kind.request_type}.{period}": {"from": base, "to": d.capacity}})
+            self.capacity_override[(kind.request_type, period)] = (d.capacity, event.event_id)
+            events.append(event)
+        return events
+
+    def start_step(self, step: int) -> list[Event]:
+        """Obstacles and cancellations listed for this step. Obstacles are applied when the step
+        is recorded; the term loop uses the returned events to trigger the people hit."""
+        period = self.period_of(step)
+        position = (step - 1) % self.t.calendar.steps_per_period + 1
+        events = []
+        for d in self.disruptions:
+            kind = self.disruption_kinds[d.kind]
+            if d.period != period or position not in d.steps:
+                continue
+            if kind.kind == "obstacle":
+                event = self.emit("obstacle", "environment", period, step,
+                                  payload={"disruption": d.kind, "description": d.description, "duty": kind.duty,
+                                           "delay": d.delay, "people": d.people})
+                self.obstacles_by_step.setdefault(step, []).append(
+                    Obstacle(event_id=event.event_id, duty=kind.duty, people=d.people, delay=d.delay))
+                events.append(event)
+            elif kind.kind == "cancellation" and step not in self.recorded_steps[kind.duty] | self.cancelled[kind.duty]:
+                self.cancelled[kind.duty].add(step)
+                events.append(self.emit(
+                    "occurrence_cancelled", "environment", period, step,
+                    payload={"disruption": d.kind, "description": d.description, "duty": kind.duty},
+                    state_change={f"occurrence.{kind.duty}.{step}": {"from": "scheduled", "to": "cancelled"}}))
+        return events
+
+    # --- the checker rule -----------------------------------------------------------------------
+
+    def run_checks(self, period: int) -> list[Event]:
+        """Single-threshold checks due this period, for everyone the count applies to. Each records
+        both figures (as is, and if pending requests were approved), its count's missed records and
+        the pending requests."""
+        events = []
+        for check in self.t.checks:
+            if check.ladder is not None:
+                raise NotImplementedError("escalation ladders arrive in slice L9a")
+            if self.value(check.at_param) != period:
+                continue
+            threshold = self.value(check.threshold_param)
+            duty = self.duties[self.counts[check.count].duty]
+            for person in self.people_owing(duty):
+                now = self.count(check.count, person)
+                if_approved = self.count(check.count, person, assume_pending_approved=True)
+                passed = now.value is not None and (
+                    now.value >= threshold if check.comparison == ">=" else now.value <= threshold)
+                missed = [self.record_event[(duty.id, person, s)] for s in sorted(self.recorded_steps[duty.id])
+                          if self.records.get((duty.id, person, s)) == "missed"
+                          and not any(s in self.requests[r].approved_steps for r in now.approved)]
+                events.append(self.emit(
+                    "check_evaluated", self.person_with_role(check.run_by), period,
+                    payload={"check": check.id, "person": person, "count": now.model_dump(),
+                             "count_if_pending_approved": if_approved.model_dump(),
+                             "comparison": check.comparison, "threshold": threshold,
+                             "pending_requests": now.pending, "passed": passed},
+                    state_change={f"check.{check.id}.{person}": {"from": None, "to": "passed" if passed else "failed"}},
+                    caused_by=[*missed, *self.pending_causes(now.pending)]))
+        return events
 
     # --- the recorder rule --------------------------------------------------------------------
 
     def record_step(self, step: int, obstacles: list[Obstacle] | None = None) -> list[Event]:
         """Records met or missed for everyone who owes each duty at this step, applying their plan
-        and any obstacle (a delay above the person's obstacle attribute means missed)."""
+        and any obstacle (a delay above the person's obstacle attribute means missed): those that
+        `start_step` applied for this step, plus any passed in."""
         period = self.period_of(step)
+        obstacles = [*self.obstacles_by_step.get(step, []), *(obstacles or [])]
         recorded = []
         for duty in self.t.duties:
             if step in self.cancelled[duty.id] or step in self.recorded_steps[duty.id]:
@@ -346,7 +553,7 @@ class Engine:
                 outcome: Outcome = "met" if plan == "meet" else "missed"
                 hit_by = None
                 if outcome == "met" and duty.obstacle_attribute:
-                    for o in obstacles or []:
+                    for o in obstacles:
                         if o.duty == duty.id and person in o.people:
                             slack = self.attributes.get((person, duty.obstacle_attribute))
                             if slack is None:
@@ -373,9 +580,11 @@ class Engine:
         c = self.counts[count_id]
         own = [r for r in self.requests.values() if r.person == person
                and self.request_types[r.request_type].covers == c.duty]
-        excused_status = {"approved", "pending"} if assume_pending_approved else {"approved"}
-        excused = ({s for r in own if r.status in excused_status for s in r.steps}
-                   if "approved_request" in c.exclude else set())
+        excused: set[int] = set()
+        if "approved_request" in c.exclude:
+            excused = {s for r in own if r.status == "approved" for s in r.approved_steps}
+            if assume_pending_approved:
+                excused |= {s for r in own if r.status == "pending" for s in r.steps}
         cancelled = self.cancelled[c.duty] if "cancelled" in c.exclude else set()
         due = sorted(s for s in self.recorded_steps[c.duty] | cancelled
                      if s not in cancelled and s not in excused and (c.duty, person, s) in self.records)
@@ -428,14 +637,18 @@ def run_case(case: dict[str, Any], template: Template) -> list[str]:
     last_period = template.calendar.periods
     now = engine.calculate(count_id, focus, last_period)
     projected = engine.calculate(count_id, focus, last_period, assume_pending_approved=True)
+    queue = engine.process_queue(case.get("request_type", template.request_types[0].id), last_period)
     check = case["permission_check"]
     refused = engine.propose(check["actor"], check["action"], last_period, **check["params"])
 
     word = template.terms.get("requests", "requests")
     n_pending = len(now.payload["pending"])
+    q = queue.payload
     return [
         f"{CountResult(**_result(now)).text()} ({n_pending} {word} pending)  [{now.event_id}]",
         f"{CountResult(**_result(projected)).text()} (if {n_pending} approved)  [{projected.event_id}]",
+        f"queue FIFO: {','.join(q['processed']) or 'none'} processed, {','.join(q['pending']) or 'none'} pending "
+        f"(capacity {q['capacity']})  [{queue.event_id}]",
         f"{check['role']} {check['action']}: "
         + (f"rejected ({refused.payload['reason']})" if refused.type == "action_rejected" else "allowed")
         + f"  [{refused.event_id}]",
