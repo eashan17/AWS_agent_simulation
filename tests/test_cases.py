@@ -141,6 +141,9 @@ def test_four_requests_in_one_night_are_consented_and_decided_before_it_is_recor
     rid = next(f.payload["request_id"] for f in filed if f.payload["person"] == "intern")
     later = [p for p in agents.prompts["intern"] if "(week 3, night 13)" in p]
     assert later and f"Your late-entry requests (each covers only the nights listed): {rid} (night 12): approved" in later[0]
+    # and it says which night it is now, and which night each event is about
+    assert "Now: night 13 (week 3). Each event below names the night it is about, if it is about one." in later[0]
+    assert re.search(r"^- E-\d{4} week 3 night 12 duty_recorded:", later[0], flags=re.MULTILINE)
 
 
 def test_the_action_limit_follows_the_requests_waiting(curfew) -> None:

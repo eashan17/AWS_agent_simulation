@@ -26,6 +26,8 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
         f"You are the {c.role} agent `{c.person}` in {terms.get('setting', 'a simulated term')} "
         f"({cal.period_label} {c.period}, {cal.step_label} {c.step}). "
         "Decide what you do now, as this person would.",
+        f"Now: {cal.step_label} {c.step} ({cal.period_label} {c.period}). Each event below names the "
+        f"{cal.step_label} it is about, if it is about one.",
         "",
         "Who you are (from the approved blueprint):",
     ]
@@ -47,7 +49,9 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
     lines += [
         "",
         "What just happened (the events that triggered you):",
-        *(f"- {t.event_id} {cal.period_label} {t.period} {t.type}: {json.dumps(t.payload, ensure_ascii=False)}"
+        *(f"- {t.event_id} {cal.period_label} {t.period}"
+          + (f" {cal.step_label} {t.step}" if t.step is not None else "")
+          + f" {t.type}: {json.dumps(t.payload, ensure_ascii=False)}"
           + (f" changed {json.dumps(t.state_change, ensure_ascii=False)}" if t.state_change else "")
           for t in c.triggers),
     ]
