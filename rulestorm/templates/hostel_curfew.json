@@ -1,0 +1,287 @@
+{
+  "id": "hostel_curfew",
+  "version": 1,
+  "title": "Hostel curfew and late entry",
+  "scope": "Hostel curfew rules for college residents, with late-entry permission that needs a guardian's consent and the warden's decision, and penalties that escalate with repeated late returns.",
+  "terms": {
+    "period": "week",
+    "step": "night",
+    "duty_met": "back on time",
+    "duty_missed": "late",
+    "request": "late-entry request",
+    "requests": "late-entry requests",
+    "count": "late returns",
+    "check_passed": "in good standing",
+    "check_failed": "disciplinary",
+    "setting": "a simulated term in a college hostel",
+    "missed_plural": "late returns"
+  },
+  "example_input": {
+    "text": "Residents must return to the hostel by 10 pm. Late entry needs prior permission from the warden, with the guardian's consent. Repeated late returns lead to a warning, then the guardian is informed, then disciplinary action.",
+    "purpose": "Keep residents safe at night, make the hostel accountable to families and keep late entry predictable for security.",
+    "environment": "One college hostel over a term of weekday nights. Residents include a student with an evening internship, a research student whose lab work runs late, an athlete who trains in the evening, a student whose family lives in the city, a first-year student new to the city and a student who volunteers at a night shelter. A guardian speaks for the families, a warden decides late-entry requests, security records returns at the gate and a discipline committee applies the penalties. Traffic and lab work sometimes make residents late, and the warden is sometimes away."
+  },
+  "calendar": {
+    "periods": 8,
+    "steps_per_period": 5,
+    "period_label": "week",
+    "step_label": "night"
+  },
+  "roles": [
+    {
+      "id": "resident",
+      "label": "Resident",
+      "llm": true,
+      "actions": ["return_on_time", "stay_out_late", "request_late_entry"]
+    },
+    {
+      "id": "guardian",
+      "label": "Guardian",
+      "llm": true,
+      "actions": ["give_consent", "talk_to_resident"]
+    },
+    {
+      "id": "warden",
+      "label": "Warden",
+      "llm": true,
+      "actions": ["decide_permission"]
+    },
+    {
+      "id": "security",
+      "label": "Security",
+      "llm": false,
+      "rules": ["recorder"]
+    },
+    {
+      "id": "discipline_committee",
+      "label": "Discipline committee",
+      "llm": false,
+      "rules": ["checker"]
+    }
+  ],
+  "people": [
+    {"id": "intern", "role": "resident", "label": "has an evening internship off campus"},
+    {"id": "researcher", "role": "resident", "label": "research student whose lab work runs late"},
+    {"id": "athlete", "role": "resident", "label": "trains with a team in the evening"},
+    {"id": "local", "role": "resident", "label": "family lives in the city"},
+    {"id": "fresher", "role": "resident", "label": "first-year student, new to the city"},
+    {"id": "volunteer", "role": "resident", "label": "volunteers at a night shelter"},
+    {"id": "guardian", "role": "guardian", "label": "speaks for the residents' families"},
+    {"id": "warden", "role": "warden", "label": "runs the hostel and decides late entry"},
+    {"id": "security", "role": "security", "label": "records returns at the gate"},
+    {"id": "discipline_committee", "role": "discipline_committee", "label": "applies the late-return penalties"}
+  ],
+  "attributes": [
+    {"id": "return_slack_min", "label": "slack (minutes between your usual return and curfew)", "role": "resident", "min": 0, "max": 120}
+  ],
+  "duties": [
+    {"id": "return_by_curfew", "label": "be back by curfew", "owed_by": "resident", "recorded_by": "security", "obstacle_attribute": "return_slack_min"}
+  ],
+  "actions": [
+    {
+      "id": "return_on_time",
+      "label": "plan to be back by curfew tonight",
+      "params": [{"name": "night", "type": "step", "hint": "<tonight's night>"}],
+      "effects": [{"kind": "plan_meet", "duty": "return_by_curfew"}],
+      "preconditions": ["own_occurrence", "occurrence_not_yet"]
+    },
+    {
+      "id": "stay_out_late",
+      "label": "plan to come back after curfew tonight",
+      "params": [{"name": "night", "type": "step", "hint": "<tonight's night>"}],
+      "effects": [{"kind": "plan_miss", "duty": "return_by_curfew"}],
+      "preconditions": ["own_occurrence", "occurrence_not_yet"]
+    },
+    {
+      "id": "request_late_entry",
+      "label": "ask for permission to come back after curfew",
+      "params": [
+        {"name": "nights", "type": "step_list", "hint": "[<tonight or later nights>]"},
+        {"name": "reason", "type": "str", "hint": "\"<short>\""}
+      ],
+      "effects": [{"kind": "file_request", "request_type": "late_entry"}],
+      "preconditions": ["own_occurrence", "not_already_covered"]
+    },
+    {
+      "id": "give_consent",
+      "label": "give or refuse the family's consent to a late-entry request",
+      "params": [
+        {"name": "request", "type": "request", "hint": "\"<request id>\""},
+        {"name": "consent", "type": "bool", "hint": "true|false"},
+        {"name": "note", "type": "str", "required": false, "hint": "\"<short>\""}
+      ],
+      "effects": [{"kind": "endorse", "request_type": "late_entry"}]
+    },
+    {
+      "id": "talk_to_resident",
+      "label": "talk to a resident",
+      "params": [
+        {"name": "resident", "type": "person", "hint": "\"<resident>\""},
+        {"name": "message", "type": "str", "hint": "\"<short>\""}
+      ],
+      "effects": [{"kind": "respond"}]
+    },
+    {
+      "id": "decide_permission",
+      "label": "decide a late-entry request",
+      "params": [
+        {"name": "request", "type": "request", "hint": "\"<request id>\""},
+        {"name": "decision", "type": "outcome", "hint": "\"approved\"|\"rejected\""},
+        {"name": "nights", "type": "step_list", "required": false, "hint": "[<the nights you approve, if only some>]"},
+        {"name": "note", "type": "str", "required": false, "hint": "\"<short>\""}
+      ],
+      "effects": [{"kind": "decide_request", "request_type": "late_entry"}]
+    }
+  ],
+  "request_types": [
+    {
+      "id": "late_entry",
+      "label": "late-entry request",
+      "filed_by": "resident",
+      "covers": "return_by_curfew",
+      "handled_by": "warden",
+      "processed": "each_step",
+      "endorsed_by": "guardian",
+      "decided_by": "llm",
+      "timing_param": "request_timing",
+      "partial_at_submit_param": "partial_at_submit",
+      "partial_at_decide_param": "partial_at_decide",
+      "capacity_param": "warden_capacity_per_night"
+    }
+  ],
+  "counts": [
+    {"id": "late_returns", "label": "late returns", "kind": "tally", "duty": "return_by_curfew", "exclude": ["approved_request"]}
+  ],
+  "checks": [
+    {
+      "id": "late_return_ladder",
+      "label": "late-return penalties",
+      "run_by": "discipline_committee",
+      "count": "late_returns",
+      "comparison": "<",
+      "ladder": [
+        {"threshold_param": "warning_at", "outcome": "warning"},
+        {"threshold_param": "inform_guardian_at", "outcome": "guardian informed", "notifies": ["guardian"]},
+        {"threshold_param": "disciplinary_at", "outcome": "disciplinary", "notifies": ["warden"]}
+      ]
+    }
+  ],
+  "disruptions": [
+    {"id": "transport_delay", "label": "transport delay", "kind": "obstacle", "duty": "return_by_curfew"},
+    {"id": "lab_overrun", "label": "lab session overrun", "kind": "obstacle", "duty": "return_by_curfew"},
+    {"id": "warden_away", "label": "warden away", "kind": "capacity", "request_type": "late_entry"}
+  ],
+  "triggers": [
+    {"kind": "obstacle_hit"},
+    {"kind": "own_duty_missed"},
+    {"kind": "endorsement_awaiting"},
+    {"kind": "decision_awaiting"},
+    {"kind": "escalation_outcome"},
+    {"kind": "message_received"}
+  ],
+  "parameters": [
+    {
+      "name": "curfew_time",
+      "kind": "policy",
+      "type": "choice",
+      "description": "the time residents must be back by",
+      "choices": ["20:00", "21:00", "22:00", "23:00"],
+      "prompt_section": "policy",
+      "sentence": "Residents must be back by {value}."
+    },
+    {
+      "name": "warning_at",
+      "kind": "policy",
+      "type": "int",
+      "description": "late returns in the term that bring a written warning",
+      "min": 1,
+      "max": 20,
+      "prompt_section": "policy",
+      "sentence": "{value} late returns in the term: a written warning"
+    },
+    {
+      "name": "inform_guardian_at",
+      "kind": "policy",
+      "type": "int",
+      "description": "late returns in the term after which the guardian is informed",
+      "min": 1,
+      "max": 20,
+      "prompt_section": "policy",
+      "sentence": "{value} late returns: the guardian is informed"
+    },
+    {
+      "name": "disciplinary_at",
+      "kind": "policy",
+      "type": "int",
+      "description": "late returns in the term that lead to disciplinary action",
+      "min": 1,
+      "max": 20,
+      "prompt_section": "policy",
+      "sentence": "{value} late returns: disciplinary action"
+    },
+    {
+      "name": "request_timing",
+      "kind": "policy",
+      "type": "choice",
+      "description": "when a late-entry request can be filed",
+      "choices": ["in_advance", "after_missed"],
+      "prompt_section": "request_rules",
+      "sentences": {
+        "in_advance": "Late entry must be requested before the night; a night already recorded can't be covered.",
+        "after_missed": "Late entry can be asked for only after the late return has been recorded."
+      }
+    },
+    {
+      "name": "partial_at_submit",
+      "kind": "policy",
+      "type": "bool",
+      "description": "whether a request that lists some nights it can't cover keeps the valid ones",
+      "prompt_section": "request_rules",
+      "sentences": {
+        "true": "A request that lists some nights it can't cover keeps the ones it can.",
+        "false": "A request that lists any night it can't cover is refused whole."
+      }
+    },
+    {
+      "name": "partial_at_decide",
+      "kind": "policy",
+      "type": "bool",
+      "description": "whether the warden can approve some nights of a request",
+      "prompt_section": "request_rules",
+      "sentences": {
+        "true": "The warden can approve some nights of a request and refuse the rest.",
+        "false": "The warden approves or refuses each request whole."
+      }
+    },
+    {
+      "name": "warden_capacity_per_night",
+      "kind": "environment",
+      "type": "int",
+      "description": "how many late-entry requests the warden can decide each night",
+      "min": 0,
+      "max": 20,
+      "sentence": "The warden can decide {value} late-entry requests a night."
+    },
+    {
+      "name": "disruptions",
+      "kind": "environment",
+      "type": "disruptions",
+      "description": "what goes wrong during the term"
+    },
+    {
+      "name": "profiles",
+      "kind": "people",
+      "type": "profiles",
+      "description": "who each person is and what they want"
+    },
+    {
+      "name": "slack_min",
+      "kind": "people",
+      "type": "attribute",
+      "description": "each resident's minutes between their usual return and curfew; a longer delay makes them late",
+      "attribute": "return_slack_min",
+      "sentence": "slack before curfew: {value} min (a longer delay makes you late)",
+      "prompt_section": "you"
+    }
+  ]
+}

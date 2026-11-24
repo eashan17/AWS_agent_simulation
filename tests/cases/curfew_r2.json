@@ -1,0 +1,34 @@
+{
+  "description": "Test-only case. The research student's lab overruns on nights 2 and 4 (60 min, slack 15): two late returns, a warning in week 1. In week 2 they ask in advance for nights 8 and 9: the guardian consents to night 8 and the warden approves it (excused), but the guardian refuses night 9 and they come back late anyway: the guardian is informed. A lab overrun on night 12 brings disciplinary action in week 3. A resident trying to decide a request is refused.",
+  "template": "hostel_curfew",
+  "focus_person": "researcher",
+  "outcomes": {
+    "researcher": {"missed": [8, 9]}
+  },
+  "requests": [
+    {"person": "researcher", "steps": [8], "reason": "lab experiment runs late", "consent": true, "decision": "approved"},
+    {"person": "researcher", "steps": [9], "reason": "lab group dinner", "consent": false}
+  ],
+  "values": {
+    "curfew_time": "22:00",
+    "warning_at": 2,
+    "inform_guardian_at": 3,
+    "disciplinary_at": 4,
+    "request_timing": "in_advance",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "warden_capacity_per_night": 1,
+    "slack_min": {"intern": 20, "researcher": 15, "athlete": 30, "local": 45, "fresher": 10, "volunteer": 25},
+    "disruptions": [
+      {"kind": "lab_overrun", "period": 1, "steps": [2, 4], "people": ["researcher"], "delay": 60, "description": "experiment overruns"},
+      {"kind": "lab_overrun", "period": 3, "steps": [2], "people": ["researcher"], "delay": 60, "description": "experiment overruns"}
+    ]
+  },
+  "report": ["ladder", "failed_check", "permission"],
+  "permission_check": {
+    "role": "resident",
+    "actor": "intern",
+    "action": "decide_permission",
+    "params": {"request": "R1", "decision": "approved"}
+  }
+}

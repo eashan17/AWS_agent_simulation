@@ -110,22 +110,21 @@ Each file carries `id`, `version`, a scope line, terms (display words), building
 | People | 8: 4 students + 4 staff | **10: 6 residents + guardian + warden + security + discipline committee** |
 | Calendar | 10 weeks × 2 sessions | **8 weeks × 5 nights** |
 | Who records the duty | faculty (an LLM that also records) | **security (rule only)** |
-| Request flow | student → office queue → rule decides | **resident → guardian must consent (LLM) → warden decides each request (LLM, within a weekly capacity)**, filed in advance, decided before the night |
+| Request flow | student → office queue → rule decides | **resident → guardian must consent (LLM) → warden decides each request (LLM, within a nightly capacity)**, filed in advance, decided before the night |
 | Count and rule | attendance % (rate) ≥ threshold, once, at the checkpoint | **late returns (tally), checked every week on an escalation ladder:** warning → guardian informed → disciplinary |
 | Who reacts to outcomes | advisor (near the threshold) | **guardian, triggered by "guardian informed"** |
 | Disruptions | transport, office capacity | transport delay and lab overrun (obstacles, on chosen nights), warden away (capacity) |
 
 Residents' labels and profiles come from the blueprint. Its actions:
 - residents: `return_on_time` (`plan_meet`), `stay_out_late` (`plan_miss`), `request_late_entry` (`file_request`, in advance);
-- guardian: `give_consent` (`endorse`) and `talk_to_resident` (`message`);
-- warden: `decide_permission` (`decide_request`);
-- welfare officer: `advise_resident` (`respond`).
+- guardian: `give_consent` (`endorse`) and `talk_to_resident` (`respond`);
+- warden: `decide_permission` (`decide_request`), at the queue's nightly slot.
 
-Security, the warden's queue slot and the discipline committee are rules.
+Security (the recorder) and the discipline committee (the checker) are rules. Built in L9c: there is no welfare officer, so the cast stays at 10, and the guardian's `talk_to_resident` carries advice.
 
 Parameter kinds:
 - `policy`: curfew time, the ladder thresholds, request timing, partial acceptance;
-- `environment`: the warden's weekly capacity, disruptions;
+- `environment`: the warden's capacity per night (a queue processed each step has its capacity per slot), disruptions;
 - `people`: the 10 profiles and each resident's `slack_min`.
 
 The template has its own pre-filled example policy (for example: "Residents must return by 10 pm; late entry needs prior permission from the warden with guardian consent; repeated late returns lead to disciplinary action").

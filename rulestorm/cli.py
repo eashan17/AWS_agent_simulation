@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from rulestorm.policy import (
@@ -17,6 +18,8 @@ from rulestorm.store import Store
 
 
 def main(argv: list[str] | None = None) -> None:
+    if hasattr(sys.stdout, "reconfigure"):  # Windows consoles default to cp1252, which can't print "→" or "…"
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(prog="rulestorm")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("hello", help="print hello")
@@ -112,7 +115,7 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(1)
     elif args.command == "engine" and args.engine_command == "check":
         case = json.loads(Path(args.case).read_text(encoding="utf-8"))
-        from rulestorm.core.engine import run_case
+        from rulestorm.core.cases import run_case
         from rulestorm.core.model import load_template
 
         lines = run_case(case, load_template(case["template"]))

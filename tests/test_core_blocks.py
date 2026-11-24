@@ -231,12 +231,10 @@ ATTENDANCE_WORDS = r"attendance|exam|students?|absent|absences?|sessions?|weeks?
 
 
 def test_core_has_no_curfew_or_attendance_words() -> None:
-    """The case-file loader (`run_case`) keeps attendance keys until slice L9c makes the case
-    format general and moves it to core/cases.py; nothing else in core may name a template's world."""
+    """Nothing in core/ names a template's world, the case runner (core/cases.py) included."""
+    assert (CORE / "cases.py").exists()
     for path in sorted(CORE.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        if path.name == "engine.py":
-            text = text.split("def run_case(", 1)[0]
         for words in (CURFEW_WORDS, ATTENDANCE_WORDS):
             found = re.findall(rf"\b({words})\b", text, flags=re.IGNORECASE)
             assert not found, (path.name, sorted(set(found)))

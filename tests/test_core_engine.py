@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from rulestorm.core.engine import Engine, Obstacle, run_case
+from rulestorm.core.cases import run_case
+from rulestorm.core.engine import Engine, Obstacle
 from rulestorm.core.model import TEMPLATES_DIR, Template, load_template
 
 CASE = Path(__file__).parent / "cases" / "student_c.json"

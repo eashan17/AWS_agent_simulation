@@ -517,7 +517,7 @@ class Engine:
         approved = sorted(request.steps if approved_steps is None else approved_steps) if outcome == "approved" else []
         request.approved_steps = approved
         request.rejected_steps = [s for s in request.steps if s not in approved]
-        return self.emit("request_decided", actor, period,
+        return self.emit("request_decided", actor, period, self.current_step,
                          payload={"request_id": request_id, "decision": outcome, "rule": rule,
                                   "approved_steps": request.approved_steps, "rejected_steps": request.rejected_steps,
                                   "waited_periods": period - request.filed_period,
@@ -806,56 +806,3 @@ class Engine:
         return self.emit("count_calculated", "engine", period,
                          payload={"assume_pending_approved": assume_pending_approved, **result.model_dump()},
                          caused_by=[self.requests[r].filed_event for r in self.count(count_id, person).pending])
-
-
-# --- fixed test cases (`cli engine check --case <file> --core`) ----------------------------------
-
-
-def run_case(case: dict[str, Any], template: Template) -> list[str]:
-    """Plays a fixed case through the general engine; returns the lines to print, each with its event ID."""
-    engine = Engine(template, case["values"])
-    count_id = case["count"]
-    focus = case["focus_student"]
-    absent = {person: set(steps) for person, steps in case["absent"].items()}
-    requests = sorted(case["requests"], key=lambda r: min(r["sessions"]))
-    plan_actions = {e.kind: a.id for a in template.actions for e in a.effects if e.kind in ("plan_meet", "plan_miss")}
-    file_action = next(a.id for a in template.actions if any(e.kind == "file_request" for e in a.effects))
-    step_param = lambda action_id: next(p.name for p in engine.actions[action_id].params  # noqa: E731
-                                        if p.type in ("step", "step_list"))
-
-    for step in range(1, engine.total_steps + 1):
-        engine.current_step = step
-        for person, steps in absent.items():
-            if step in steps:
-                engine.propose(person, plan_actions["plan_miss"], engine.period_of(step),
-                               **{step_param(plan_actions["plan_miss"]): step})
-        engine.record_step(step)
-        engine.current_step = None
-        for request in requests:
-            if max(request["sessions"]) == step:
-                engine.propose(request["student"], file_action, engine.period_of(step),
-                               **{step_param(file_action): request["sessions"], "reason": request["reason"]})
-
-    last_period = template.calendar.periods
-    now = engine.calculate(count_id, focus, last_period)
-    projected = engine.calculate(count_id, focus, last_period, assume_pending_approved=True)
-    queue = engine.process_queue(case.get("request_type", template.request_types[0].id), last_period)
-    check = case["permission_check"]
-    refused = engine.propose(check["actor"], check["action"], last_period, **check["params"])
-
-    word = template.terms.get("requests", "requests")
-    n_pending = len(now.payload["pending"])
-    q = queue.payload
-    return [
-        f"{CountResult(**_result(now)).text()} ({n_pending} {word} pending)  [{now.event_id}]",
-        f"{CountResult(**_result(projected)).text()} (if {n_pending} approved)  [{projected.event_id}]",
-        f"queue FIFO: {','.join(q['processed']) or 'none'} processed, {','.join(q['pending']) or 'none'} pending "
-        f"(capacity {q['capacity']})  [{queue.event_id}]",
-        f"{check['role']} {check['action']}: "
-        + (f"rejected ({refused.payload['reason']})" if refused.type == "action_rejected" else "allowed")
-        + f"  [{refused.event_id}]",
-    ]
-
-
-def _result(event: Event) -> dict[str, Any]:
-    return {k: event.payload[k] for k in CountResult.model_fields}

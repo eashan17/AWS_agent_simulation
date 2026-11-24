@@ -1,29 +1,30 @@
 {
-  "description": "Test-only case. Student C (working, fixed hours) attends 15 of 20 sessions; R1 and R2 cover two of C's absences, R3 covers one of the commuter's. The admin can process 2 requests in week 10.",
-  "threshold_pct": 80,
-  "students": ["commuter", "resident", "working", "family"],
-  "focus_student": "working",
-  "absent": {
-    "working": [5, 6, 11, 14, 17],
-    "commuter": [7]
+  "description": "Test-only case. Student C (working, fixed hours) attends 15 of 20 sessions; R1 and R2 cover two of C's absences, R3 covers one of the commuter's. The office processes nothing until week 10, when it can process 2 requests.",
+  "template": "attendance",
+  "focus_person": "working",
+  "count": "attendance_pct",
+  "outcomes": {
+    "working": {"missed": [5, 6, 11, 14, 17]},
+    "commuter": {"missed": [7]}
   },
   "requests": [
-    {"student": "working", "sessions": [5], "reason": "work shift moved"},
-    {"student": "working", "sessions": [6], "reason": "work shift moved"},
-    {"student": "commuter", "sessions": [7], "reason": "transport disruption"}
+    {"person": "working", "steps": [5], "reason": "work shift moved"},
+    {"person": "working", "steps": [6], "reason": "work shift moved"},
+    {"person": "commuter", "steps": [7], "reason": "transport disruption"}
   ],
-  "admin_capacity": 2,
-  "template": "attendance",
-  "count": "attendance_pct",
   "values": {
     "threshold_pct": 80,
     "request_timing": "after_missed",
     "partial_at_submit": false,
     "partial_at_decide": false,
     "decision_rule": "approve_if_covered_missed",
-    "office_capacity_per_week": 2,
-    "checkpoint_week": 10
+    "office_capacity_per_week": 0,
+    "checkpoint_week": 10,
+    "disruptions": [
+      {"kind": "admin_capacity", "period": 10, "capacity": 2, "description": "the office clears its backlog"}
+    ]
   },
+  "report": ["count", "queue", "permission"],
   "permission_check": {
     "role": "student",
     "actor": "working",
