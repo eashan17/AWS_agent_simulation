@@ -11,9 +11,11 @@ if TYPE_CHECKING:
     from rulestorm.store import Store
 
 MAX_INPUT_CHARS = 2000
-# Blueprint replies were ~430-520 tokens in the day-0 smoke test; the cap keeps both attempts
-# inside the 55 s budget (docs/ARCHITECTURE.md, Model adapter contract).
+# Real blueprint replies are ~920-990 tokens and ~20 s (24 Nov, after slice 3c); the cap stops
+# a runaway reply. Both attempts share one 55 s budget, inside CloudFront's 60 s origin
+# timeout: the first may use all of it, the retry gets what is left (docs/ARCHITECTURE.md).
 BLUEPRINT_MAX_TOKENS = 1500
+BLUEPRINT_DEADLINE_S = 55.0
 
 
 class PolicyInput(BaseModel):
@@ -172,7 +174,10 @@ def blueprint_prompt(policy: Policy) -> str:
 def interpret(policy: Policy, model: llm.Model | None = None) -> BlueprintDraft:
     """Exactly 2 model calls at most (first try + validation retry), no boto retries."""
     model = model or llm.get_model(max_attempts=1)
-    outcome = llm.decide(blueprint_prompt(policy), Blueprint, model=model, max_tokens=BLUEPRINT_MAX_TOKENS)
+    outcome = llm.decide(
+        blueprint_prompt(policy), Blueprint, model=model,
+        max_tokens=BLUEPRINT_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S,
+    )
     return BlueprintDraft(
         policy_id=policy.id,
         model_id=model.model_id,

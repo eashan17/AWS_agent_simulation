@@ -79,9 +79,9 @@ Arrows show which way data moves. Everything runs in one Python process on one E
 
 **Model adapter contract:** `decide(prompt, schema) -> schema instance`.
 - It asks for JSON in the prompt (no tool use) and validates the reply with Pydantic. If that fails, it retries once with the validation error included.
-- boto3 settings are adaptive retries and `connect_timeout=5`; `read_timeout` starts at 25 s and is reset from the day-0 smoke-test measurement. Agent calls get up to 5 attempts.
+- boto3 settings are adaptive retries and `connect_timeout=5`; agent calls use `read_timeout` 25 s (`BEDROCK_READ_TIMEOUT`; agent replies are short) and get up to 5 attempts.
 - Each decision phase has a 40 s deadline. Calls still unfinished then are recorded as timeouts ("no action").
-- Blueprint calls get exactly 2 Bedrock calls in total: the first try plus the validation retry, with no boto retries. The blueprint's `maxTokens` is capped and its fact and assumption lists kept short, so both attempts finish under 55 s, inside CloudFront's 60 s.
+- Blueprint calls get at most 2 Bedrock calls: the first try plus the validation retry, with no boto retries. Both share one 55 s budget (`deadline_s`), inside CloudFront's 60 s: each attempt's read timeout is whatever is left of the budget, so the first try may wait up to 55 s, and the retry is skipped if under 15 s remain. Measured 24 Nov after slice 3c: about 20 s per reply (about 1,000 tokens); one invalid first reply plus retry took 45 s. The blueprint's `maxTokens` is capped and its text kept short.
 - Each run counts `llm_errors` (error or timeout no-actions) and `cap_hits`. A run ends `degraded` instead of `completed` when more than 10% of its decisions were error no-actions or the cap stopped it.
 - Any exception (throttling, timeout, access error) or a second invalid reply gives a recorded "no action" decision with the error text. For a blueprint, it gives `status: invalid` with the errors.
 - The model ID is a setting. `RULESTORM_MODEL=fake` selects a fake model for automated tests only. The app refuses to start with it unless `RULESTORM_ENV=test`.
@@ -163,4 +163,4 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 - No Pandas or Plotly until a nice-to-have needs them.
 
 ## Critic findings rejected
-- **"Make blueprint generation asynchronous" (part of #3):** rejected. Exactly two Bedrock calls at a 25 s read timeout (no boto retries for blueprints) finish inside the 60 s origin timeout, so a sync request is enough and saves a second polling flow.
+- **"Make blueprint generation asynchronous" (part of #3):** rejected. At most two Bedrock calls sharing one 55 s budget (no boto retries for blueprints) finish inside the 60 s origin timeout, so a sync request is enough and saves a second polling flow.

@@ -20,6 +20,9 @@ from rulestorm import config
 T = TypeVar("T", bound=BaseModel)
 
 MAX_ERROR_CHARS = 500
+# With a deadline, a retry starts only if at least this much time is left: a blueprint reply
+# takes about 20 s, so a shorter window would only spend credits on a call that times out.
+MIN_ATTEMPT_S = 15.0
 
 
 @dataclass
@@ -32,7 +35,7 @@ class Reply:
 class Model(Protocol):
     model_id: str
 
-    def complete(self, prompt: str, max_tokens: int) -> Reply: ...
+    def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> Reply: ...
 
 
 @dataclass
@@ -73,16 +76,28 @@ def _prompt_with_schema(prompt: str, schema: type[BaseModel]) -> str:
 
 
 def decide(
-    prompt: str, schema: type[T], model: Model | None = None, max_tokens: int = 800
+    prompt: str,
+    schema: type[T],
+    model: Model | None = None,
+    max_tokens: int = 800,
+    deadline_s: float | None = None,
 ) -> Outcome[T]:
+    """`deadline_s` is one time budget shared by both attempts: each attempt may wait for
+    whatever is left of it, and the retry is skipped if less than MIN_ATTEMPT_S remains."""
     model = model or get_model()
     outcome: Outcome[T] = Outcome(value=None)
     started = time.monotonic()
     current = _prompt_with_schema(prompt, schema)
     try:
         for attempt in (1, 2):
+            timeout_s = None
+            if deadline_s is not None:
+                timeout_s = deadline_s - (time.monotonic() - started)
+                if attempt > 1 and timeout_s < MIN_ATTEMPT_S:
+                    outcome.error += f" (no retry: {timeout_s:.0f} s left of the {deadline_s:.0f} s budget)"
+                    break
             outcome.attempts = attempt
-            reply = model.complete(current, max_tokens)
+            reply = model.complete(current, max_tokens, timeout_s)
             outcome.raw_replies.append(reply.text)
             outcome.input_tokens += reply.input_tokens
             outcome.output_tokens += reply.output_tokens
@@ -112,18 +127,29 @@ class BedrockModel:
         from botocore.config import Config
 
         self.model_id = model_id or config.model_id()
+        self.max_attempts = max_attempts
         self.session = boto3.Session(region_name=config.region())
-        self.client = self.session.client(
-            "bedrock-runtime",
-            config=Config(
-                connect_timeout=5,
-                read_timeout=config.read_timeout_s(),
-                retries={"mode": "adaptive", "max_attempts": max_attempts},
-            ),
-        )
+        self._clients: dict[int, object] = {}
+        self._config = Config
+        self.client = self._client(config.read_timeout_s())
 
-    def complete(self, prompt: str, max_tokens: int) -> Reply:
-        response = self.client.converse(
+    def _client(self, read_timeout_s: float):
+        """One client per whole-second read timeout (boto fixes the timeout per client)."""
+        key = max(1, int(read_timeout_s))
+        if key not in self._clients:
+            self._clients[key] = self.session.client(
+                "bedrock-runtime",
+                config=self._config(
+                    connect_timeout=5,
+                    read_timeout=key,
+                    retries={"mode": "adaptive", "max_attempts": self.max_attempts},
+                ),
+            )
+        return self._clients[key]
+
+    def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> Reply:
+        client = self.client if timeout_s is None else self._client(timeout_s)
+        response = client.converse(
             modelId=self.model_id,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
             inferenceConfig={"maxTokens": max_tokens, "temperature": 0.7},
@@ -143,9 +169,11 @@ class FakeModel:
     def __init__(self, script: list[str | Exception] | None = None) -> None:
         self.script = list(script or [])
         self.prompts: list[str] = []
+        self.timeouts: list[float | None] = []
 
-    def complete(self, prompt: str, max_tokens: int) -> Reply:
+    def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> Reply:
         self.prompts.append(prompt)
+        self.timeouts.append(timeout_s)
         if not self.script:
             raise RuntimeError("fake model script is empty")
         item = self.script.pop(0)
