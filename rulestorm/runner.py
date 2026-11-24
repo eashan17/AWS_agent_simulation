@@ -49,7 +49,26 @@ class RunActive(RuntimeError):
 def start_run(store, blueprint_id: str, model: llm.Model | None = None, out_dir: str = "runs",
               cap: int | None = None) -> str:
     """Starts a run of an approved blueprint in a background thread and returns its run ID at once.
-    Raises BlueprintNotFound / BlueprintNotApproved, ValueError (template changed) or RunActive."""
+    Raises BlueprintNotFound / BlueprintNotApproved, ValueError (template changed), RunActive or
+    DailyCapReached."""
+    run_id, args = _begin(store, blueprint_id, model, cap)
+    thread = threading.Thread(target=_run, args=(store, run_id, *args, out_dir), name=f"run-{run_id}", daemon=True)
+    thread.start()
+    return run_id
+
+
+def run_now(store, blueprint_id: str, model: llm.Model | None = None, out_dir: str = "runs",
+            cap: int | None = None) -> str:
+    """The same run, in this thread (for the terminal, e.g. `explore hunt`): it is saved, capped
+    and has its findings detected exactly as a background run. Returns its run ID once it ends."""
+    run_id, args = _begin(store, blueprint_id, model, cap)
+    _run(store, run_id, *args, out_dir)
+    return run_id
+
+
+def _begin(store, blueprint_id, model, cap):
+    """The checks, in order (the 409 before the cap, so a refused duplicate costs nothing), then
+    the `running` row."""
     record = require_approved(store, blueprint_id)
     bp = record.blueprint
     template = load_template(bp.template_id)
@@ -66,10 +85,7 @@ def start_run(store, blueprint_id: str, model: llm.Model | None = None, out_dir:
     running = store.create_run(run_id, blueprint_id, template.ref, template.calendar.periods, agents.model.model_id)
     if running:
         raise RunActive(running)
-    thread = threading.Thread(target=_run, args=(store, run_id, record, template, agents, out_dir),
-                              name=f"run-{run_id}", daemon=True)
-    thread.start()
-    return run_id
+    return run_id, (record, template, agents)
 
 
 def _run(store, run_id, record, template, agents, out_dir) -> None:

@@ -196,3 +196,74 @@ def test_variants_route(store, parent) -> None:
         assert http.post(f"/api/blueprints/{unapproved.id}/variants").status_code == 409
     finally:
         app.dependency_overrides.clear()
+
+
+# --- slice H: the hunt stops at the first run with a finding -------------------------------------
+
+def approved_strike(store, parent):
+    variant = explore.propose_variants(store, parent.id, FakeModel([reply(STRIKE)])).variants[0]
+    return approve_blueprint(store, variant.id)
+
+
+def test_the_hunt_runs_a_real_term_and_stops_at_the_first_finding_saved_with_the_run(store, parent, tmp_path) -> None:
+    from rulestorm.cli import hunt_lines
+
+    variant = approved_strike(store, parent)
+    result = explore.hunt(store, parent.id, max_runs=3, out_dir=str(tmp_path / "runs"))
+    assert len(result.runs) == 1 and result.found == result.runs[0]  # the strike variant first, then stop
+    found = result.found
+    assert found.blueprint_id == variant.id and found.variant == STRIKE["name"] and found.findings > 0
+    run = store.get_run(found.run_id)  # saved like a background run, so it can be opened by ID
+    assert run["status"] in ("completed", "degraded") and run["blueprint_id"] == variant.id
+    assert result.findings == store.run_findings(found.run_id)
+    kinds = {f["kind"] for f in result.findings}
+    assert kinds <= {"check_failed", "pending_at_check"} and "check_failed" in kinds  # 3 strike absences, no requests
+    lines = hunt_lines(result)
+    assert lines[1].startswith(f"found: {found.run_id} ({STRIKE['name']}")
+    first = result.findings[0]
+    assert lines[2] == f"  {first['finding_id']} {first['kind']} {first['person']}: {first['title']}"
+    assert lines[3] == "    chain: " + " → ".join(first["chain"])
+
+
+def fake_runs(store, results, prefix="L-fake"):
+    """A stand-in for one real run: saves a finished run with the given findings (no model)."""
+    ran = []
+
+    def run_one(blueprint_id):
+        outcome = results[len(ran)]
+        if isinstance(outcome, Exception):
+            raise outcome
+        run_id = f"{prefix}{len(ran)}"
+        ran.append(blueprint_id)
+        store.create_run(run_id, blueprint_id, "attendance@1", 10, "fake")
+        store.update_run(run_id, status="completed")
+        store.add_findings(run_id, [{"finding_id": f"{run_id}-F1", "kind": outcome, "person": "commuter",
+                                     "title": "t", "chain": ["E-0001"]}] if outcome else [])
+        return run_id
+
+    return run_one, ran
+
+
+def test_the_hunt_goes_through_the_variants_then_the_parent_and_gives_up_after_max_runs(store, parent) -> None:
+    from rulestorm.cli import hunt_lines
+
+    variant = approved_strike(store, parent)
+    run_one, ran = fake_runs(store, [None] * 5)
+    result = explore.hunt(store, parent.id, max_runs=5, run_one=run_one)
+    assert ran == [variant.id, parent.id, variant.id, parent.id, variant.id]  # cycles while runs are left
+    assert result.found is None and len(result.runs) == 5
+    assert hunt_lines(result)[-1] == "no finding in 5 runs"
+
+
+def test_the_hunt_stops_at_a_finding_or_when_todays_run_cap_is_used_up(store, parent) -> None:
+    from rulestorm.cli import hunt_lines
+    from rulestorm.policy import DailyCapReached
+
+    approved_strike(store, parent)
+    run_one, ran = fake_runs(store, [None, "pending_at_check", None])
+    result = explore.hunt(store, parent.id, max_runs=10, run_one=run_one)
+    assert len(ran) == 2 and result.found.run_id == "L-fake1" and result.findings[0]["kind"] == "pending_at_check"
+
+    run_one, ran = fake_runs(store, [None, DailyCapReached("daily run cap of 20 reached")], prefix="L-capped")
+    result = explore.hunt(store, parent.id, max_runs=10, run_one=run_one)
+    assert len(result.runs) == 1 and hunt_lines(result)[-1] == "stopped after 1 runs: daily run cap of 20 reached"

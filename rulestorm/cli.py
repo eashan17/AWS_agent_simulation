@@ -68,6 +68,10 @@ def main(argv: list[str] | None = None) -> None:
     propose_cmd.add_argument("blueprint_id", help="an approved blueprint ID")
     explore_run_cmd = explore_commands.add_parser("run", help="run every approved variant, one real term each")
     explore_run_cmd.add_argument("blueprint_id", help="the approved blueprint the variants vary")
+    hunt_cmd = explore_commands.add_parser(
+        "hunt", help="run the approved variants, then the parent, until a run has a finding (slice H)")
+    hunt_cmd.add_argument("blueprint_id", help="the approved blueprint the variants vary")
+    hunt_cmd.add_argument("--max-runs", type=int, default=10, help="stop after this many runs (default 10)")
 
     args = parser.parse_args(argv)
     if args.command == "hello":
@@ -130,7 +134,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "run" and args.run_command == "local":
         run_local_command(args.blueprint)
     elif args.command == "explore":
-        explore_command(args.explore_command, args.blueprint_id)
+        explore_command(args.explore_command, args.blueprint_id, getattr(args, "max_runs", 10))
 
 
 def describe_blueprint(record) -> list[str]:
@@ -172,14 +176,22 @@ def describe_blueprint(record) -> list[str]:
     return lines
 
 
-def explore_command(command: str, blueprint_id: str) -> None:
+def explore_command(command: str, blueprint_id: str, max_runs: int = 10) -> None:
     from rulestorm import explore
     from rulestorm.policy import BlueprintNotApproved
+    from rulestorm.runner import RunActive
 
     store = Store()
     try:
         if command == "propose":
             for line in describe_variants(explore.propose_variants(store, blueprint_id)):
+                print(line)
+        elif command == "hunt":
+            if max_runs < 1:
+                raise SystemExit("--max-runs must be at least 1")
+            result = explore.hunt(store, blueprint_id, max_runs, on_run=lambda n, bp_id, variant: print(
+                f"run {n}/{max_runs}: {bp_id} ({variant or 'the parent'})...", flush=True))
+            for line in hunt_lines(result):
                 print(line)
         else:
             rows = explore.run_variants(store, blueprint_id, on_variant=lambda v: print(
@@ -192,8 +204,26 @@ def explore_command(command: str, blueprint_id: str) -> None:
         raise SystemExit(f"blueprint not approved: {blueprint_id}")
     except DailyCapReached as exc:
         raise SystemExit(str(exc))
+    except RunActive as exc:
+        raise SystemExit(f"a run is already running: {exc.run_id}")
     except ValueError as exc:  # the template changed since the blueprint was made
         raise SystemExit(str(exc))
+
+
+def hunt_lines(result) -> list[str]:
+    """Each run's outcome, then the run found with its findings and their chains, or why none."""
+    lines = [f"  {r.run_id}: {r.status}, {r.findings} finding{'s' * (r.findings != 1)}" for r in result.runs]
+    if result.found:
+        f = result.found
+        lines.append(f"found: {f.run_id} ({f.variant or 'the parent'}, {f.blueprint_id}), status {f.status}")
+        for finding in result.findings:
+            lines.append(f"  {finding['finding_id']} {finding['kind']} {finding['person']}: {finding['title']}")
+            lines.append(f"    chain: {' → '.join(finding['chain'])}")
+    elif result.stopped:
+        lines.append(f"stopped after {len(result.runs)} runs: {result.stopped}")
+    else:
+        lines.append(f"no finding in {len(result.runs)} runs")
+    return lines
 
 
 def describe_variants(result) -> list[str]:

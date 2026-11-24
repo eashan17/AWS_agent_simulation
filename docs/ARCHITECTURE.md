@@ -47,7 +47,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `blueprint.py` (from `policy.py`) | Policy input, the two-call interpret (pick, then fill), the per-template values model, approval |
 | `llm.py` | Model adapter: Bedrock Converse and a scripted fake |
 | `agents.py` | LLM people: prompts generated from the template (with the 6b fixes kept), memory, strategy, cap, deadline, run summary |
-| `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt |
+| `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `store.py`, `runner.py`, `api.py`, `cli.py` | Storage (SQLite), background runs, routes, terminal commands |
 | `fixtures/demo_run.json` | The seeded demo run on the new format, with a schema version |
@@ -89,6 +89,7 @@ A template may only use these. Anything outside them needs new engine code, by d
 - `queue_over_capacity` records the requests it holds.
 - A check records its count and the pending requests.
 - Detectors follow a person's own path of links from a check back to the root disruption, not every ancestor (slice 5 gotcha, IDEAS.md), and store the ordered chain on the finding.
+- **Hunt (built in slice H):** `explore hunt <id> --max-runs N` runs each approved variant, then the parent, again from the first while runs are left, through `runner.run_now`: the background runner's path in the foreground, so each run is saved with its findings, takes the daily caps and can be opened by ID. It stops at the first run with a finding, a failed run, or the daily run cap.
 - **Detectors (built in slice 8, `detect.py`):** `check_failed` is a `check_evaluated` with `passed` false (on a ladder, its last step); `pending_at_check` is one with pending requests. One finding of each kind per person and check, the first. The chain follows `caused_by` back from the check, but never through an event about another person who owes the template's duty (as actor, `person`, a `people` list without them, or a request of theirs); events about nobody in particular (a disruption, a queue that held the request) stay. It is stored in run order, so it starts at the disruption when one hit them and ends at the check. Titles come from the template's terms `finding_check_failed` and `finding_pending_at_check`. Finding IDs are `<run_id>-F<n>`. The runner saves findings before marking a run finished; `GET /api/runs/{id}/findings` works them out on first use for a run that ended before slice 8. The case runner's failed-check chain uses the same detector.
 
 ## Templates (data, `rulestorm/templates/`)

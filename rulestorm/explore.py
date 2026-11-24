@@ -28,6 +28,7 @@ from rulestorm.policy import (
     BLUEPRINT_DEADLINE_S,
     BlueprintDraft,
     BlueprintRecord,
+    DailyCapReached,
     require_approved,
     take_blueprint_call,
 )
@@ -350,3 +351,58 @@ def run_variants(store, parent_id: str, out_dir: str = "runs", on_variant=None) 
                              **outcome(events))
         rows.append(row)
     return rows
+
+
+# --- slice H: hunt for a real run with a finding --------------------------------------------------
+
+class HuntRun(BaseModel):
+    blueprint_id: str
+    variant: str = Field(description="the variant's name; empty for the parent")
+    run_id: str
+    status: str
+    findings: int
+
+
+class HuntResult(BaseModel):
+    parent_id: str
+    max_runs: int
+    runs: list[HuntRun] = Field(default_factory=list)
+    found: HuntRun | None = None
+    findings: list[dict] = Field(default_factory=list, description="the found run's findings")
+    stopped: str | None = Field(None, description="why it stopped before a finding or max_runs")
+
+
+def hunt(store, parent_id: str, max_runs: int = 10, model=None, out_dir: str = "runs",
+         on_run=None, run_one=None) -> HuntResult:
+    """Runs the parent's approved variants, then the parent, one real term at a time (again from
+    the first while runs are left), and stops at the first run with a finding. Each run is saved
+    with its findings, exactly as a background run is, so the one found can be opened by ID later.
+    Stops early if a run fails or today's run cap is used up."""
+    from rulestorm.runner import run_now
+
+    run_one = run_one or (lambda bp_id: run_now(store, bp_id, model=model, out_dir=out_dir))
+    parent = require_approved(store, parent_id)
+    candidates = [(v.id, v.variant or "") for v in store.list_variants(parent_id)
+                  if v.status == "valid" and v.approved] + [(parent.id, "")]
+    result = HuntResult(parent_id=parent_id, max_runs=max_runs)
+    for n in range(max_runs):
+        blueprint_id, variant = candidates[n % len(candidates)]
+        if on_run:
+            on_run(n + 1, blueprint_id, variant)
+        try:
+            run_id = run_one(blueprint_id)
+        except DailyCapReached as exc:
+            result.stopped = str(exc)
+            break
+        run = store.get_run(run_id)
+        findings = store.run_findings(run_id)
+        row = HuntRun(blueprint_id=blueprint_id, variant=variant, run_id=run_id, status=run["status"],
+                      findings=len(findings))
+        result.runs.append(row)
+        if findings:
+            result.found, result.findings = row, findings
+            break
+        if run["status"] == "failed":
+            result.stopped = f"run {run_id} failed: {run['error']}"
+            break
+    return result
