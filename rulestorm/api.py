@@ -6,11 +6,13 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from rulestorm import llm
+from rulestorm.core.model import shipped_templates
 from rulestorm.policy import (
     BlueprintInvalid,
     BlueprintNotApproved,
     BlueprintNotFound,
     BlueprintRecord,
+    DailyCapReached,
     Policy,
     PolicyInput,
     PolicyNotFound,
@@ -46,6 +48,16 @@ def health() -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/api/templates")
+def get_templates() -> list[dict]:
+    """What each template can model, so the input screen shows only supported rules."""
+    return [
+        {"id": t.id, "version": t.version, "title": t.title, "scope": t.scope,
+         "example_input": t.example_input.model_dump()}
+        for t in shipped_templates()
+    ]
+
+
 @app.post("/api/policies", response_model=Policy)
 def create_policy(body: PolicyInput, store: Store = Depends(get_store)) -> Policy:
     return store.save_policy(body)
@@ -61,6 +73,8 @@ def post_blueprint(
         return create_blueprint(store, body.policy_id, model)
     except PolicyNotFound:
         raise HTTPException(status_code=404, detail="policy not found")
+    except DailyCapReached:
+        raise HTTPException(status_code=429, detail="daily blueprint limit reached, try again tomorrow")
 
 
 @app.post("/api/blueprints/{blueprint_id}/approve", response_model=BlueprintRecord)
@@ -88,6 +102,8 @@ def post_variants(
         raise HTTPException(status_code=404, detail="blueprint not found")
     except BlueprintNotApproved:
         raise HTTPException(status_code=409, detail="blueprint not approved")
+    except DailyCapReached:
+        raise HTTPException(status_code=429, detail="daily blueprint limit reached, try again tomorrow")
 
 
 @app.post("/api/runs")

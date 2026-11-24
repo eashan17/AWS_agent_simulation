@@ -44,7 +44,16 @@ BEGIN SELECT RAISE(ABORT, 'blueprint is approved and frozen'); END;
 CREATE TRIGGER IF NOT EXISTS blueprints_frozen_delete BEFORE DELETE ON blueprints
 WHEN OLD.approved = 1
 BEGIN SELECT RAISE(ABORT, 'blueprint is approved and frozen'); END;
+-- Daily spend caps (UTC day). Taken atomically: UPDATE ... WHERE n < cap; rowcount 0 = over the cap.
+CREATE TABLE IF NOT EXISTS daily_usage (
+    date TEXT PRIMARY KEY,
+    runs INTEGER NOT NULL DEFAULT 0,
+    llm_calls INTEGER NOT NULL DEFAULT 0,
+    blueprint_calls INTEGER NOT NULL DEFAULT 0
+);
 """
+
+USAGE_COUNTERS = ("runs", "llm_calls", "blueprint_calls")
 
 
 def _now() -> str:
@@ -69,6 +78,25 @@ class Store:
             conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn = conn
         return conn
+
+    def take_daily(self, counter: str, cap: int) -> bool:
+        """Takes one unit of today's `counter` if it is under `cap`; safe across threads and processes."""
+        if counter not in USAGE_COUNTERS:
+            raise ValueError(f"unknown usage counter {counter!r}")
+        today = datetime.now(timezone.utc).date().isoformat()
+        conn = self._conn()
+        with conn:
+            conn.execute("INSERT OR IGNORE INTO daily_usage (date) VALUES (?)", (today,))
+            cursor = conn.execute(
+                f"UPDATE daily_usage SET {counter} = {counter} + 1 WHERE date = ? AND {counter} < ?",
+                (today, cap),
+            )
+        return cursor.rowcount == 1
+
+    def daily_usage(self) -> dict[str, int]:
+        today = datetime.now(timezone.utc).date().isoformat()
+        row = self._conn().execute("SELECT * FROM daily_usage WHERE date = ?", (today,)).fetchone()
+        return {c: (row[c] if row else 0) for c in USAGE_COUNTERS}
 
     def save_policy(self, data: PolicyInput) -> Policy:
         policy = Policy(

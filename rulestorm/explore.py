@@ -16,6 +16,7 @@ from rulestorm import llm
 from rulestorm.education import SESSIONS_PER_WEEK, TERM_WEEKS
 from rulestorm.policy import (
     BLUEPRINT_DEADLINE_S,
+    take_blueprint_call,
     Blueprint,
     BlueprintDraft,
     BlueprintRecord,
@@ -125,6 +126,7 @@ def apply_variant(parent: Blueprint, variant: StressVariant) -> Blueprint:
 def propose_variants(store, parent_id: str, model: llm.Model | None = None) -> VariantsResult:
     """One model call (at most 2 with the validation retry), inside the 55 s blueprint budget."""
     parent = require_approved(store, parent_id)
+    take_blueprint_call(store)
     policy = store.get_policy(parent.policy_id)
     model = model or llm.get_model(max_attempts=1)
     outcome = llm.decide(
@@ -140,6 +142,8 @@ def propose_variants(store, parent_id: str, model: llm.Model | None = None) -> V
             policy_id=parent.policy_id, model_id=model.model_id, status="valid",
             attempts=outcome.attempts, seconds=outcome.seconds,
             parent_id=parent_id, variant=variant.name, weak_point=variant.weak_point,
+            template_id=parent.template_id, template_version=parent.template_version,
+            pick_reason=parent.pick_reason,
         )
         try:
             draft.blueprint = apply_variant(parent.blueprint, variant)

@@ -8,6 +8,7 @@ from rulestorm.education import EXAMPLE_POLICY
 from rulestorm.policy import (
     BlueprintInvalid,
     BlueprintNotFound,
+    DailyCapReached,
     PolicyInput,
     PolicyNotFound,
     approve_blueprint,
@@ -24,6 +25,10 @@ def main(argv: list[str] | None = None) -> None:
     policy = commands.add_parser("policy", help="policy input")
     policy_commands = policy.add_subparsers(dest="policy_command", required=True)
     policy_commands.add_parser("example", help="save the pre-filled 80%% example and print it")
+    save_cmd = policy_commands.add_parser("save", help="save your own policy texts and print them")
+    save_cmd.add_argument("--text", required=True, help="the policy rule (max 2,000 characters)")
+    save_cmd.add_argument("--purpose", required=True, help="why it exists (max 2,000 characters)")
+    save_cmd.add_argument("--environment", required=True, help="where it applies (max 2,000 characters)")
 
     blueprint = commands.add_parser("blueprint", help="AI blueprint of a stored policy")
     blueprint_commands = blueprint.add_subparsers(dest="blueprint_command", required=True)
@@ -66,11 +71,21 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "policy" and args.policy_command == "example":
         saved = Store().save_policy(PolicyInput(**EXAMPLE_POLICY))
         print(saved.model_dump_json(indent=2))
+    elif args.command == "policy" and args.policy_command == "save":
+        from pydantic import ValidationError
+
+        try:
+            policy_input = PolicyInput(text=args.text, purpose=args.purpose, environment=args.environment)
+        except ValidationError as exc:
+            raise SystemExit(f"invalid policy: {exc.errors()[0]['loc'][0]}: {exc.errors()[0]['msg']}")
+        print(Store().save_policy(policy_input).model_dump_json(indent=2))
     elif args.command == "blueprint" and args.blueprint_command == "create":
         try:
             record = create_blueprint(Store(), args.policy)
         except PolicyNotFound:
             raise SystemExit(f"policy not found: {args.policy}")
+        except DailyCapReached as exc:
+            raise SystemExit(str(exc))
         print(record.model_dump_json(indent=2))
     elif args.command == "blueprint" and args.blueprint_command == "approve":
         try:
@@ -155,6 +170,8 @@ def explore_command(command: str, blueprint_id: str) -> None:
         raise SystemExit(f"blueprint not found: {blueprint_id}")
     except BlueprintNotApproved:
         raise SystemExit(f"blueprint not approved: {blueprint_id}")
+    except DailyCapReached as exc:
+        raise SystemExit(str(exc))
 
 
 def run_local_command(blueprint_id: str) -> None:

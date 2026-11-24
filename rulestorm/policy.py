@@ -1,10 +1,20 @@
-"""Policy input, the Blueprint schema and `interpret` (policy text -> checked Blueprint)."""
+"""Policy input, the Blueprint schema and `interpret` (policy text -> checked Blueprint).
 
+`interpret` makes two model calls, always in this order, sharing one 55 s wall-clock budget:
+1. pick: the policy texts plus every template's scope line -> a template ID, or "none" with a
+   reason (`status: out_of_scope`, and no fill call);
+2. fill: the chosen template's values (today the attendance blueprint; slice L6b builds each
+   template's values model from its parameter specs).
+Each blueprint request first takes one unit of the daily `blueprint_calls` cap.
+"""
+
+import time
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, create_model, model_validator
 
-from rulestorm import llm
+from rulestorm import config, llm
+from rulestorm.core.model import Template, shipped_templates
 from rulestorm.education import ARCHETYPES, SESSIONS_PER_WEEK, TERM_WEEKS, Archetype
 
 if TYPE_CHECKING:
@@ -16,6 +26,8 @@ MAX_INPUT_CHARS = 2000
 # timeout: the first may use all of it, the retry gets what is left (docs/ARCHITECTURE.md).
 BLUEPRINT_MAX_TOKENS = 1500
 BLUEPRINT_DEADLINE_S = 55.0
+# The pick reply is one ID and one sentence (~40 tokens); the cap stops a runaway reply.
+PICK_MAX_TOKENS = 150
 
 
 class PolicyInput(BaseModel):
@@ -132,8 +144,12 @@ class BlueprintDraft(BaseModel):
 
     policy_id: str
     model_id: str
-    status: Literal["valid", "invalid"]
+    status: Literal["valid", "invalid", "out_of_scope"]
     errors: list[str] = Field(default_factory=list)
+    # The pick (call 1): shown on the review screen as one more labelled AI assumption.
+    template_id: str | None = None
+    template_version: int | None = None
+    pick_reason: str | None = None
     blueprint: Blueprint | None = None
     attempts: int
     seconds: float
@@ -175,22 +191,63 @@ def blueprint_prompt(policy: Policy) -> str:
     )
 
 
+def pick_prompt(policy: Policy, templates: list[Template]) -> str:
+    scopes = "\n".join(f"- {t.id}: {t.scope}" for t in templates)
+    return (
+        "You decide which simulation template can model an institution's policy. A template "
+        "fits only if its scope covers what the policy regulates; a policy about something else "
+        "fits none, even if it is set in the same institution.\n"
+        f"Templates (id: scope):\n{scopes}\n"
+        "Reply with the id of the template that fits, or \"none\" if no template fits, and a "
+        "reason in one sentence (under 25 words).\n\n"
+        f"Policy:\n{policy.text}\n\nPurpose:\n{policy.purpose}\n\nEnvironment:\n{policy.environment}"
+    )
+
+
+def pick_schema(template_ids: list[str]) -> type[BaseModel]:
+    """The reply must name a known template or "none"; anything else is retried with the error."""
+    return create_model(
+        "TemplatePick",
+        template_id=(Literal[tuple([*template_ids, "none"])], ...),
+        reason=(str, Field(min_length=1, max_length=300)),
+    )
+
+
+# The fill for each template. Slice L6b replaces this with values models built from each
+# template's parameter specs; until then only the attendance blueprint can be filled.
+FILL_SCHEMAS: dict[str, tuple] = {"attendance": (blueprint_prompt, Blueprint)}
+
+
 def interpret(policy: Policy, model: llm.Model | None = None) -> BlueprintDraft:
-    """Exactly 2 model calls at most (first try + validation retry), no boto retries."""
+    """Pick, then fill: at most 2 attempts per call, no boto retries, one shared deadline."""
     model = model or llm.get_model(max_attempts=1)
-    outcome = llm.decide(
-        blueprint_prompt(policy), Blueprint, model=model,
-        max_tokens=BLUEPRINT_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S,
-    )
-    return BlueprintDraft(
-        policy_id=policy.id,
-        model_id=model.model_id,
-        status="invalid" if outcome.no_action else "valid",
-        errors=[outcome.error] if outcome.error else [],
-        blueprint=outcome.value,
-        attempts=outcome.attempts,
-        seconds=outcome.seconds,
-    )
+    started = time.monotonic()
+    templates = {t.id: t for t in shipped_templates()}
+    draft = BlueprintDraft(policy_id=policy.id, model_id=model.model_id, status="invalid", attempts=0, seconds=0)
+
+    pick = llm.decide(pick_prompt(policy, list(templates.values())), pick_schema(list(templates)), model=model,
+                      max_tokens=PICK_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S)
+    draft.attempts = pick.attempts
+    if pick.no_action:
+        draft.errors = [f"template pick: {pick.error}"]
+    elif pick.value.template_id == "none":
+        draft.status, draft.pick_reason = "out_of_scope", pick.value.reason
+    else:
+        template = templates[pick.value.template_id]
+        draft.template_id, draft.template_version = template.id, template.version
+        draft.pick_reason = pick.value.reason
+        if template.id not in FILL_SCHEMAS:
+            draft.errors = [f"no fill for template {template.ref} yet (slice L6b)"]
+        else:
+            prompt_for, schema = FILL_SCHEMAS[template.id]
+            fill = llm.decide(prompt_for(policy), schema, model=model, max_tokens=BLUEPRINT_MAX_TOKENS,
+                              deadline_s=BLUEPRINT_DEADLINE_S - (time.monotonic() - started))
+            draft.attempts += fill.attempts
+            draft.status = "invalid" if fill.no_action else "valid"
+            draft.errors = [fill.error] if fill.error else []
+            draft.blueprint = fill.value
+    draft.seconds = round(time.monotonic() - started, 2)
+    return draft
 
 
 class PolicyNotFound(LookupError):
@@ -213,11 +270,22 @@ class BlueprintNotApproved(PermissionError):
     """A run needs an approved blueprint."""
 
 
+class DailyCapReached(RuntimeError):
+    """Today's cap is used up; refused before any model call (HTTP 429)."""
+
+
+def take_blueprint_call(store: "Store") -> None:
+    """Every blueprint and stress-variant request takes one unit of today's cap first."""
+    if not store.take_daily("blueprint_calls", config.max_blueprint_calls_per_day()):
+        raise DailyCapReached(f"daily blueprint cap of {config.max_blueprint_calls_per_day()} reached")
+
+
 def create_blueprint(store: "Store", policy_id: str, model: llm.Model | None = None) -> BlueprintRecord:
     """The one entry point the API and CLI share."""
     policy = store.get_policy(policy_id)
     if policy is None:
         raise PolicyNotFound(policy_id)
+    take_blueprint_call(store)
     return store.save_blueprint(interpret(policy, model))
 
 

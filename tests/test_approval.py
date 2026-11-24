@@ -17,7 +17,7 @@ from rulestorm.policy import (
     require_approved,
 )
 from rulestorm.store import Store
-from test_blueprint import VALID
+from test_blueprint import PICK, VALID
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def store(tmp_path) -> Store:
 @pytest.fixture
 def blueprint(store):
     policy = store.save_policy(PolicyInput(text="80% attendance", purpose="y", environment="z"))
-    return create_blueprint(store, policy.id, FakeModel([json.dumps(VALID)]))
+    return create_blueprint(store, policy.id, FakeModel([PICK, json.dumps(VALID)]))
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ def test_approved_blueprint_cannot_be_edited(store, blueprint) -> None:
 
 def test_invalid_blueprint_cannot_be_approved(store) -> None:
     policy = store.save_policy(PolicyInput(text="x", purpose="y", environment="z"))
-    invalid = create_blueprint(store, policy.id, FakeModel(["not json", "{}"]))
+    invalid = create_blueprint(store, policy.id, FakeModel([PICK, "not json", "{}"]))
     with pytest.raises(BlueprintInvalid):
         approve_blueprint(store, invalid.id)
 

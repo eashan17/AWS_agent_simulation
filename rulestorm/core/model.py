@@ -486,3 +486,8 @@ def _sentence_errors(p: Parameter, params: dict[str, Parameter]) -> list[str]:
             if field and field != "value" and field not in params:
                 errors.append(f"{owner}: sentence refers to unknown parameter '{field}'")
     return errors
+
+
+def shipped_templates() -> list[Template]:
+    """Every template in rulestorm/templates/, in file-name order. All must pass the check."""
+    return [load_template(path.stem) for path in sorted(TEMPLATES_DIR.glob("*.json"))]

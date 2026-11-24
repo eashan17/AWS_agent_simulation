@@ -13,6 +13,9 @@ DEFAULT_MODEL_ID = "deepseek.v3.2"
 DEFAULT_READ_TIMEOUT_S = 25
 # BRIEF cost check: a 150-call run is about USD 0.28 on DeepSeek V3.2. Reset from measured runs.
 DEFAULT_MAX_LLM_CALLS_PER_RUN = 150
+# One unit per blueprint or stress-variant request (each up to 2 model calls per step). Set from
+# BRIEF's cost check: a blueprint request costs well under USD 0.01 on DeepSeek V3.2.
+DEFAULT_MAX_BLUEPRINT_CALLS_PER_DAY = 50
 
 
 def load_env_file(path: str = ".env") -> None:
@@ -53,6 +56,12 @@ def read_timeout_s() -> float:
 
 def max_llm_calls_per_run() -> int:
     return int(setting("MAX_LLM_CALLS_PER_RUN", str(DEFAULT_MAX_LLM_CALLS_PER_RUN)))
+
+
+def max_blueprint_calls_per_day() -> int:
+    """0 is a real value (no blueprint calls today), so only an unset variable takes the default."""
+    value = os.environ.get("MAX_BLUEPRINT_CALLS_PER_DAY", "").strip()
+    return int(value) if value else DEFAULT_MAX_BLUEPRINT_CALLS_PER_DAY
 
 
 load_env_file()
