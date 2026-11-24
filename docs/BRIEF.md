@@ -157,8 +157,8 @@ These are **checked live against our account** on 24 Nov 2026 with `aws bedrock 
 
 | Model | Model ID in Sydney | Sydney price per 1M tokens (in / out) | Notes |
 |---|---|---|---|
-| **Mistral Large 3** | `mistral.mistral-large-3-675b-instruct` | USD 0.515 / 1.545 | Default. Cheapest strong option. |
-| **DeepSeek V3.2** | `deepseek.v3.2` | USD 0.6386 / 1.9055 | First fallback. |
+| **Mistral Large 3** | `mistral.mistral-large-3-675b-instruct` | USD 0.515 / 1.545 | Was the default; too slow on our account in the day-0 smoke test (below). |
+| **DeepSeek V3.2** | `deepseek.v3.2` | USD 0.6386 / 1.9055 | **Default since the day-0 smoke test (team choice, 24 Nov).** |
 | **Moonshot Kimi K2.5** | `moonshotai.kimi-k2.5` | USD 0.618 / 3.09 | |
 | **Qwen3 235B A22B 2507** | `qwen.qwen3-235b-a22b-2507-v1:0` | USD 0.2266 / 0.9064 * | Cheap; worth a bake-off slot. |
 | **OpenAI gpt-oss-120b** | `openai.gpt-oss-120b-1:0` | USD 0.1545 / 0.618 * | Cheapest; weaker at long structured output (to test). |
@@ -166,15 +166,28 @@ These are **checked live against our account** on 24 Nov 2026 with `aws bedrock 
 
 **No Claude model runs in-Region in Sydney.** Claude (Sonnet/Opus/Haiku 4.x–5.5, Fable/Mythos), Nova 2 Lite, Kimi K3 and GPT-6.x are available from Sydney only through Geo (`au.`/`apac.`) or Global inference profiles, which the Free plan blocks. They are usable only on a Paid plan.
 
-**Decision:** write one thin model adapter (`decide(prompt, schema) -> JSON`) so the model is a config value. **Default: Mistral Large 3 on bedrock-runtime Converse** (in-Region, cheapest, Converse listed). Store the chosen model ID in the run manifest.
+**Decision:** write one thin model adapter (`decide(prompt, schema) -> JSON`) so the model is a config value. **Default: DeepSeek V3.2 on bedrock-runtime Converse** (in-Region; chosen over Mistral Large 3 after the day-0 smoke test showed Mistral at 13–84 s per call). Store the chosen model ID in the run manifest.
 
 **Unverified, so check before writing engine code:** whether each candidate handles the Converse API and long structured JSON reliably was not checked. Converse support was read from translated copies of the compatibility table. Our account has model access listed for all candidates above, but a real call is the proof; some models may still ask for a one-time access or Marketplace step, and the Free plan allows only "Bedrock and Free" Marketplace items.
 - **Day-0 smoke test (first thing, in a Dev account):** one script calls each candidate once, first from a laptop using the `aws login` profile and later from the EC2 instance using its IAM role. It prints success, auth method, latency, a blueprint-sized call's output tokens and time, and the model's requests-per-minute and tokens-per-minute quotas.
 - **Day-1 bake-off (Dev account):** run 20 agent decisions and 3 blueprint generations each on Mistral Large 3, DeepSeek V3.2 and Qwen3 235B. Keep whichever passes the Pydantic schemas most often at an acceptable cost and latency.
 - **Do not depend on tool use.** Ask for JSON in the prompt, validate with Pydantic at the boundary, retry once with the validation error in the prompt, then fall back to a safe "no action" decision that the engine records as such.
-- Record the results here, per model: JSON reliability, tool use, auth method, latency. `[MISSING: smoke test and bake-off results]`
+- Record the results here, per model: JSON reliability, tool use, auth method, latency. Bake-off: `[MISSING: bake-off results]`
 
-**Cost check (our estimate, not measured):** if one agent decision is about 2,000 input + 300 output tokens, Mistral Large 3 in Sydney costs about USD 0.0015 per call, so a 150-call run is about USD 0.22 and 100 runs about USD 22. Measure the real token counts in the first run and set the per-run call cap and the global daily cap from that.
+**Day-0 smoke test results (24 Nov 2026, laptop, `auth: profile=rulestorm-dev`, ap-southeast-2, `python -m rulestorm.cli llm smoke --model <id>`, read timeout 120 s, no boto retries).** "Tiny" = a 10-token JSON reply; "blueprint" = a ~590-token prompt asking for a blueprint-sized JSON (4 students, 3 disruptions, 5 facts, 5 assumptions), checked with Pydantic.
+
+| Model | Runs | Tiny call (s) | Blueprint call (s) | Blueprint output tokens | Blueprint JSON valid | Quota: requests / tokens per minute |
+|---|---|---|---|---|---|---|
+| Mistral Large 3 | 5 | 16.8–84.0 (Bedrock's own `latencyMs` 11–18 s on a 10-token reply) | 13.0–65.1; one ReadTimeout at the 25 s default | 475–518 | yes (4/4 that finished) | 100 / 100M |
+| DeepSeek V3.2 | 3 | 1.9–2.3 | 7.9–9.0 | 418–476 | yes (3/3) | 100 / 100M |
+| Qwen3 235B A22B 2507 | 3 | 1.7–1.8 | 3.8–4.1 | 296–321 | yes (3/3) | 100 / 100M |
+| Moonshot Kimi K2.5 | 1 | 5.7 | 12.6 | 442 | yes (1/1) | 100 / 100M |
+| Amazon Nova Pro | 1 | 1.9 | 2.8 | 429 | yes (1/1) | **13** / 1M (on-demand) |
+| OpenAI gpt-oss-120b | 1 | 2.5 | not reached | — | tiny reply cut off at the 50-token cap (`{"`), so not a fair test | — |
+
+All calls passed through the adapter (`rulestorm/llm.py`), so JSON-in-prompt plus Pydantic works on every model tried. Tool use was not tested (not needed). The instance-role run (`auth: instance-role`) is still to do, in slice 11.
+
+**Cost check (our estimate, not measured):** if one agent decision is about 2,000 input + 300 output tokens, DeepSeek V3.2 in Sydney costs about USD 0.0018 per call, so a 150-call run is about USD 0.28 and 100 runs about USD 28 (Mistral Large 3 would be about USD 0.22 and USD 22). Measure the real token counts in the first run and set the per-run call cap and the global daily cap from that.
 
 **Credit runway (live account, do on day 1):** (instance hourly price × hours from launch to 17 Dec) + Elastic IP (USD 0.005/hr) + EBS disk + Bedrock budget for judging and Demo Day, compared with the credits the live account actually received. `[MISSING: runway estimate]`. Development and experiments spend Dev-account credits, not this.
 
