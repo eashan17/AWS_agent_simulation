@@ -137,6 +137,10 @@ class BlueprintDraft(BaseModel):
     blueprint: Blueprint | None = None
     attempts: int
     seconds: float
+    # Stress variants (slice 6c): the approved blueprint this one varies, and why.
+    parent_id: str | None = None
+    variant: str | None = None
+    weak_point: str | None = None
 
 
 class BlueprintRecord(BlueprintDraft):

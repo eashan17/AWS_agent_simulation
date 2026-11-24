@@ -47,6 +47,13 @@ def main(argv: list[str] | None = None) -> None:
     local_cmd = run_commands.add_parser("local", help="run one real term here, with Bedrock agents")
     local_cmd.add_argument("--blueprint", required=True, help="an approved blueprint ID")
 
+    explore = commands.add_parser("explore", help="stress variants of an approved blueprint (slice 6c)")
+    explore_commands = explore.add_subparsers(dest="explore_command", required=True)
+    propose_cmd = explore_commands.add_parser("propose", help="ask Bedrock for up to 3 harsher scenarios")
+    propose_cmd.add_argument("blueprint_id", help="an approved blueprint ID")
+    explore_run_cmd = explore_commands.add_parser("run", help="run every approved variant, one real term each")
+    explore_run_cmd.add_argument("blueprint_id", help="the approved blueprint the variants vary")
+
     args = parser.parse_args(argv)
     if args.command == "hello":
         print("hello")
@@ -83,6 +90,50 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "run" and args.run_command == "local":
         run_local_command(args.blueprint)
+    elif args.command == "explore":
+        explore_command(args.explore_command, args.blueprint_id)
+
+
+def explore_command(command: str, blueprint_id: str) -> None:
+    from rulestorm import explore
+    from rulestorm.policy import BlueprintNotApproved
+
+    store = Store()
+    try:
+        if command == "propose":
+            result = explore.propose_variants(store, blueprint_id)
+            print(f"parent: {result.parent_id}")
+            print(f"status: {result.status} | attempts: {result.attempts} | seconds: {result.seconds}")
+            for error in result.errors:
+                print(f"error: {error}")
+            for v in result.variants:
+                print(f"- {v.id} [{v.status}] {v.variant}")
+                print(f"  weak point: {v.weak_point}")
+                if v.blueprint:
+                    sc = v.blueprint.scenario
+                    print(f"  admin capacity {sc.admin_capacity_per_week} a week | checkpoint week {sc.checkpoint_week}")
+                    for d in sc.disruptions:
+                        extra = (f"delay {d.delay_min} min, affects {', '.join(d.affected)}" if d.type == "transport"
+                                 else f"capacity {d.admin_capacity_during} that week")
+                        print(f"    week {d.week} {d.type}: {d.description} ({extra})")
+                    print("  labelled as AI assumptions: "
+                          + ", ".join(a.field for a in v.blueprint.assumptions if a.statement.startswith("Stress variant")))
+                for error in v.errors:
+                    print(f"  error: {error}")
+            print("approve each variant to run with: python -m rulestorm.cli blueprint approve <id>")
+        else:
+            rows = explore.run_variants(store, blueprint_id, on_variant=lambda v: print(f"running {v.id} ({v.variant})...", flush=True))
+            print("variant | run | status | requests filed | queue over capacity | pending at checkpoint | not eligible | broke")
+            for r in rows:
+                print(f"{r.blueprint_id} {r.variant} | {r.run_id or '-'} | {r.status} | {r.requests_filed} | "
+                      f"{r.queue_over_capacity} | {r.pending_at_checkpoint} | {', '.join(r.not_eligible) or '-'} | "
+                      f"{'yes' if r.broke else 'no'}")
+            ran = [r for r in rows if r.run_id]
+            print(f"broke the policy: {sum(r.broke for r in ran)} of {len(ran)} variants run")
+    except BlueprintNotFound:
+        raise SystemExit(f"blueprint not found: {blueprint_id}")
+    except BlueprintNotApproved:
+        raise SystemExit(f"blueprint not approved: {blueprint_id}")
 
 
 def run_local_command(blueprint_id: str) -> None:

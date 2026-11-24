@@ -122,6 +122,21 @@ class Store:
         record.approved = bool(row["approved"])
         return record
 
+    def list_variants(self, parent_id: str) -> list[BlueprintRecord]:
+        """Stress variants of one approved blueprint, oldest first."""
+        # Filtered in SQL, so blueprints in an older format (before slice 3c) are never parsed.
+        rows = self._conn().execute(
+            "SELECT record, approved FROM blueprints WHERE json_extract(record, '$.parent_id') = ? "
+            "ORDER BY created_at, rowid",
+            (parent_id,),
+        ).fetchall()
+        variants = []
+        for row in rows:
+            record = BlueprintRecord.model_validate_json(row["record"])
+            record.approved = bool(row["approved"])
+            variants.append(record)
+        return variants
+
     def mark_approved(self, blueprint_id: str) -> bool:
         """Only a valid, not-yet-approved blueprint changes; returns whether it did."""
         conn = self._conn()

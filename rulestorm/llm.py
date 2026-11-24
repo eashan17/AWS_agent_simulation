@@ -9,6 +9,7 @@ It never raises for model or AWS errors, so one bad call cannot crash a run.
 
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Generic, Protocol, TypeVar
@@ -75,6 +76,34 @@ def _prompt_with_schema(prompt: str, schema: type[BaseModel]) -> str:
     )
 
 
+class DeadlineExceeded(Exception):
+    """No reply before the time budget ran out."""
+
+
+def _complete_by(model: "Model", prompt: str, max_tokens: int, timeout_s: float | None) -> Reply:
+    """Boto's read timeout only fires when the socket goes quiet, so it is not a wall-clock
+    limit (a blueprint once took 75 s against a 55 s budget). With a timeout, the call runs in
+    a daemon thread and we stop waiting at the deadline; an abandoned call finishes unseen."""
+    if timeout_s is None:
+        return model.complete(prompt, max_tokens, None)
+    box: dict = {}
+
+    def call() -> None:
+        try:
+            box["reply"] = model.complete(prompt, max_tokens, timeout_s)
+        except Exception as exc:  # handed back to decide, which records it
+            box["error"] = exc
+
+    worker = threading.Thread(target=call, daemon=True)
+    worker.start()
+    worker.join(timeout_s)
+    if worker.is_alive():
+        raise DeadlineExceeded(f"no reply within {timeout_s:.0f} s")
+    if "error" in box:
+        raise box["error"]
+    return box["reply"]
+
+
 def decide(
     prompt: str,
     schema: type[T],
@@ -97,7 +126,7 @@ def decide(
                     outcome.error += f" (no retry: {timeout_s:.0f} s left of the {deadline_s:.0f} s budget)"
                     break
             outcome.attempts = attempt
-            reply = model.complete(current, max_tokens, timeout_s)
+            reply = _complete_by(model, current, max_tokens, timeout_s)
             outcome.raw_replies.append(reply.text)
             outcome.input_tokens += reply.input_tokens
             outcome.output_tokens += reply.output_tokens

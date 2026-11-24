@@ -73,6 +73,23 @@ def post_approve(blueprint_id: str, store: Store = Depends(get_store)) -> Bluepr
         raise HTTPException(status_code=409, detail="blueprint not valid")
 
 
+@app.post("/api/blueprints/{blueprint_id}/variants")
+def post_variants(
+    blueprint_id: str,
+    store: Store = Depends(get_store),
+    model: llm.Model = Depends(get_blueprint_model),
+):
+    """Stress variants of an approved blueprint (slice 6c). Each must be approved before it runs."""
+    from rulestorm.explore import propose_variants
+
+    try:
+        return propose_variants(store, blueprint_id, model)
+    except BlueprintNotFound:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    except BlueprintNotApproved:
+        raise HTTPException(status_code=409, detail="blueprint not approved")
+
+
 @app.post("/api/runs")
 def post_run(body: RunRequest, store: Store = Depends(get_store)) -> dict:
     try:

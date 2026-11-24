@@ -82,3 +82,20 @@ def test_no_deadline_keeps_the_configured_timeout() -> None:
     model = FakeModel(['{"action": "attend", "hours": 2}'])
     decide("choose", Choice, model=model)
     assert model.timeouts == [None]
+
+
+class HangingFake(FakeModel):
+    """A call that never comes back in time, like the 75 s blueprint."""
+
+    def complete(self, prompt, max_tokens, timeout_s=None):
+        import time as real_time
+        self.timeouts.append(timeout_s)
+        real_time.sleep(3)
+        return llm.Reply('{"action": "attend", "hours": 2}')
+
+
+def test_deadline_is_wall_clock_even_if_the_call_hangs() -> None:
+    model = HangingFake()
+    outcome = decide("choose", Choice, model=model, deadline_s=0.3)
+    assert outcome.no_action and "DeadlineExceeded" in outcome.error
+    assert outcome.seconds < 1.5
