@@ -66,6 +66,7 @@ class Term:
         self.triggers: dict[str, list[str]] = defaultdict(list)
         self.near: set[tuple[str, str]] = set()  # (count, person) currently near the threshold
         self.last_decision: dict[str, str] = {}  # person -> event ID of their latest decision
+        self.messaged: set[tuple[str, int]] = set()  # (person, period) a message has triggered
         self.of_kind = {tr.kind: tr for tr in template.triggers}
 
     # --- triggers -----------------------------------------------------------------------------
@@ -190,7 +191,24 @@ class Term:
                               caused_by=[t.event_id for t in context.triggers])
             self.last_decision[context.person] = recorded.event_id
             for proposal in decision.proposals:
-                e.propose(context.person, proposal.action, period, caused_by=[recorded.event_id], **proposal.params)
+                done = e.propose(context.person, proposal.action, period, caused_by=[recorded.event_id],
+                                 **proposal.params)
+                self.message_received(done, period)
+
+    def message_received(self, event: Event, period: int) -> None:
+        """A message to a role, or a response to a person, triggers who it is for at the next
+        phase, at most once per person per period (so two people can't chat every step)."""
+        if "message_received" not in self.of_kind or event.type not in ("message_sent", "response_given"):
+            return
+        to = event.payload.get("to")
+        if event.type == "message_sent":
+            recipients = sorted(p for p, r in self.engine.role_of.items() if r == to)
+        else:
+            recipients = [to] if to in self.engine.role_of else []
+        for person in recipients:
+            if person != event.actor and (person, period) not in self.messaged:
+                self.messaged.add((person, period))
+                self.notify("message_received", event, person)
 
     def context(self, person: str, period: int, step: int) -> DecisionContext:
         e = self.engine
@@ -222,7 +240,7 @@ class Term:
                 continue
             p = event.payload
             if event.type == "action_rejected":
-                outcomes.append(f"refused: {p['action']} {p['params']} (reason: {p['reason']})")
+                outcomes.append(f"refused: {p['action']} {p['params']} (reason: {p.get('detail') or p['reason']})")
             elif event.type == "request_filed":
                 outcomes.append(f"done: {word} {p['request_id']} submitted for "
                                 f"{self.t.calendar.step_label}s {p['steps']}, now pending")

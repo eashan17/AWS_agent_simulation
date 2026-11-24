@@ -40,6 +40,7 @@ TriggerKind = Literal[
     "endorsement_awaiting",    # a request awaits its endorsed_by person's consent
     "decision_awaiting",       # a request awaits an LLM decision at its processing slot
     "escalation_outcome",      # an escalation outcome reaches its listed roles
+    "message_received",        # a message or response reaches the person it is for (once a period)
 ]
 DisruptionKindName = Literal["obstacle", "capacity", "cancellation"]
 CountExclusion = Literal["approved_request", "cancelled"]

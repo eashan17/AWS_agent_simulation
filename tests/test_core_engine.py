@@ -213,7 +213,8 @@ def test_partial_at_submit_drops_a_not_yet_recorded_session(template: Template) 
     filed = engine.propose("working", "submit_exception_request", 2, sessions=[3, 5], reason="r")
     assert filed.type == "request_filed"
     assert engine.requests["R1"].steps == [3]
-    assert filed.payload["dropped"] == [{"step": 5, "reason": "precondition: occurrence_recorded"}]
+    assert filed.payload["dropped"] == [{"step": 5, "reason": "precondition: occurrence_recorded",
+                                         "detail": "session 5 had not been recorded yet when you sent this"}]
     nothing_left = engine.propose("working", "submit_exception_request", 2, sessions=[6], reason="r")
     assert nothing_left.type == "action_rejected"
 
@@ -327,3 +328,25 @@ def test_a_single_threshold_check_records_both_figures_and_pending_requests(temp
     assert engine.record_event[("attend_class", "working", 1)] not in working.caused_by
     assert engine.record_event[("attend_class", "working", 1)] in filed.caused_by
     assert checks["resident"].payload["passed"] is True
+
+
+def test_every_refusal_has_a_plain_detail_from_the_template_labels(engine: Engine) -> None:
+    """The reason code stays for summaries; the person is shown plain words built from the fixed
+    reason library and the template's labels (no per-template refusal sentences)."""
+    engine.current_step = 1
+    cases = [
+        (("working", "edit_attendance", {"student": "working", "session": 1, "present": True}),
+         "permission", "a Student is not allowed to correct a recorded attendance mark"),
+        (("working", "submit_exception_request", {"sessions": [1], "reason": "r"}),
+         "precondition: occurrence_recorded", "session 1 had not been recorded yet when you sent this"),
+        (("working", "skip", {"session": 2}),
+         "precondition: current_step", "plans can be made only for the current session (session 1)"),
+    ]
+    for (actor, action, params), reason, detail in cases:
+        event = engine.propose(actor, action, 1, **params)
+        assert (event.payload["reason"], event.payload["detail"]) == (reason, detail)
+    engine.record_step(1)
+    engine.current_step = None
+    engine.propose("working", "submit_exception_request", 1, sessions=[1], reason="r")
+    again = engine.propose("working", "submit_exception_request", 1, sessions=[1], reason="r")
+    assert again.payload["detail"] == "session 1 is already covered by one of your exception requests"

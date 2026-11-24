@@ -191,6 +191,49 @@ def test_person_is_told_their_refused_action_and_their_uncovered_absences(templa
     run_term(template, VALUES, agents)
     first, after = agents.prompts["commuter"][0], agents.prompts["commuter"][1]
     assert "What happened to the actions" not in first
-    assert "refused: submit_exception_request" in after and "precondition: occurrence_recorded" in after
+    assert "refused: submit_exception_request" in after
+    assert "(reason: session 5 had not been recorded yet when you sent this)" in after  # plain words, not a code
     assert "no exception request covers: session 5" in after  # the late arrival at session 5
     assert "Request rules:" in after and "- travel buffer: 30 min" in after
+
+
+def test_advice_reaches_the_student_once_a_period(template) -> None:
+    """message_received: the advisor's response triggers the student it is for at the next phase,
+    at most once per person per period, so the two can't chat every step."""
+    def reply(person, prompt):
+        if person == "advisor" and "count_near_threshold" in prompt:
+            return json.dumps({"actions": [{"action": "advise_student",
+                                            "params": {"student": "commuter", "advice": "file a request now"}}],
+                               "reason": "close to the threshold"})
+        if person == "commuter" and "response_given" in prompt:
+            return json.dumps({"actions": [{"action": "ask_advisor", "params": {"message": "thanks, will do"}}],
+                               "reason": "the advisor wrote"})
+        return NOTHING
+
+    agents = agents_for(template, RoutedModel(reply), cap=1000)
+    engine, _ = run_term(template, VALUES, agents)
+    advice = next(e for e in engine.events if e.type == "response_given")
+    told = [e for e in engine.events if e.type == "decision" and advice.event_id in e.caused_by]
+    assert [d.actor for d in told] == ["commuter"]  # the student it was for, nobody else
+    assert any("file a request now" in p for p in agents.prompts["commuter"])
+    # the commuter's reply reaches the advisor; per period each person is triggered by a message at most once
+    message_decisions = [(e.actor, e.period) for e in engine.events if e.type == "decision"
+                         and any(engine.event(c).type in ("response_given", "message_sent") for c in e.caused_by)]
+    assert len(message_decisions) == len(set(message_decisions))
+
+
+def test_without_the_trigger_in_the_template_advice_triggers_nobody(template) -> None:
+    raw = template.model_dump()
+    raw["triggers"] = [t for t in raw["triggers"] if t["kind"] != "message_received"]
+    quiet = type(template).model_validate(raw)
+
+    def reply(person, prompt):
+        if person == "advisor":
+            return json.dumps({"actions": [{"action": "advise_student",
+                                            "params": {"student": "commuter", "advice": "file now"}}],
+                               "reason": "x"})
+        return NOTHING
+
+    engine, _ = run_term(quiet, VALUES, agents_for(quiet, RoutedModel(reply), cap=1000))
+    advice = [e.event_id for e in engine.events if e.type == "response_given"]
+    assert advice and not any(set(advice) & set(e.caused_by) for e in engine.events if e.type == "decision")

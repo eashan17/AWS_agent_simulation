@@ -5,7 +5,9 @@ plus the blueprint's values. No policy rule and no domain word lives here.
 
 People only propose actions. The engine checks the person's role may take the action (reason
 `permission`), the parameters, and the action's preconditions (reason `precondition: <name>`),
-then commits the action's effects. Every committed or refused action becomes an event with an
+then commits the action's effects. A refusal records the reason code (for summaries and checks)
+and a plain `detail` the person is shown, written here from the fixed reason library and the
+template's own labels, so no template needs its own refusal sentences. Every committed or refused action becomes an event with an
 ID, the state change it made, and `caused_by` links to the events that led to it.
 
 Recording is not an action: the recorder rule (`record_step`) records met or missed for every
@@ -92,7 +94,13 @@ class CountResult(BaseModel):
 
 
 class Refused(Exception):
-    """An action failed a check; the engine records the refusal instead of committing."""
+    """An action failed a check; the engine records the refusal instead of committing.
+    `reason` is the code from the fixed library; `detail` says it in plain words."""
+
+    def __init__(self, reason: str, detail: str | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.detail = detail or reason
 
 
 class Engine:
@@ -197,17 +205,20 @@ class Engine:
         if role is None:
             return self._refuse(actor, None, action_id, period, caused_by, params, f"unknown person {actor!r}")
         if action_id not in self.roles[role].actions:
-            return self._refuse(actor, role, action_id, period, caused_by, params, "permission")
+            what = self.actions[action_id].label if action_id in self.actions else f"take the action {action_id!r}"
+            return self._refuse(actor, role, action_id, period, caused_by, params, "permission",
+                                f"a {self.roles[role].label} is not allowed to {what}")
         action = self.actions[action_id]
         try:
             self._check_params(action, params)
             return self._commit(actor, action, period, caused_by, params)
         except Refused as exc:
-            return self._refuse(actor, role, action_id, period, caused_by, params, str(exc))
+            return self._refuse(actor, role, action_id, period, caused_by, params, exc.reason, exc.detail)
 
-    def _refuse(self, actor, role, action, period, caused_by, params, reason) -> Event:
+    def _refuse(self, actor, role, action, period, caused_by, params, reason, detail=None) -> Event:
         return self.emit("action_rejected", actor, period, step=self.current_step,
-                         payload={"role": role, "action": action, "params": params, "reason": reason},
+                         payload={"role": role, "action": action, "params": params, "reason": reason,
+                                  "detail": detail or reason},
                          caused_by=caused_by)
 
     def _check_params(self, action: Action, params: dict[str, Any]) -> None:
@@ -254,7 +265,8 @@ class Engine:
             duty = self._duty_of(effect)
             if effect.kind in ("plan_meet", "plan_miss") and self.current_step is not None:
                 if any(s != self.current_step for s in steps):
-                    raise Refused("precondition: current_step")
+                    raise Refused("precondition: current_step", f"plans can be made only for the current "
+                                  f"{self.step_label} ({self.step_label} {self.current_step})")
             if effect.kind == "file_request":
                 steps, dropped = self._request_steps(actor, action, effect.request_type, duty, steps)
             elif duty is not None:
@@ -288,9 +300,9 @@ class Engine:
                     self._precondition(precondition, actor, actor, duty, step, request_type)
                 kept.append(step)
             except Refused as exc:
-                dropped.append({"step": step, "reason": str(exc)})
+                dropped.append({"step": step, "reason": exc.reason, "detail": exc.detail})
         if dropped and (not kept or not self.value(rt.partial_at_submit_param)):
-            raise Refused(dropped[0]["reason"])
+            raise Refused(dropped[0]["reason"], "; ".join(d["detail"] for d in dropped))
         return kept, dropped
 
     def _duty_of(self, effect) -> Duty | None:
@@ -311,7 +323,19 @@ class Engine:
             "not_already_covered": lambda: not self._covered(actor, step, request_type),
         }[name]()
         if not ok:
-            raise Refused("already covered" if name == "not_already_covered" else f"precondition: {name}")
+            raise Refused("already covered" if name == "not_already_covered" else f"precondition: {name}",
+                          self._explain(name, step))
+
+    def _explain(self, precondition: str, step: int) -> str:
+        """The fixed preconditions in plain words, with the template's own labels."""
+        occurrence = f"{self.step_label} {step}"
+        request = self.t.terms.get("request", "request")
+        return {
+            "own_occurrence": f"you can do this only for your own {self.step_label}s",
+            "occurrence_recorded": f"{occurrence} had not been recorded yet when you sent this",
+            "occurrence_not_yet": f"{occurrence} had already been recorded or cancelled when you sent this",
+            "not_already_covered": f"{occurrence} is already covered by one of your {request}s",
+        }[precondition]
 
     def _covered(self, person: str, step: int, request_type: str | None) -> bool:
         return any(r.person == person and step in (r.steps if r.status == "pending" else r.approved_steps)
