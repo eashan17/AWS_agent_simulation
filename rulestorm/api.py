@@ -171,3 +171,18 @@ def get_findings(run_id: str, store: Store = Depends(get_store)) -> dict:
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
     return {"run_id": run_id, "status": run["status"], "findings": findings_of(store, run)}
+
+
+@app.get("/api/findings/{finding_id}/evidence")
+def get_evidence(finding_id: str, store: Store = Depends(get_store)) -> dict:
+    """The finding's chain as ordered steps (slice 9): each event's state change, a sentence in the
+    template's terms and a label (recorded fact, calculated, AI interpretation); the check step also
+    has its count recomputed from the run's events, as it stood and if pending requests were approved."""
+    from rulestorm.evidence import evidence, template_named
+
+    finding = store.get_finding(finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    run = store.get_run(finding["run_id"])
+    template = template_named(run["template"].split("@")[0])
+    return evidence(finding, store.run_events(finding["run_id"]), template).model_dump()
