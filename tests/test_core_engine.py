@@ -90,7 +90,7 @@ def test_plans_only_for_the_current_step_and_slack_change(engine: Engine) -> Non
     ahead = engine.propose("commuter", "attend", 2, session=4)
     assert ahead.payload["reason"] == "precondition: current_step"
     engine.propose("commuter", "attend", 2, session=3, travel_buffer_min=40)
-    assert engine.attributes[("commuter", "slack_min")] == 40
+    assert engine.attributes[("commuter", "travel_buffer_min")] == 40
     bad = engine.propose("commuter", "attend", 2, session=3, travel_buffer_min=500)
     assert bad.payload["reason"].startswith("bad parameters")
 

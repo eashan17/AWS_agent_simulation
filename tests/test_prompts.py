@@ -1,5 +1,8 @@
 """Slice L5: prompts generated from the template reproduce the old engine's prompts (frozen in
-tests/golden/ before any prompt code changed), plus a request-rules block."""
+tests/golden/ before any prompt code changed), plus a request-rules block.
+
+Built as an exact copy of every line. Slice L7 narrows it (docs/SLICES.md, general-feature
+rule): an exact match only for the lines carrying the 6b fixes, the same facts for the rest."""
 
 import json
 from pathlib import Path
@@ -45,7 +48,7 @@ def context(name: str) -> DecisionContext:
             count="attendance_pct", person=c["person"], kind="rate", met=a["attended"], due=a["countable"],
             missed=a["countable"] - a["attended"], value=a["pct"], pending=a["pending"],
             approved=a["approved"], rejected=a["rejected"])}
-        ctx.attributes = {"slack_min": c["travel_buffer_min"]}
+        ctx.attributes = {"travel_buffer_min": c["travel_buffer_min"]}
         ctx.pending_requests = a["pending"]
         ctx.uncovered_missed = c["uncovered"]
     else:

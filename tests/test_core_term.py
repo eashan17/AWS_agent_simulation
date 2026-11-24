@@ -193,7 +193,7 @@ def test_profiles_reach_their_decision_context(template) -> None:
     assert seen["commuter"].profile == PROFILES["commuter"]
     assert seen["advisor"].profile == PROFILES["advisor"]
     assert seen["commuter"].counts["attendance_pct"].kind == "rate"
-    assert seen["commuter"].attributes == {"slack_min": 30}
+    assert seen["commuter"].attributes == {"travel_buffer_min": 30}
     assert "attendance_admin" not in seen and "exam_officer" not in seen
 
 

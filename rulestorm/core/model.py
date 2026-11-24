@@ -117,12 +117,6 @@ class Effect(Block):
     attribute: str | None = None
     request_type: str | None = None
     to: str | None = Field(None, description="message only: the role it goes to")
-    param: str | None = Field(None, description="set_attribute only: the action parameter holding the new "
-                                                "value (default: the attribute ID)")
-
-    @property
-    def value_param(self) -> str | None:
-        return self.param or self.attribute
 
 
 class Action(Block):
@@ -398,8 +392,8 @@ def _reference_errors(t: Template) -> list[str]:
             errors.append(f"{owner}: correct_record needs one person and one bool parameter")
         if "set_attribute" in kinds:
             for effect in action.effects:
-                if effect.attribute and effect.value_param not in {p.name for p in action.params}:
-                    errors.append(f"{owner}: set_attribute needs a parameter named '{effect.value_param}'")
+                if effect.attribute and effect.attribute not in {p.name for p in action.params}:
+                    errors.append(f"{owner}: set_attribute needs a parameter named '{effect.attribute}'")
 
     for rt in t.request_types:
         owner = f"request type '{rt.id}'"

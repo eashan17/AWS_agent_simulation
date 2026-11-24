@@ -112,7 +112,7 @@
   ],
   "attributes": [
     {
-      "id": "slack_min",
+      "id": "travel_buffer_min",
       "label": "travel buffer (minutes of slack before class)",
       "role": "student",
       "min": 0,
@@ -125,7 +125,7 @@
       "label": "attend class",
       "owed_by": "student",
       "recorded_by": "faculty",
-      "obstacle_attribute": "slack_min"
+      "obstacle_attribute": "travel_buffer_min"
     }
   ],
   "actions": [
@@ -152,8 +152,7 @@
         },
         {
           "kind": "set_attribute",
-          "attribute": "slack_min",
-          "param": "travel_buffer_min"
+          "attribute": "travel_buffer_min"
         }
       ],
       "preconditions": [
@@ -493,7 +492,7 @@
       "name": "slack_min",
       "kind": "people",
       "type": "attribute",
-      "attribute": "slack_min",
+      "attribute": "travel_buffer_min",
       "sentence": "travel buffer: {value} min (a longer transport delay makes you late)",
       "prompt_section": "you"
     }
