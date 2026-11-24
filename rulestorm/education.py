@@ -4,6 +4,21 @@ No scenario numbers live here: those come from the approved blueprint.
 The example input is ordinary, editable user input, kept descriptive.
 """
 
+from typing import Literal
+
+# The 4 student archetypes the simulation always has (BRIEF must-have 4).
+Archetype = Literal["commuter", "resident", "working", "family"]
+ARCHETYPES: dict[str, str] = {
+    "commuter": "long-distance commuter",
+    "resident": "lives on or near campus",
+    "working": "has fixed work hours",
+    "family": "has family responsibilities",
+}
+
+# General mechanics of the education model (BRIEF must-have 3), not scenario values.
+TERM_WEEKS = 10
+SESSIONS_PER_WEEK = 2
+
 EXAMPLE_POLICY = {
     "text": (
         "Students must maintain at least 80% attendance in each course to be "

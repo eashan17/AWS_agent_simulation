@@ -3,7 +3,7 @@
 import argparse
 
 from rulestorm.education import EXAMPLE_POLICY
-from rulestorm.policy import PolicyInput
+from rulestorm.policy import PolicyInput, PolicyNotFound, create_blueprint
 from rulestorm.store import Store
 
 
@@ -16,6 +16,11 @@ def main(argv: list[str] | None = None) -> None:
     policy_commands = policy.add_subparsers(dest="policy_command", required=True)
     policy_commands.add_parser("example", help="save the pre-filled 80%% example and print it")
 
+    blueprint = commands.add_parser("blueprint", help="AI blueprint of a stored policy")
+    blueprint_commands = blueprint.add_subparsers(dest="blueprint_command", required=True)
+    create_cmd = blueprint_commands.add_parser("create", help="interpret a policy through Bedrock")
+    create_cmd.add_argument("--policy", required=True, help="policy ID from `policy example`")
+
     llm = commands.add_parser("llm", help="model adapter")
     llm_commands = llm.add_subparsers(dest="llm_command", required=True)
     smoke_cmd = llm_commands.add_parser("smoke", help="real Bedrock call: auth, latency, tokens, quotas")
@@ -27,6 +32,12 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "policy" and args.policy_command == "example":
         saved = Store().save_policy(PolicyInput(**EXAMPLE_POLICY))
         print(saved.model_dump_json(indent=2))
+    elif args.command == "blueprint" and args.blueprint_command == "create":
+        try:
+            record = create_blueprint(Store(), args.policy)
+        except PolicyNotFound:
+            raise SystemExit(f"policy not found: {args.policy}")
+        print(record.model_dump_json(indent=2))
     elif args.command == "llm" and args.llm_command == "smoke":
         from rulestorm import smoke
 

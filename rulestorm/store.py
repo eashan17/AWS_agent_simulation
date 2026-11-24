@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from rulestorm.policy import Policy, PolicyInput
+from rulestorm.policy import BlueprintDraft, BlueprintRecord, Policy, PolicyInput
 
 DEFAULT_DB_PATH = "data/rulestorm.db"
 
@@ -19,7 +19,20 @@ CREATE TABLE IF NOT EXISTS policies (
     environment TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS blueprints (
+    id TEXT PRIMARY KEY,
+    policy_id TEXT NOT NULL REFERENCES policies(id),
+    model_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    approved INTEGER NOT NULL DEFAULT 0,
+    record TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class Store:
@@ -44,7 +57,7 @@ class Store:
     def save_policy(self, data: PolicyInput) -> Policy:
         policy = Policy(
             id=f"P-{uuid.uuid4().hex[:8]}",
-            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            created_at=_now(),
             **data.model_dump(),
         )
         conn = self._conn()
@@ -61,3 +74,34 @@ class Store:
             "SELECT * FROM policies WHERE id = ?", (policy_id,)
         ).fetchone()
         return Policy(**dict(row)) if row else None
+
+    def save_blueprint(self, draft: BlueprintDraft) -> BlueprintRecord:
+        record = BlueprintRecord(
+            id=f"B-{uuid.uuid4().hex[:8]}", created_at=_now(), **draft.model_dump()
+        )
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "INSERT INTO blueprints (id, policy_id, model_id, status, approved, record, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.id,
+                    record.policy_id,
+                    record.model_id,
+                    record.status,
+                    int(record.approved),
+                    record.model_dump_json(),
+                    record.created_at,
+                ),
+            )
+        return record
+
+    def get_blueprint(self, blueprint_id: str) -> BlueprintRecord | None:
+        row = self._conn().execute(
+            "SELECT record, approved FROM blueprints WHERE id = ?", (blueprint_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        record = BlueprintRecord.model_validate_json(row["record"])
+        record.approved = bool(row["approved"])
+        return record
