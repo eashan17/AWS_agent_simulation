@@ -41,6 +41,8 @@ LABELLED_FIELDS = (
     "scenario.checkpoint_week",
     "scenario.disruptions",
     "scenario.students",
+    "scenario.faculty",
+    "scenario.advisor",
 )
 
 
@@ -51,15 +53,18 @@ class PolicyParameters(BaseModel):
     outcomes_to_monitor: list[str] = Field(min_length=1, max_length=8)
 
 
-class StudentProfile(BaseModel):
-    """The archetype name is fixed by the education model; everything else comes from the
-    user's text or an AI assumption the user approves (slice 3c)."""
+class Profile(BaseModel):
+    """Who an LLM agent is and what it wants. The role is fixed by the education model; the
+    profile comes from the user's text or an AI assumption the user approves (slice 3c)."""
 
-    archetype: Archetype
     description: str = Field(
-        min_length=1, max_length=200, description="who this student is, in this institution's setting"
+        min_length=1, max_length=200, description="who this person is, in this institution's setting"
     )
-    goals: list[str] = Field(min_length=1, max_length=4, description="what this student wants this term")
+    goals: list[str] = Field(min_length=1, max_length=3, description="what this person wants this term")
+
+
+class StudentProfile(Profile):
+    archetype: Archetype
     constraints: list[str] = Field(min_length=1, max_length=5)
     travel_buffer_min: int = Field(
         ge=0, le=180, description="minutes of slack before class; a longer delay makes them late"
@@ -87,6 +92,8 @@ class Disruption(BaseModel):
 
 class Scenario(BaseModel):
     students: list[StudentProfile] = Field(min_length=4, max_length=4)
+    faculty: Profile
+    advisor: Profile
     admin_capacity_per_week: int = Field(ge=0, le=50)
     checkpoint_week: int = Field(ge=1, le=TERM_WEEKS)
     disruptions: list[Disruption] = Field(min_length=1, max_length=10)
@@ -145,16 +152,19 @@ def blueprint_prompt(policy: Policy) -> str:
         "policy simulation. The simulated term has one course, "
         f"{TERM_WEEKS} weeks and {SESSIONS_PER_WEEK} sessions a week.\n"
         f"Students: exactly four, one of each archetype: {archetypes}. For each, write a "
-        "one-sentence description of who they are in this institution's setting, 1-4 goals "
-        "for the term, their constraints and their travel buffer, drawn from the user's text "
-        "where it says, otherwise proposed. Make each student distinct.\n"
+        "description of who they are in this institution's setting (under 20 words), 1-3 "
+        "goals for the term (under 8 words each), their constraints and their travel buffer, "
+        "drawn from the user's text where it says, otherwise proposed. Make each student distinct.\n"
+        "Faculty and advisor: one each, with a description (under 20 words) and 1-3 goals "
+        "(under 8 words each), drawn from the user's text where it says, otherwise proposed.\n"
         "Disruptions: type 'transport' (set delay_min and the affected archetypes) or "
         "'admin_capacity' (set admin_capacity_during, how many exception requests the "
         "attendance office can process that week).\n"
         "Use values stated in the user's text and list them under facts. Where the text gives "
         "no value, propose a plausible one and list it under assumptions. Each entry's `field` "
         f"is the blueprint path it covers; every one of these must appear: {', '.join(LABELLED_FIELDS)}. "
-        "Keep facts and assumptions to at most 8 short entries each.\n\n"
+        "One entry may cover a whole section (e.g. field `scenario.students` for all four "
+        "students). Keep facts and assumptions to at most 8 entries each, statements under 15 words.\n\n"
         f"Policy:\n{policy.text}\n\nPurpose:\n{policy.purpose}\n\nEnvironment:\n{policy.environment}"
     )
 

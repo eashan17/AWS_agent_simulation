@@ -25,6 +25,8 @@ VALID = {
             {"archetype": "working", "description": "works evening shifts", "goals": ["keep the job"], "constraints": ["fixed work hours"], "travel_buffer_min": 15},
             {"archetype": "family", "description": "cares for a parent", "goals": ["balance home and study"], "constraints": ["care duties"], "travel_buffer_min": 20},
         ],
+        "faculty": {"description": "teaches the course", "goals": ["keep participation up"]},
+        "advisor": {"description": "advises 40 students", "goals": ["keep advisees eligible"]},
         "admin_capacity_per_week": 2,
         "checkpoint_week": 6,
         "disruptions": [
@@ -40,6 +42,8 @@ VALID = {
         {"field": "scenario.checkpoint_week", "statement": "mid-term check"},
         {"field": "scenario.disruptions", "statement": "transport disruptions happen"},
         {"field": "scenario.students", "statement": "buffers proposed"},
+        {"field": "scenario.faculty", "statement": "faculty profile proposed"},
+        {"field": "scenario.advisor", "statement": "advisor profile proposed"},
     ],
 }
 
@@ -120,3 +124,17 @@ def test_prompt_asks_for_description_and_goals(policy) -> None:
     model = FakeModel([json.dumps(VALID)])
     interpret(policy, model)
     assert "description" in model.prompts[0] and "goals" in model.prompts[0]
+
+
+def test_faculty_and_advisor_profiles_required_and_labelled(policy) -> None:
+    missing = copy.deepcopy(VALID)
+    del missing["scenario"]["advisor"]
+    with pytest.raises(ValidationError, match="advisor"):
+        Blueprint.model_validate(missing)
+    unlabelled = copy.deepcopy(VALID)
+    unlabelled["assumptions"] = [a for a in unlabelled["assumptions"] if a["field"] != "scenario.faculty"]
+    with pytest.raises(ValidationError, match="scenario.faculty"):
+        Blueprint.model_validate(unlabelled)
+    model = FakeModel([json.dumps(VALID)])
+    interpret(policy, model)
+    assert "Faculty and advisor" in model.prompts[0]

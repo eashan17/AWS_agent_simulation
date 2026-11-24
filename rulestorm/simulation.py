@@ -24,7 +24,7 @@ from rulestorm.education import (
     TERM_WEEKS,
 )
 from rulestorm.engine import Attendance, Engine, Event
-from rulestorm.policy import Blueprint, StudentProfile
+from rulestorm.policy import Blueprint, Profile
 
 
 class Proposal(BaseModel):
@@ -42,7 +42,7 @@ class DecisionContext(BaseModel):
     triggers: list[Event]
     attendance: Attendance | None = None  # students only
     travel_buffer_min: int | None = None  # students only
-    profile: StudentProfile | None = None  # students only: description, goals, constraints from the blueprint
+    profile: Profile | None = None  # LLM agents: description and goals (students: constraints too) from the blueprint
     pending_requests: list[str] = Field(default_factory=list)
 
 
@@ -70,7 +70,8 @@ class Term:
         students = [s.archetype for s in blueprint.scenario.students]
         self.engine = Engine(blueprint.policy.threshold_pct, students)
         self.engine.travel_buffer = {s.archetype: s.travel_buffer_min for s in blueprint.scenario.students}
-        self.profiles = {s.archetype: s for s in blueprint.scenario.students}
+        self.profiles: dict[str, Profile] = {s.archetype: s for s in blueprint.scenario.students}
+        self.profiles.update(faculty=blueprint.scenario.faculty, advisor=blueprint.scenario.advisor)
         self.triggers: dict[str, list[str]] = defaultdict(list)
         self.near_threshold: set[str] = set()
 
@@ -149,11 +150,11 @@ class Term:
             context = DecisionContext(
                 agent=agent, role=role, week=week, session=session,
                 triggers=[e.event(t) for t in self.triggers[agent]],
+                profile=self.profiles.get(agent),  # rule agents have none
             )
             if role == "student":
                 context.attendance = e.attendance(agent)
                 context.travel_buffer_min = e.travel_buffer.get(agent)
-                context.profile = self.profiles[agent]
                 context.pending_requests = context.attendance.pending
             else:
                 context.pending_requests = [r.request_id for r in e.requests.values() if r.status == "pending"]

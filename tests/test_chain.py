@@ -18,6 +18,8 @@ SCENARIO = {
         {"archetype": "working", "description": "works evening shifts", "goals": ["keep the job"], "constraints": ["fixed work hours"], "travel_buffer_min": 15},
         {"archetype": "family", "description": "cares for a parent", "goals": ["balance home and study"], "constraints": ["care duties"], "travel_buffer_min": 20},
     ],
+    "faculty": {"description": "teaches the course", "goals": ["keep participation up"]},
+    "advisor": {"description": "advises 40 students", "goals": ["keep advisees eligible"]},
     "admin_capacity_per_week": 0,
     "checkpoint_week": 6,
     "disruptions": [
@@ -173,7 +175,7 @@ def test_no_triggers_no_decisions_before_the_disruption(engine) -> None:
     assert all(e.week >= 3 for e in of_type(engine, "decision"))
 
 
-def test_student_description_and_goals_reach_their_decision_context() -> None:
+def test_profiles_reach_their_decision_context() -> None:
     seen: dict[str, DecisionContext] = {}
 
     def recording(contexts: list[DecisionContext]) -> list[PhaseDecision]:
@@ -188,4 +190,5 @@ def test_student_description_and_goals_reach_their_decision_context() -> None:
     commuter = seen["commuter"].profile
     assert commuter.description == by_archetype["commuter"].description
     assert commuter.goals == by_archetype["commuter"].goals
-    assert seen["advisor"].profile is None
+    assert seen["advisor"].profile == bp.scenario.advisor
+    assert all(c.profile is None for a, c in seen.items() if a in ("attendance_admin", "exam_officer"))
