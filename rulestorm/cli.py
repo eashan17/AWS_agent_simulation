@@ -3,7 +3,14 @@
 import argparse
 
 from rulestorm.education import EXAMPLE_POLICY
-from rulestorm.policy import PolicyInput, PolicyNotFound, create_blueprint
+from rulestorm.policy import (
+    BlueprintInvalid,
+    BlueprintNotFound,
+    PolicyInput,
+    PolicyNotFound,
+    approve_blueprint,
+    create_blueprint,
+)
 from rulestorm.store import Store
 
 
@@ -20,6 +27,8 @@ def main(argv: list[str] | None = None) -> None:
     blueprint_commands = blueprint.add_subparsers(dest="blueprint_command", required=True)
     create_cmd = blueprint_commands.add_parser("create", help="interpret a policy through Bedrock")
     create_cmd.add_argument("--policy", required=True, help="policy ID from `policy example`")
+    approve_cmd = blueprint_commands.add_parser("approve", help="approve and freeze a valid blueprint")
+    approve_cmd.add_argument("blueprint_id")
 
     llm = commands.add_parser("llm", help="model adapter")
     llm_commands = llm.add_subparsers(dest="llm_command", required=True)
@@ -38,6 +47,16 @@ def main(argv: list[str] | None = None) -> None:
         except PolicyNotFound:
             raise SystemExit(f"policy not found: {args.policy}")
         print(record.model_dump_json(indent=2))
+    elif args.command == "blueprint" and args.blueprint_command == "approve":
+        try:
+            record = approve_blueprint(Store(), args.blueprint_id)
+        except BlueprintNotFound:
+            raise SystemExit(f"blueprint not found: {args.blueprint_id}")
+        except BlueprintInvalid:
+            raise SystemExit(f"blueprint not valid, so it cannot be approved: {args.blueprint_id}")
+        print(f"id: {record.id}")
+        print(f"status: {record.status}")
+        print(f"approved: {str(record.approved).lower()}")
     elif args.command == "llm" and args.llm_command == "smoke":
         from rulestorm import smoke
 

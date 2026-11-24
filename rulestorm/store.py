@@ -7,7 +7,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from rulestorm.policy import BlueprintDraft, BlueprintRecord, Policy, PolicyInput
+from rulestorm.policy import (
+    Blueprint,
+    BlueprintDraft,
+    BlueprintFrozen,
+    BlueprintNotFound,
+    BlueprintRecord,
+    Policy,
+    PolicyInput,
+)
 
 DEFAULT_DB_PATH = "data/rulestorm.db"
 
@@ -28,6 +36,14 @@ CREATE TABLE IF NOT EXISTS blueprints (
     record TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- An approved blueprint is frozen: the database itself refuses any change or deletion,
+-- so a run and its counterfactual always use the same values.
+CREATE TRIGGER IF NOT EXISTS blueprints_frozen_update BEFORE UPDATE ON blueprints
+WHEN OLD.approved = 1
+BEGIN SELECT RAISE(ABORT, 'blueprint is approved and frozen'); END;
+CREATE TRIGGER IF NOT EXISTS blueprints_frozen_delete BEFORE DELETE ON blueprints
+WHEN OLD.approved = 1
+BEGIN SELECT RAISE(ABORT, 'blueprint is approved and frozen'); END;
 """
 
 
@@ -104,4 +120,33 @@ class Store:
             return None
         record = BlueprintRecord.model_validate_json(row["record"])
         record.approved = bool(row["approved"])
+        return record
+
+    def mark_approved(self, blueprint_id: str) -> bool:
+        """Only a valid, not-yet-approved blueprint changes; returns whether it did."""
+        conn = self._conn()
+        with conn:
+            cursor = conn.execute(
+                "UPDATE blueprints SET approved = 1 WHERE id = ? AND status = 'valid' AND approved = 0",
+                (blueprint_id,),
+            )
+        return cursor.rowcount == 1
+
+    def update_blueprint(self, blueprint_id: str, blueprint: Blueprint) -> BlueprintRecord:
+        """Edit a blueprint before approval (e.g. corrected assumptions). Refused once approved."""
+        record = self.get_blueprint(blueprint_id)
+        if record is None:
+            raise BlueprintNotFound(blueprint_id)
+        if record.approved:
+            raise BlueprintFrozen(blueprint_id)
+        record = record.model_copy(update={"blueprint": blueprint, "status": "valid", "errors": []})
+        conn = self._conn()
+        try:
+            with conn:
+                conn.execute(
+                    "UPDATE blueprints SET status = ?, record = ? WHERE id = ?",
+                    (record.status, record.model_dump_json(), blueprint_id),
+                )
+        except sqlite3.IntegrityError as exc:  # approved between the check and the write
+            raise BlueprintFrozen(blueprint_id) from exc
         return record

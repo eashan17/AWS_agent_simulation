@@ -168,9 +168,46 @@ class PolicyNotFound(LookupError):
     pass
 
 
+class BlueprintNotFound(LookupError):
+    pass
+
+
+class BlueprintInvalid(ValueError):
+    """Only a blueprint that passed validation can be approved."""
+
+
+class BlueprintFrozen(PermissionError):
+    """An approved blueprint cannot be edited."""
+
+
+class BlueprintNotApproved(PermissionError):
+    """A run needs an approved blueprint."""
+
+
 def create_blueprint(store: "Store", policy_id: str, model: llm.Model | None = None) -> BlueprintRecord:
     """The one entry point the API and CLI share."""
     policy = store.get_policy(policy_id)
     if policy is None:
         raise PolicyNotFound(policy_id)
     return store.save_blueprint(interpret(policy, model))
+
+
+def approve_blueprint(store: "Store", blueprint_id: str) -> BlueprintRecord:
+    """Approve and freeze. Approving an already approved blueprint is a no-op."""
+    record = store.get_blueprint(blueprint_id)
+    if record is None:
+        raise BlueprintNotFound(blueprint_id)
+    if record.status != "valid":
+        raise BlueprintInvalid(blueprint_id)
+    store.mark_approved(blueprint_id)
+    return store.get_blueprint(blueprint_id)
+
+
+def require_approved(store: "Store", blueprint_id: str) -> BlueprintRecord:
+    """The check every run start goes through."""
+    record = store.get_blueprint(blueprint_id)
+    if record is None:
+        raise BlueprintNotFound(blueprint_id)
+    if not record.approved:
+        raise BlueprintNotApproved(blueprint_id)
+    return record

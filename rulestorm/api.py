@@ -6,7 +6,18 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from rulestorm import llm
-from rulestorm.policy import BlueprintRecord, Policy, PolicyInput, PolicyNotFound, create_blueprint
+from rulestorm.policy import (
+    BlueprintInvalid,
+    BlueprintNotApproved,
+    BlueprintNotFound,
+    BlueprintRecord,
+    Policy,
+    PolicyInput,
+    PolicyNotFound,
+    approve_blueprint,
+    create_blueprint,
+    require_approved,
+)
 from rulestorm.store import Store
 
 app = FastAPI(title="RuleStorm")
@@ -24,6 +35,10 @@ def get_blueprint_model() -> llm.Model:
 
 class BlueprintRequest(BaseModel):
     policy_id: str = Field(min_length=1, max_length=64)
+
+
+class RunRequest(BaseModel):
+    blueprint_id: str = Field(min_length=1, max_length=64)
 
 
 @app.get("/api/health")
@@ -46,3 +61,25 @@ def post_blueprint(
         return create_blueprint(store, body.policy_id, model)
     except PolicyNotFound:
         raise HTTPException(status_code=404, detail="policy not found")
+
+
+@app.post("/api/blueprints/{blueprint_id}/approve", response_model=BlueprintRecord)
+def post_approve(blueprint_id: str, store: Store = Depends(get_store)) -> BlueprintRecord:
+    try:
+        return approve_blueprint(store, blueprint_id)
+    except BlueprintNotFound:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    except BlueprintInvalid:
+        raise HTTPException(status_code=409, detail="blueprint not valid")
+
+
+@app.post("/api/runs")
+def post_run(body: RunRequest, store: Store = Depends(get_store)) -> dict:
+    try:
+        require_approved(store, body.blueprint_id)
+    except BlueprintNotFound:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    except BlueprintNotApproved:
+        raise HTTPException(status_code=409, detail="blueprint not approved")
+    # Placeholder until slice 7a adds the background runner.
+    raise HTTPException(status_code=501, detail="runs not built yet (slice 7a)")
