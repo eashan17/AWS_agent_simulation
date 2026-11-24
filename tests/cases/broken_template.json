@@ -79,35 +79,43 @@
   "people": [
     {
       "id": "commuter",
-      "role": "student"
+      "role": "student",
+      "label": "long-distance commuter"
     },
     {
       "id": "resident",
-      "role": "student"
+      "role": "student",
+      "label": "lives on or near campus"
     },
     {
       "id": "working",
-      "role": "student"
+      "role": "student",
+      "label": "has fixed work hours"
     },
     {
       "id": "family",
-      "role": "student"
+      "role": "student",
+      "label": "has family responsibilities"
     },
     {
       "id": "faculty",
-      "role": "faculty"
+      "role": "faculty",
+      "label": "teaches the course"
     },
     {
       "id": "advisor",
-      "role": "advisor"
+      "role": "advisor",
+      "label": "advises the course's students"
     },
     {
       "id": "attendance_admin",
-      "role": "attendance_admin"
+      "role": "attendance_admin",
+      "label": "processes exception requests"
     },
     {
       "id": "exam_officer",
-      "role": "exam_officer"
+      "role": "exam_officer",
+      "label": "checks exam eligibility"
     }
   ],
   "attributes": [
@@ -389,6 +397,7 @@
       "name": "threshold_pct",
       "kind": "policy",
       "type": "int",
+      "description": "minimum attendance % for exam eligibility",
       "min": 50,
       "max": 100,
       "sentence": "minimum attendance for exam eligibility: {value}% ({scope})",
@@ -398,6 +407,7 @@
       "name": "scope",
       "kind": "policy",
       "type": "choice",
+      "description": "whether attendance is counted per course or over all courses",
       "choices": [
         "per_course",
         "overall"
@@ -407,6 +417,7 @@
       "name": "exception_rule",
       "kind": "policy",
       "type": "text",
+      "description": "how the policy says exceptions are granted, in its own words",
       "max_length": 300,
       "prompt_section": "policy",
       "sentence": "exception rule: {value}"
@@ -415,6 +426,7 @@
       "name": "request_timing",
       "kind": "policy",
       "type": "choice",
+      "description": "when an exception request can be filed",
       "choices": [
         "after_missed",
         "in_advance"
@@ -429,6 +441,7 @@
       "name": "partial_at_submit",
       "kind": "policy",
       "type": "bool",
+      "description": "whether a request that lists some sessions it can't cover keeps the valid ones",
       "prompt_section": "request_rules",
       "sentences": {
         "true": "A request that lists some classes it can't cover keeps the ones it can.",
@@ -439,6 +452,7 @@
       "name": "partial_at_decide",
       "kind": "policy",
       "type": "bool",
+      "description": "whether the office can approve part of a request",
       "prompt_section": "request_rules",
       "sentences": {
         "true": "The attendance office can approve some classes of a request and reject the rest.",
@@ -449,6 +463,7 @@
       "name": "decision_rule",
       "kind": "policy",
       "type": "choice",
+      "description": "how the attendance office decides each request it processes",
       "choices": [
         "approve_if_covered_missed",
         "approve_if_filed_before_occurrence",
@@ -465,6 +480,7 @@
       "name": "office_capacity_per_week",
       "kind": "environment",
       "type": "int",
+      "description": "how many exception requests the attendance office can process each week",
       "min": 0,
       "max": 50,
       "sentence": "The attendance office can process {value} requests a week."
@@ -473,6 +489,7 @@
       "name": "checkpoint_week",
       "kind": "environment",
       "type": "int",
+      "description": "the week at whose end exam eligibility is checked",
       "min": 1,
       "max": 10,
       "sentence": "eligibility is checked in week {value}",
@@ -481,17 +498,20 @@
     {
       "name": "disruptions",
       "kind": "environment",
-      "type": "disruptions"
+      "type": "disruptions",
+      "description": "what goes wrong during the term"
     },
     {
       "name": "profiles",
       "kind": "people",
-      "type": "profiles"
+      "type": "profiles",
+      "description": "who each person is and what they want"
     },
     {
       "name": "slack_min",
       "kind": "people",
       "type": "attribute",
+      "description": "each student's minutes of slack before class; a longer transport delay makes them late",
       "attribute": "travel_buffer_min",
       "sentence": "travel buffer: {value} min (a longer transport delay makes you late)",
       "prompt_section": "you"

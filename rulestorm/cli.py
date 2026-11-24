@@ -86,7 +86,8 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(f"policy not found: {args.policy}")
         except DailyCapReached as exc:
             raise SystemExit(str(exc))
-        print(record.model_dump_json(indent=2))
+        for line in describe_blueprint(record):
+            print(line)
     elif args.command == "blueprint" and args.blueprint_command == "approve":
         try:
             record = approve_blueprint(Store(), args.blueprint_id)
@@ -130,8 +131,48 @@ def main(argv: list[str] | None = None) -> None:
         explore_command(args.explore_command, args.blueprint_id)
 
 
+def describe_blueprint(record) -> list[str]:
+    """A created blueprint in plain lines: the pick, the status, then every value with its label."""
+    from rulestorm.blueprint import TemplateBlueprint
+    from rulestorm.core.model import load_template
+
+    lines = [f"id: {record.id}", f"policy: {record.policy_id}"]
+    if record.template_id:
+        lines.append(f"template: {record.template_id}@{record.template_version} (AI pick: {record.pick_reason})")
+    elif record.status == "out_of_scope":
+        lines.append(f"template: none (AI pick: {record.pick_reason})")
+    lines.append(f"status: {record.status} | attempts: {record.attempts} | seconds: {record.seconds} | "
+                 f"tokens: {record.input_tokens} in, {record.output_tokens} out")
+    lines += [f"retried after: {r}" for r in record.retried]
+    lines += [f"error: {e}" for e in record.errors]
+    bp = record.blueprint
+    if not isinstance(bp, TemplateBlueprint):
+        return lines
+    template = load_template(bp.template_id)
+    for section in ("policy", "environment", "people"):
+        lines.append(f"{section}:")
+        for p in template.parameters:
+            if p.kind != section:
+                continue
+            value = bp.values[p.name]
+            if p.type == "disruptions":
+                shown = "; ".join(f"{template.calendar.period_label} {d['period']} {d['kind']}: {d['description']}"
+                                  for d in value)
+            elif p.type == "profiles":
+                shown = "; ".join(f"{pid}: {prof['description']}" for pid, prof in value.items())
+            elif isinstance(value, dict):
+                shown = ", ".join(f"{k} {v}" for k, v in value.items())
+            else:
+                shown = str(value).lower() if isinstance(value, bool) else str(value)
+            label = bp.label_for(template, p.name)
+            tag = f"  [{label[0]}: {label[1].statement}]" if label else "  [unlabelled]"
+            lines.append(f"  {p.name}: {shown}{tag}")
+    return lines
+
+
 def explore_command(command: str, blueprint_id: str) -> None:
     from rulestorm import explore
+    from rulestorm.agents import OldFormatOnly
     from rulestorm.policy import BlueprintNotApproved
 
     store = Store()
@@ -172,15 +213,21 @@ def explore_command(command: str, blueprint_id: str) -> None:
         raise SystemExit(f"blueprint not approved: {blueprint_id}")
     except DailyCapReached as exc:
         raise SystemExit(str(exc))
+    except OldFormatOnly as exc:
+        raise SystemExit(f"not yet: {exc}")
 
 
 def run_local_command(blueprint_id: str) -> None:
     from rulestorm.agents import run_local
     from rulestorm.policy import BlueprintNotApproved
 
+    from rulestorm.agents import OldFormatOnly
+
     try:
         run_id, summary, seconds, path = run_local(
             Store(), blueprint_id, on_week=lambda week: print(f"week {week} done", flush=True))
+    except OldFormatOnly as exc:
+        raise SystemExit(f"not yet: {exc}")
     except BlueprintNotFound:
         raise SystemExit(f"blueprint not found: {blueprint_id}")
     except BlueprintNotApproved:

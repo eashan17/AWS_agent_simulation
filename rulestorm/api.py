@@ -104,6 +104,8 @@ def post_variants(
         raise HTTPException(status_code=409, detail="blueprint not approved")
     except DailyCapReached:
         raise HTTPException(status_code=429, detail="daily blueprint limit reached, try again tomorrow")
+    except RuntimeError as exc:  # agents.OldFormatOnly: variants on the template format come with L8
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @app.post("/api/runs")

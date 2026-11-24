@@ -10,3 +10,4 @@ Anything outside the current slice goes here, one line each. Picked up only afte
 - More templates on the same building blocks (each about 1–2 h): late assignment submission, fee or scholarship document deadlines, library fines, staff leave.
 - Full exploration loop (nice-to-have 11): random variants alongside targeted ones, outcome-based prioritisation, follow-up rounds on variants that broke.
 - Agents often ask for an exception before the class has happened (refused, correctly). Worth showing in the UI as a real finding about the policy's wording ("requests only after the absence is recorded").
+- Blueprint fill retried once in 10 real runs on 24 Nov (41.5 s, over the 40 s target; the other 9 took 21-28 s). The reason a reply is retried is now recorded in `retried` and printed by `blueprint create`: check it when it happens again, and tighten the fill prompt for that rule.

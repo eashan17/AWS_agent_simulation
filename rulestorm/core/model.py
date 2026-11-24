@@ -81,10 +81,11 @@ class Role(Block):
 
 
 class Person(Block):
-    """Who exists. Labels and profiles come from the blueprint."""
+    """Who exists. Profiles come from the blueprint."""
 
     id: str = Field(min_length=1)
     role: str
+    label: str | None = Field(None, description="who this person is in one phrase, for the fill prompt")
 
 
 class Attribute(Block):
@@ -204,6 +205,7 @@ class Parameter(Block):
     choices: list[str] | None = None
     attribute: str | None = Field(None, description="type attribute: which attribute each person sets")
     max_length: int | None = Field(None, description="type text: longest allowed value")
+    description: str | None = Field(None, description="what the value means, for the fill prompt")
     prompt_section: PromptSection | None = Field(None, description="where the value is shown to LLM people")
     sentence: str | None = Field(None, description="how the value reads in a prompt: {value} is replaced, "
                                                    "and {name} by another parameter's value")

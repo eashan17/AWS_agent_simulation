@@ -59,6 +59,10 @@ class AgentDecision(BaseModel):
     strategy: str = Field("", max_length=200, description="your current strategy, one short sentence")
 
 
+class OldFormatOnly(RuntimeError):
+    """This code still reads only the old attendance blueprint (until slices L7/L8)."""
+
+
 class CallCapReached(Exception):
     """The run's call cap is used up; the call is refused before it reaches the model."""
 
@@ -298,6 +302,8 @@ def run_local(store, blueprint_id: str, out_dir: str = "runs", on_week=None) -> 
     from rulestorm.policy import require_approved
 
     record = require_approved(store, blueprint_id)
+    if not isinstance(record.blueprint, Blueprint):
+        raise OldFormatOnly("runs on the template format come with slice L7")
     run_id = f"L-{uuid.uuid4().hex[:8]}"
     started = time.monotonic()
     engine, summary = run_term(record.blueprint, on_week=on_week)

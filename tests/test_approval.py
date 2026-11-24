@@ -17,7 +17,7 @@ from rulestorm.policy import (
     require_approved,
 )
 from rulestorm.store import Store
-from test_blueprint import PICK, VALID
+from test_blueprint import FILL, PICK, VALID
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def store(tmp_path) -> Store:
 @pytest.fixture
 def blueprint(store):
     policy = store.save_policy(PolicyInput(text="80% attendance", purpose="y", environment="z"))
-    return create_blueprint(store, policy.id, FakeModel([PICK, json.dumps(VALID)]))
+    return create_blueprint(store, policy.id, FakeModel([PICK, json.dumps(FILL)]))
 
 
 @pytest.fixture

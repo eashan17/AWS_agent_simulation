@@ -126,6 +126,10 @@ def apply_variant(parent: Blueprint, variant: StressVariant) -> Blueprint:
 def propose_variants(store, parent_id: str, model: llm.Model | None = None) -> VariantsResult:
     """One model call (at most 2 with the validation retry), inside the 55 s blueprint budget."""
     parent = require_approved(store, parent_id)
+    if not isinstance(parent.blueprint, Blueprint):
+        from rulestorm.agents import OldFormatOnly
+
+        raise OldFormatOnly("stress variants on the template format come with slice L8")
     take_blueprint_call(store)
     policy = store.get_policy(parent.policy_id)
     model = model or llm.get_model(max_attempts=1)

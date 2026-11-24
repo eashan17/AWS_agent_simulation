@@ -3,28 +3,32 @@
 `interpret` makes two model calls, always in this order, sharing one 55 s wall-clock budget:
 1. pick: the policy texts plus every template's scope line -> a template ID, or "none" with a
    reason (`status: out_of_scope`, and no fill call);
-2. fill: the chosen template's values (today the attendance blueprint; slice L6b builds each
-   template's values model from its parameter specs).
+2. fill: the chosen template's values model, built from its parameter specs
+   (rulestorm/blueprint.py), with every value labelled a fact or an assumption.
 Each blueprint request first takes one unit of the daily `blueprint_calls` cap.
+
+The old attendance `Blueprint` (policy + scenario) below is still read by the old engine and the
+stress variants until slices L7 and L8 move them onto the template format.
 """
 
 import time
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, create_model, model_validator
+from pydantic import BaseModel, Field, ValidationError, create_model, model_validator
 
 from rulestorm import config, llm
+from rulestorm.blueprint import TemplateBlueprint, fill_prompt, fill_schema, to_blueprint
 from rulestorm.core.model import Template, shipped_templates
-from rulestorm.education import ARCHETYPES, SESSIONS_PER_WEEK, TERM_WEEKS, Archetype
+from rulestorm.education import ARCHETYPES, TERM_WEEKS, Archetype
 
 if TYPE_CHECKING:
     from rulestorm.store import Store
 
 MAX_INPUT_CHARS = 2000
-# Real blueprint replies are ~920-990 tokens and ~20 s (24 Nov, after slice 3c); the cap stops
-# a runaway reply. Both attempts share one 55 s budget, inside CloudFront's 60 s origin
-# timeout: the first may use all of it, the retry gets what is left (docs/ARCHITECTURE.md).
-BLUEPRINT_MAX_TOKENS = 1500
+# Template fills measured 24 Nov (slice L6b, 10 real runs): about 1,000-1,060 output tokens and
+# 21-28 s per request (pick + fill); 1,800 is about 1.7x that, so it only stops a runaway reply.
+# All calls share one 55 s budget, inside CloudFront's 60 s origin timeout (docs/ARCHITECTURE.md).
+BLUEPRINT_MAX_TOKENS = 1800
 BLUEPRINT_DEADLINE_S = 55.0
 # The pick reply is one ID and one sentence (~40 tokens); the cap stops a runaway reply.
 PICK_MAX_TOKENS = 150
@@ -150,9 +154,14 @@ class BlueprintDraft(BaseModel):
     template_id: str | None = None
     template_version: int | None = None
     pick_reason: str | None = None
-    blueprint: Blueprint | None = None
+    # The template format (slice L6b); the old attendance format while L7/L8 port its readers.
+    blueprint: TemplateBlueprint | Blueprint | None = None
     attempts: int
     seconds: float
+    # Measured per request: why a reply had to be retried, and the tokens used (sets max_tokens).
+    retried: list[str] = Field(default_factory=list)
+    input_tokens: int = 0
+    output_tokens: int = 0
     # Stress variants (slice 6c): the approved blueprint this one varies, and why.
     parent_id: str | None = None
     variant: str | None = None
@@ -165,30 +174,6 @@ class BlueprintRecord(BlueprintDraft):
     id: str
     approved: bool = False
     created_at: str
-
-
-def blueprint_prompt(policy: Policy) -> str:
-    archetypes = "; ".join(f"{name} ({desc})" for name, desc in ARCHETYPES.items())
-    return (
-        "You turn an institution's attendance policy into the parameters of an education "
-        "policy simulation. The simulated term has one course, "
-        f"{TERM_WEEKS} weeks and {SESSIONS_PER_WEEK} sessions a week.\n"
-        f"Students: exactly four, one of each archetype: {archetypes}. For each, write a "
-        "description of who they are in this institution's setting (under 20 words), 1-3 "
-        "goals for the term (under 8 words each), their constraints and their travel buffer, "
-        "drawn from the user's text where it says, otherwise proposed. Make each student distinct.\n"
-        "Faculty and advisor: one each, with a description (under 20 words) and 1-3 goals "
-        "(under 8 words each), drawn from the user's text where it says, otherwise proposed.\n"
-        "Disruptions: type 'transport' (set delay_min and the affected archetypes) or "
-        "'admin_capacity' (set admin_capacity_during, how many exception requests the "
-        "attendance office can process that week).\n"
-        "Use values stated in the user's text and list them under facts. Where the text gives "
-        "no value, propose a plausible one and list it under assumptions. Each entry's `field` "
-        f"is the blueprint path it covers; every one of these must appear: {', '.join(LABELLED_FIELDS)}. "
-        "One entry may cover a whole section (e.g. field `scenario.students` for all four "
-        "students). Keep facts and assumptions to at most 8 entries each, statements under 15 words.\n\n"
-        f"Policy:\n{policy.text}\n\nPurpose:\n{policy.purpose}\n\nEnvironment:\n{policy.environment}"
-    )
 
 
 def pick_prompt(policy: Policy, templates: list[Template]) -> str:
@@ -213,11 +198,6 @@ def pick_schema(template_ids: list[str]) -> type[BaseModel]:
     )
 
 
-# The fill for each template. Slice L6b replaces this with values models built from each
-# template's parameter specs; until then only the attendance blueprint can be filled.
-FILL_SCHEMAS: dict[str, tuple] = {"attendance": (blueprint_prompt, Blueprint)}
-
-
 def interpret(policy: Policy, model: llm.Model | None = None) -> BlueprintDraft:
     """Pick, then fill: at most 2 attempts per call, no boto retries, one shared deadline."""
     model = model or llm.get_model(max_attempts=1)
@@ -228,6 +208,7 @@ def interpret(policy: Policy, model: llm.Model | None = None) -> BlueprintDraft:
     pick = llm.decide(pick_prompt(policy, list(templates.values())), pick_schema(list(templates)), model=model,
                       max_tokens=PICK_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S)
     draft.attempts = pick.attempts
+    _measure(draft, pick, pick_schema(list(templates)))
     if pick.no_action:
         draft.errors = [f"template pick: {pick.error}"]
     elif pick.value.template_id == "none":
@@ -236,18 +217,27 @@ def interpret(policy: Policy, model: llm.Model | None = None) -> BlueprintDraft:
         template = templates[pick.value.template_id]
         draft.template_id, draft.template_version = template.id, template.version
         draft.pick_reason = pick.value.reason
-        if template.id not in FILL_SCHEMAS:
-            draft.errors = [f"no fill for template {template.ref} yet (slice L6b)"]
-        else:
-            prompt_for, schema = FILL_SCHEMAS[template.id]
-            fill = llm.decide(prompt_for(policy), schema, model=model, max_tokens=BLUEPRINT_MAX_TOKENS,
-                              deadline_s=BLUEPRINT_DEADLINE_S - (time.monotonic() - started))
-            draft.attempts += fill.attempts
-            draft.status = "invalid" if fill.no_action else "valid"
-            draft.errors = [fill.error] if fill.error else []
-            draft.blueprint = fill.value
+        fill = llm.decide(fill_prompt(template, policy.text, policy.purpose, policy.environment),
+                          fill_schema(template), model=model, max_tokens=BLUEPRINT_MAX_TOKENS,
+                          deadline_s=BLUEPRINT_DEADLINE_S - (time.monotonic() - started))
+        draft.attempts += fill.attempts
+        _measure(draft, fill, fill_schema(template))
+        draft.status = "invalid" if fill.no_action else "valid"
+        draft.errors = [fill.error] if fill.error else []
+        draft.blueprint = None if fill.no_action else to_blueprint(template, fill.value)
     draft.seconds = round(time.monotonic() - started, 2)
     return draft
+
+
+def _measure(draft: BlueprintDraft, outcome: llm.Outcome, schema: type[BaseModel]) -> None:
+    """Adds the call's tokens, and why each retried reply was invalid (decide keeps only the last error)."""
+    draft.input_tokens += outcome.input_tokens
+    draft.output_tokens += outcome.output_tokens
+    for raw in outcome.raw_replies[:-1]:  # every reply but the last was invalid
+        try:
+            schema.model_validate_json(llm._extract_json(raw))
+        except ValidationError as exc:
+            draft.retried.append(llm._short(str(exc)))
 
 
 class PolicyNotFound(LookupError):

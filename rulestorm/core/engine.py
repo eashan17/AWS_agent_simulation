@@ -143,6 +143,11 @@ class Engine:
                 raise ValueError(f"disruption '{d.kind}' names unknown people: {', '.join(unknown)}")
             if kind.kind == "obstacle" and (not d.steps or not d.people or d.delay <= 0):
                 raise ValueError(f"obstacle '{d.kind}' needs steps, people and a delay above 0")
+            if kind.kind == "obstacle":
+                duty = self.duties[kind.duty]
+                free = [p for p in d.people if not self.owes(p, duty)]
+                if free:
+                    raise ValueError(f"obstacle '{d.kind}' hits people who don't owe '{duty.id}': {', '.join(free)}")
             if kind.kind == "cancellation" and not d.steps:
                 raise ValueError(f"cancellation '{d.kind}' needs steps")
             if kind.kind == "capacity" and d.capacity is None:
