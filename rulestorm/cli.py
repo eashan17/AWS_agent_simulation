@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> None:
     local_cmd = run_commands.add_parser("local", help="run one real term here, with Bedrock agents")
     local_cmd.add_argument("--blueprint", required=True, help="an approved blueprint ID")
 
-    explore = commands.add_parser("explore", help="stress variants of an approved blueprint (slice 6c)")
+    explore = commands.add_parser("explore", help="stress variants of an approved blueprint (slices 6c, L8)")
     explore_commands = explore.add_subparsers(dest="explore_command", required=True)
     propose_cmd = explore_commands.add_parser("propose", help="ask Bedrock for up to 3 harsher scenarios")
     propose_cmd.add_argument("blueprint_id", help="an approved blueprint ID")
@@ -170,25 +170,72 @@ def describe_blueprint(record) -> list[str]:
 
 
 def explore_command(command: str, blueprint_id: str) -> None:
-    """Stress variants answer "not yet" until slice L8 ports them to the template format."""
     from rulestorm import explore
-    from rulestorm.agents import NotPortedYet
     from rulestorm.policy import BlueprintNotApproved
 
     store = Store()
     try:
         if command == "propose":
-            explore.propose_variants(store, blueprint_id)
+            for line in describe_variants(explore.propose_variants(store, blueprint_id)):
+                print(line)
         else:
-            explore.run_variants(store, blueprint_id)
+            rows = explore.run_variants(store, blueprint_id, on_variant=lambda v: print(
+                f"running {v.id} ({v.variant})...", flush=True))
+            for line in variant_table(rows):
+                print(line)
     except BlueprintNotFound:
         raise SystemExit(f"blueprint not found: {blueprint_id}")
     except BlueprintNotApproved:
         raise SystemExit(f"blueprint not approved: {blueprint_id}")
     except DailyCapReached as exc:
         raise SystemExit(str(exc))
-    except NotPortedYet as exc:
-        raise SystemExit(f"not yet: {exc}")
+    except ValueError as exc:  # the template changed since the blueprint was made
+        raise SystemExit(str(exc))
+
+
+def describe_variants(result) -> list[str]:
+    """Each variant with only the environment values it changed, as stored and labelled."""
+    from rulestorm.core.model import load_template
+
+    lines = [f"parent: {result.parent_id}",
+             f"status: {result.status} | attempts: {result.attempts} | seconds: {result.seconds}"]
+    lines += [f"error: {e}" for e in result.errors]
+    for v in result.variants:
+        lines.append(f"- {v.id} [{v.status}] {v.variant}")
+        lines.append(f"  weak point: {v.weak_point}")
+        lines += [f"  error: {e}" for e in v.errors]
+        if v.blueprint is None:
+            continue
+        template = load_template(v.blueprint.template_id)
+        cal = template.calendar
+        for label in v.blueprint.assumptions:
+            if not label.statement.startswith("Stress variant"):
+                continue
+            value = v.blueprint.values[label.field]
+            lines.append(f"  {label.field} [assumption: {label.statement}]")
+            if isinstance(value, list):
+                for d in value:
+                    detail = [f"{cal.step_label}s {d['steps']}" if d["steps"] else "",
+                              f"people {', '.join(d['people'])}" if d["people"] else "",
+                              f"delay {d['delay']}" if d["delay"] else "",
+                              f"capacity {d['capacity']}" if d["capacity"] is not None else ""]
+                    lines.append(f"    {cal.period_label} {d['period']} {d['kind']}: {d['description']} "
+                                 f"({'; '.join(x for x in detail if x)})")
+            else:
+                lines.append(f"    now {value}")
+    lines.append("approve each variant to run with: python -m rulestorm.cli blueprint approve <id>")
+    return lines
+
+
+def variant_table(rows) -> list[str]:
+    lines = ["variant | run | status | requests filed | queue over capacity | pending at check | failed check | broke"]
+    for r in rows:
+        lines.append(f"{r.blueprint_id} {r.variant} | {r.run_id or '-'} | {r.status} | {r.requests_filed} | "
+                     f"{r.queue_over_capacity} | {r.pending_at_check} | {', '.join(r.check_failed) or '-'} | "
+                     f"broke: {('yes' if r.broke else 'no') if r.run_id else '-'}")
+    ran = [r for r in rows if r.run_id]
+    lines.append(f"broke the policy: {sum(r.broke for r in ran)} of {len(ran)}")
+    return lines
 
 
 def run_local_command(blueprint_id: str) -> None:

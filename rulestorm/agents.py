@@ -75,10 +75,6 @@ class CallCapReached(Exception):
     """The run's call cap is used up; the call is refused before it reaches the model."""
 
 
-class NotPortedYet(RuntimeError):
-    """This feature still needs its port to the template format (stress variants: slice L8)."""
-
-
 class CallBudget:
     """Per-run model-call cap, taken atomically so parallel people can never exceed it."""
 

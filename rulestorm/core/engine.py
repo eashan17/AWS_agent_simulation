@@ -93,6 +93,20 @@ class CountResult(BaseModel):
         return f"{self.met}/{self.due} = {pct}"
 
 
+def count_value(kind: str, met: int, missed: int) -> float | None:
+    """A count's value from its met and missed records: a rate is the % met (None before anything
+    is due), a tally the number missed. Shared by the engine and the stress-variant maths."""
+    if kind == "rate":
+        due = met + missed
+        return round(met * 100 / due, 1) if due else None
+    return float(missed)
+
+
+def passes(value: float | None, comparison: str, threshold: float) -> bool:
+    """Whether a count's value passes a check (no value yet never passes)."""
+    return value is not None and (value >= threshold if comparison == ">=" else value <= threshold)
+
+
 class Refused(Exception):
     """An action failed a check; the engine records the refusal instead of committing.
     `reason` is the code from the fixed library; `detail` says it in plain words."""
@@ -547,8 +561,7 @@ class Engine:
             for person in self.people_owing(duty):
                 now = self.count(check.count, person)
                 if_approved = self.count(check.count, person, assume_pending_approved=True)
-                passed = now.value is not None and (
-                    now.value >= threshold if check.comparison == ">=" else now.value <= threshold)
+                passed = passes(now.value, check.comparison, threshold)
                 # Missed records link here directly unless a request covers them: those link
                 # through the request (pending) or don't count (approved), so each missed
                 # occurrence reaches the check by one path.
@@ -623,10 +636,7 @@ class Engine:
                      if s not in cancelled and s not in excused and (c.duty, person, s) in self.records)
         met = sum(1 for s in due if self.records[(c.duty, person, s)] == "met")
         missed = len(due) - met
-        if c.kind == "rate":
-            value = round(met * 100 / len(due), 1) if due else None
-        else:
-            value = float(missed)
+        value = count_value(c.kind, met, missed)
         return CountResult(count=count_id, person=person, kind=c.kind, met=met, due=len(due), missed=missed,
                            value=value, pending=[r.request_id for r in own if r.status == "pending"],
                            approved=[r.request_id for r in own if r.status == "approved"],

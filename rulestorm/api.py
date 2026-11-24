@@ -93,7 +93,8 @@ def post_variants(
     store: Store = Depends(get_store),
     model: llm.Model = Depends(get_blueprint_model),
 ):
-    """Stress variants of an approved blueprint (slice 6c). Each must be approved before it runs."""
+    """Stress variants of an approved blueprint (slices 6c, L8): only its template's environment
+    values change. Each variant must be approved before it runs."""
     from rulestorm.explore import propose_variants
 
     try:
@@ -104,7 +105,7 @@ def post_variants(
         raise HTTPException(status_code=409, detail="blueprint not approved")
     except DailyCapReached:
         raise HTTPException(status_code=429, detail="daily blueprint limit reached, try again tomorrow")
-    except RuntimeError as exc:  # agents.NotPortedYet: variants on the template format come with L8
+    except ValueError as exc:  # the template changed since the blueprint was made
         raise HTTPException(status_code=409, detail=str(exc))
 
 
