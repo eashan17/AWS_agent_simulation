@@ -15,6 +15,10 @@ check, so a refused duplicate costs nothing), and each model call one unit of to
 A run still marked running when the server starts was cut off by a restart: it becomes failed
 (interrupted). A failed run shows only the error's class and a short, cleaned message; the full
 error goes to the server log.
+
+Findings (slice 8): when a run ends, its problems are found from its events and saved before its
+status changes, so a finished run always has them. A run that finished before slice 8 gets them the
+first time they are asked for (`findings_of`).
 """
 
 import logging
@@ -27,6 +31,7 @@ from rulestorm.agents import Agents, summarise, write_run_file
 from rulestorm.core.model import load_template
 from rulestorm.core.term import Term
 from rulestorm import config
+from rulestorm.detect import detect
 from rulestorm.policy import DailyCapReached, require_approved
 from rulestorm.store import _now
 
@@ -90,6 +95,8 @@ def _run(store, run_id, record, template, agents, out_dir) -> None:
         summary = summarise(engine, agents)
         seconds = round(time.monotonic() - started, 1)
         write_run_file(out_dir, run_id, record.id, template.ref, seconds, summary, bp, engine.events)
+        findings = detect(run_id, [e.model_dump() for e in engine.events], template)
+        store.add_findings(run_id, [f.model_dump() for f in findings])
         store.update_run(run_id, status=summary.status, summary=summary.model_dump(), finished_at=_now())
     except Exception as exc:  # noqa: BLE001 - any failure ends the run `failed`, never stuck `running`
         log.exception("run %s failed", run_id)
@@ -97,6 +104,23 @@ def _run(store, run_id, record, template, agents, out_dir) -> None:
             save_new_events()
         finally:
             store.update_run(run_id, status="failed", error=public_error(exc), finished_at=_now())
+
+
+FINISHED = ("completed", "degraded")
+
+
+def findings_of(store, run: dict) -> list[dict]:
+    """A finished run's findings; worked out from its stored events if it has none saved yet
+    (it ended before slice 8, or had none). A running or failed run has none."""
+    if run["status"] not in FINISHED:
+        return []
+    saved = store.run_findings(run["id"])
+    if saved:
+        return saved
+    template = load_template(run["template"].split("@")[0])
+    found = [f.model_dump() for f in detect(run["id"], store.run_events(run["id"]), template)]
+    store.add_findings(run["id"], found)
+    return store.run_findings(run["id"])
 
 
 SHORT_ERROR_CHARS = 120

@@ -145,28 +145,16 @@ def _checks_of(e: Engine, person: str) -> list[Event]:
 
 
 def _failed_check_lines(e: Engine, template: Template, focus: str) -> list[str]:
-    """The person's first failed check and its chain: the events behind it along their own path
-    (their records, plans, requests and decisions, and the disruptions that hit them), in order."""
-    failed = next((ev for ev in _checks_of(e, focus) if not ev.payload["passed"]), None)
-    if failed is None:
+    """The person's first failed check and its chain, as slice 8's detector finds it: the events
+    behind it along their own path, from the disruption to the check."""
+    from rulestorm.detect import detect
+
+    found = next((f for f in detect("case", [ev.model_dump() for ev in e.events], template)
+                  if f.kind == "check_failed" and f.person == focus), None)
+    if found is None:
         return [f"check failed: none for {focus}"]
-    label = next(c.label for c in template.checks if c.id == failed.payload["check"])
-    outcome = failed.payload.get("outcome") or template.terms.get("check_failed", "failed")
-    chain, todo = {failed.event_id}, list(failed.caused_by)
-    while todo:
-        ev = e.event(todo.pop())
-        if ev.event_id in chain or not _concerns(ev, focus):
-            continue
-        chain.add(ev.event_id)
-        todo += ev.caused_by
-    ordered = sorted(chain, key=lambda i: e.event(i).seq)
-    return [f"check failed: {label} for {focus} ({outcome})  [{failed.event_id}]",
-            "chain: " + " → ".join(f"{i} {e.event(i).type}" for i in ordered)]
-
-
-def _concerns(ev: Event, person: str) -> bool:
-    p = ev.payload
-    return ev.actor == person or p.get("person") == person or person in p.get("people", [])
+    return [f"check failed: {found.check_label} for {focus} ({found.outcome})  [{found.check_event_id}]",
+            "chain: " + " → ".join(f"{i} {e.event(i).type}" for i in found.chain)]
 
 
 def _result(event: Event) -> dict[str, Any]:

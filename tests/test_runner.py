@@ -84,6 +84,19 @@ def test_a_post_answers_at_once_and_a_second_gets_409_with_the_same_run(client, 
     assert http.post("/api/runs", json={"blueprint_id": approved.id}).status_code == 200  # free again
 
 
+def test_a_finished_run_has_its_findings_saved_from_its_own_events(client, approved, store) -> None:
+    from rulestorm.core.model import load_template
+    from rulestorm.detect import detect
+
+    http, model = client
+    model.gate.set()
+    run_id = http.post("/api/runs", json={"blueprint_id": approved.id}).json()["run_id"]
+    wait_until_finished(http, run_id)
+    expected = detect(run_id, store.run_events(run_id), load_template("attendance"))
+    assert store.run_findings(run_id) == [f.model_dump() for f in expected]  # saved by the runner itself
+    assert http.get(f"/api/runs/{run_id}/findings").json()["findings"] == store.run_findings(run_id)
+
+
 def test_the_timeline_can_be_followed_while_the_run_goes(client, approved, tmp_path) -> None:
     http, model = client
     model.delay = 0.03

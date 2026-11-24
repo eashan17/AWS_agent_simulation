@@ -159,3 +159,15 @@ def get_run(run_id: str, after: int = Query(0, ge=0, description="only timeline 
         raise HTTPException(status_code=404, detail="run not found")
     run["run_id"] = run.pop("id")  # the same name the POST answers with
     return {**run, "timeline": store.run_events(run_id, after_seq=after)}
+
+
+@app.get("/api/runs/{run_id}/findings")
+def get_findings(run_id: str, store: Store = Depends(get_store)) -> dict:
+    """The problems found in a finished run (slice 8): checks failed and requests still pending at
+    a check, each with its chain of event IDs. Empty while the run is going."""
+    from rulestorm.runner import findings_of
+
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return {"run_id": run_id, "status": run["status"], "findings": findings_of(store, run)}

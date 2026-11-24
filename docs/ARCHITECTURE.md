@@ -89,6 +89,7 @@ A template may only use these. Anything outside them needs new engine code, by d
 - `queue_over_capacity` records the requests it holds.
 - A check records its count and the pending requests.
 - Detectors follow a person's own path of links from a check back to the root disruption, not every ancestor (slice 5 gotcha, IDEAS.md), and store the ordered chain on the finding.
+- **Detectors (built in slice 8, `detect.py`):** `check_failed` is a `check_evaluated` with `passed` false (on a ladder, its last step); `pending_at_check` is one with pending requests. One finding of each kind per person and check, the first. The chain follows `caused_by` back from the check, but never through an event about another person who owes the template's duty (as actor, `person`, a `people` list without them, or a request of theirs); events about nobody in particular (a disruption, a queue that held the request) stay. It is stored in run order, so it starts at the disruption when one hit them and ends at the check. Titles come from the template's terms `finding_check_failed` and `finding_pending_at_check`. Finding IDs are `<run_id>-F<n>`. The runner saves findings before marking a run finished; `GET /api/runs/{id}/findings` works them out on first use for a run that ended before slice 8. The case runner's failed-check chain uses the same detector.
 
 ## Templates (data, `rulestorm/templates/`)
 Each file carries `id`, `version`, a scope line, terms (display words), building-block definitions, parameter specs and its example input. The template check runs in pytest for every file. It is the slim, template-only form of the Brief's 4-stage validation (nice-to-have 8).
@@ -161,7 +162,7 @@ The template has its own pre-filled example policy (for example: "Residents must
   - **Agent prompts:** generated from the template, keeping the 6b fixes (the slack line, the absences no request covers, the outcomes of the person's last actions). A golden-prompt test (built in L5 as an exact copy) is narrowed at the switch-over (L7): an exact match only for the lines carrying the 6b fixes, and the same facts (not the same wording) for the rest. That keeps one template's old wording from shaping the engine.
     Added on the general engine (L9b–L9d): a "Now:" line naming the current step, with the step on every event line; each person's own requests with the steps they cover and what became of them; for a consenting person, the requests waiting for their consent; for an LLM decider at an open slot, the offered requests and the allowed outcomes; and the number of actions they may propose.
   - **`explore.py`:** reads the template's terms and event types, and its prompt gains the queue maths and a general **misses until the check fails** figure (from the count kind, threshold and check timing), which replaces the attendance-only `absences_to_fall_below`.
-- **Not built yet:** detectors (slice 8) and evidence (slice 9). They're written on the general model from the start.
+- **Built on the general model from the start:** detectors (slice 8, done). Not built yet: evidence (slice 9).
 - **Switch-over rule:** the old engine is deleted only after a real attendance run on `core/` matches 6b. That means decisions only for triggered people, similar counts (about 13 decisions, 14–17 calls) and no new kinds of rejection reason.
 - **Go/no-go on 25 Nov at 15:00:** if there's no match, fall back to "Level 1.5": add request timing and partial acceptance to today's engine, and move curfew to after the UI. The fallback code is at git tag `pre-level2` (commit `189ac53`).
 - Old blueprints and run logs aren't migrated (dev data only).
@@ -185,7 +186,7 @@ SQLite, WAL mode, one connection per thread:
 | runs | status (running / completed / degraded / failed), period and periods, template, model ID, blueprint ID, summary (decisions, calls, llm_errors, cap_hits, tokens), error, started and finished times. A new run is inserted only if none is running, in one statement (built in 7a) |
 | events | run_id, seq, and the whole event (event_id, period, step, type, actor, payload, state_change, caused_by), saved after each period so the timeline can be followed live |
 | decisions | person, prompt hash, raw reply, parsed decision, accepted/rejected + reason, error |
-| findings | run_id, kind, title, chain |
+| findings | id (`<run_id>-F<n>`), run_id, kind, and the whole finding (title, person, check, the count as is and if pending approved, pending requests, disruptions, chain) (built in slice 8) |
 | daily_usage | date, runs, llm_calls, blueprint_calls |
 
 Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`; rowcount 0 means over the cap.

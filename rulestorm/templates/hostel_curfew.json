@@ -14,7 +14,9 @@
     "check_passed": "in good standing",
     "check_failed": "disciplinary",
     "setting": "a simulated term in a college hostel",
-    "missed_plural": "late returns"
+    "missed_plural": "late returns",
+    "finding_check_failed": "Repeated late returns escalate to disciplinary action",
+    "finding_pending_at_check": "Late-entry backlog leaves residents facing curfew penalties"
   },
   "example_input": {
     "text": "Residents must return to the hostel by 10 pm. Late entry needs prior permission from the warden, with the guardian's consent. Repeated late returns lead to a warning, then the guardian is informed, then disciplinary action.",

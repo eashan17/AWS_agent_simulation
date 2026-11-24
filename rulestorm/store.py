@@ -73,6 +73,15 @@ CREATE TABLE IF NOT EXISTS events (
     event TEXT NOT NULL,
     PRIMARY KEY (run_id, seq)
 );
+-- Findings (slice 8): found from a finished run's events. IDs are <run_id>-F<n>, so finding a run's
+-- problems twice (two GETs at once) can't store them twice.
+CREATE TABLE IF NOT EXISTS findings (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES runs(id),
+    kind TEXT NOT NULL,
+    record TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS findings_run ON findings (run_id);
 """
 
 USAGE_COUNTERS = ("runs", "llm_calls", "blueprint_calls")
@@ -260,6 +269,22 @@ class Store:
         rows = self._conn().execute(
             "SELECT event FROM events WHERE run_id = ? AND seq > ? ORDER BY seq", (run_id, after_seq)).fetchall()
         return [json.loads(r["event"]) for r in rows]
+
+    def add_findings(self, run_id: str, findings: list[dict]) -> None:
+        conn = self._conn()
+        with conn:
+            conn.executemany("INSERT OR IGNORE INTO findings (id, run_id, kind, record) VALUES (?, ?, ?, ?)",
+                             [(f["finding_id"], run_id, f["kind"], json.dumps(f, ensure_ascii=False))
+                              for f in findings])
+
+    def run_findings(self, run_id: str) -> list[dict]:
+        rows = self._conn().execute("SELECT record FROM findings WHERE run_id = ? ORDER BY rowid",
+                                    (run_id,)).fetchall()
+        return [json.loads(r["record"]) for r in rows]
+
+    def get_finding(self, finding_id: str) -> dict | None:
+        row = self._conn().execute("SELECT record FROM findings WHERE id = ?", (finding_id,)).fetchone()
+        return json.loads(row["record"]) if row else None
 
     def update_blueprint(self, blueprint_id: str, blueprint: TemplateBlueprint) -> BlueprintRecord:
         """Edit a blueprint before approval (e.g. corrected assumptions). Refused once approved."""
