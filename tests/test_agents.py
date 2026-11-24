@@ -168,3 +168,20 @@ def test_agent_proposals_reach_the_engine_and_bad_ones_are_rejected() -> None:
     skips = [e for e in engine.events if e.type == "student_plans_skip"]
     assert skips and all(e.actor == "working" and engine.event(e.caused_by[0]).type == "decision" for e in skips)
     assert summary.rejected and {r.reason for r in summary.rejected if r.agent == "commuter"} == {"permission"}
+
+
+def test_agent_is_told_its_refused_action_and_its_uncovered_absences() -> None:
+    def early_request(agent, prompt):  # asks for an exception before the class has taken place
+        session = int(re.search(r"session (\d+)\)", prompt).group(1))
+        if agent == "commuter" and "transport_disruption" in prompt:
+            return json.dumps({"actions": [{"action": "submit_exception_request",
+                                            "params": {"sessions": [session], "reason": "bus strike"}}],
+                               "reason": "the bus is on strike"})
+        return NOTHING
+
+    agents = Agents(blueprint(), model=RoutedModel(early_request), cap=1000)
+    run_term(blueprint(), agents)
+    first, after = agents.prompts["commuter"][0], agents.prompts["commuter"][1]
+    assert "What happened to the actions" not in first
+    assert "refused: submit_exception_request" in after and "is not a completed, countable session" in after
+    assert "no exception request covers: session 5" in after  # the late arrival at session 5

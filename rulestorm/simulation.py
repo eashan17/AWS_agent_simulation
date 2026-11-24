@@ -44,6 +44,10 @@ class DecisionContext(BaseModel):
     travel_buffer_min: int | None = None  # students only
     profile: Profile | None = None  # LLM agents: description and goals (students: constraints too) from the blueprint
     pending_requests: list[str] = Field(default_factory=list)
+    # Facts the agent would know: what became of its last decision's actions, and (students)
+    # its recorded absences that no request covers yet.
+    last_outcomes: list[str] = Field(default_factory=list)
+    uncovered_absences: list[int] = Field(default_factory=list)
 
 
 class PhaseDecision(BaseModel):
@@ -75,6 +79,7 @@ class Term:
         self.profiles.update(faculty=blueprint.scenario.faculty, advisor=blueprint.scenario.advisor)
         self.triggers: dict[str, list[str]] = defaultdict(list)
         self.near_threshold: set[str] = set()
+        self.last_decision: dict[str, str] = {}  # agent -> event ID of its latest decision
 
     def trigger(self, agent: str, event: Event) -> None:
         if event.event_id not in self.triggers[agent]:
@@ -152,11 +157,13 @@ class Term:
                 agent=agent, role=role, week=week, session=session,
                 triggers=[e.event(t) for t in self.triggers[agent]],
                 profile=self.profiles.get(agent),  # rule agents have none
+                last_outcomes=self.outcomes_of(agent),
             )
             if role == "student":
                 context.attendance = e.attendance(agent)
                 context.travel_buffer_min = e.travel_buffer.get(agent)
                 context.pending_requests = context.attendance.pending
+                context.uncovered_absences = self.uncovered_absences(agent)
             else:
                 context.pending_requests = [r.request_id for r in e.requests.values() if r.status == "pending"]
             contexts.append(context)
@@ -177,9 +184,36 @@ class Term:
                 },
                 caused_by=[t.event_id for t in context.triggers],
             )
+            self.last_decision[context.agent] = recorded.event_id
             for proposal in decision.proposals:
                 e.propose(context.role, context.agent, proposal.action, week,
                           caused_by=[recorded.event_id], **proposal.params)
+
+    def outcomes_of(self, agent: str) -> list[str]:
+        """What the engine did with each action of the agent's latest decision."""
+        decision_id = self.last_decision.get(agent)
+        if decision_id is None:
+            return []
+        outcomes = []
+        for event in self.engine.events[int(decision_id.removeprefix("E-")):]:
+            if decision_id not in event.caused_by:
+                continue
+            if event.type == "action_rejected":
+                outcomes.append(f"refused: {event.payload['action']} {event.payload['params']} "
+                                f"(reason: {event.payload['reason']})")
+            elif event.type == "exception_request_submitted":
+                outcomes.append(f"done: exception request {event.payload['request_id']} submitted for "
+                                f"sessions {event.payload['sessions']}, now pending")
+            else:
+                outcomes.append(f"done: {event.type} {event.payload}")
+        return outcomes
+
+    def uncovered_absences(self, student: str) -> list[int]:
+        e = self.engine
+        covered = {s for r in e.requests.values() if r.student == student and r.status != "rejected"
+                   for s in r.sessions}
+        return sorted(s for (who, s), present in e.present.items()
+                      if who == student and present is False and s not in e.cancelled and s not in covered)
 
     def record_arrivals(self, week: int, session: int, transport: list[tuple[Any, Event]]) -> None:
         """The lateness rule: a student who attends is late (an absence) when the disruption's

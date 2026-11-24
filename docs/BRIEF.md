@@ -190,6 +190,13 @@ All calls passed through the adapter (`rulestorm/llm.py`), so JSON-in-prompt plu
 
 **Cost check (our estimate, not measured):** if one agent decision is about 2,000 input + 300 output tokens, DeepSeek V3.2 in Sydney costs about USD 0.0018 per call, so a 150-call run is about USD 0.28 and 100 runs about USD 28 (Mistral Large 3 would be about USD 0.22 and USD 22). Measure the real token counts in the first run and set the per-run call cap and the global daily cap from that.
 
+**Slice 6b checkpoint: first real runs (24 Nov 2026, laptop, DeepSeek V3.2, `python -m rulestorm.cli run local --blueprint B-883733cf`).** Blueprint from the example input: admin capacity 3 a week (AI assumption), 90-min rail delay for the commuter in week 3, storm for all four students in week 6, office down to 1 in week 7, checkpoint week 8.
+- **Run duration:** 20–54 s per whole term (target was under 5 min). 13 decisions and 14–17 model calls per run (a few first replies needed the validation retry), 0 errors, 0 timeouts, cap never reached.
+- **Tokens:** about 700 in and 130 out per call, 9–11k in and about 2k out per run, so far below the 2,000 + 300 estimate above. The per-run cap of 150 leaves about 10× headroom.
+- **Request pending at the checkpoint (the hero condition): 0 of 6 runs.** Runs 1–3: students asked for an exception for that day's class before it took place; the engine correctly refused, but the agent was not told, and several then said "I already submitted" and never filed. Fixed (agents now see what became of their last actions and which absences no request covers; facts only, nothing tells them to file). Runs 4–6: agents understood the refusal; 2 of 3 runs filed one request in week 6 (one approved, one rejected because a covered session had been attended), processed the same week. With capacity 3 a week and at most one request, no queue formed.
+- **Reasons fit the profiles:** yes, read by hand in all 6 logs. The commuter cites travel fatigue and the train, the working student the fixed shifts, the family student keeping slack for care emergencies, the resident high grades; the advisor warns the commuter at 80% and 81.8%. Students well above 80% mostly chose not to file for a single absence.
+- Event logs: `runs/L-*.json` on the laptop that ran them (not committed).
+
 **Credit runway (live account, do on day 1):** (instance hourly price × hours from launch to 17 Dec) + Elastic IP (USD 0.005/hr) + EBS disk + Bedrock budget for judging and Demo Day, compared with the credits the live account actually received. `[MISSING: runway estimate]`. Development and experiments spend Dev-account credits, not this.
 
 ### The deployment (everything we deploy)

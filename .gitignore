@@ -24,3 +24,4 @@ demo/stills/
 demo/takes/
 demo/*.mp4
 demo/*.wav
+runs/

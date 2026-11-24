@@ -42,6 +42,11 @@ def main(argv: list[str] | None = None) -> None:
     smoke_cmd = llm_commands.add_parser("smoke", help="real Bedrock call: auth, latency, tokens, quotas")
     smoke_cmd.add_argument("--model", help="Bedrock model ID (default: the configured model)")
 
+    run = commands.add_parser("run", help="simulated terms")
+    run_commands = run.add_subparsers(dest="run_command", required=True)
+    local_cmd = run_commands.add_parser("local", help="run one real term here, with Bedrock agents")
+    local_cmd.add_argument("--blueprint", required=True, help="an approved blueprint ID")
+
     args = parser.parse_args(argv)
     if args.command == "hello":
         print("hello")
@@ -75,6 +80,37 @@ def main(argv: list[str] | None = None) -> None:
 
         for line in smoke.run(args.model):
             print(line)
+
+    elif args.command == "run" and args.run_command == "local":
+        run_local_command(args.blueprint)
+
+
+def run_local_command(blueprint_id: str) -> None:
+    from rulestorm.agents import run_local
+    from rulestorm.policy import BlueprintNotApproved
+
+    try:
+        run_id, summary, seconds, path = run_local(
+            Store(), blueprint_id, on_week=lambda week: print(f"week {week} done", flush=True))
+    except BlueprintNotFound:
+        raise SystemExit(f"blueprint not found: {blueprint_id}")
+    except BlueprintNotApproved:
+        raise SystemExit(f"blueprint not approved: {blueprint_id}")
+    print(f"run_id: {run_id}")
+    print(f"status: {summary.status}")
+    print(f"model: {summary.model_id}")
+    print(f"seconds: {seconds}")
+    print(f"llm_calls: {summary.llm_calls} (cap {summary.llm_cap})")
+    print(f"llm_errors: {summary.llm_errors} (timeouts {summary.timeouts})")
+    print(f"cap_hits: {summary.cap_hits}")
+    print(f"tokens: {summary.input_tokens} in, {summary.output_tokens} out")
+    print(f"decisions: {summary.decisions} ({summary.no_actions} no action)")
+    for agent, n in summary.decisions_by_agent.items():
+        print(f"  {agent}: {n}")
+    print(f"rejected: {len(summary.rejected)}")
+    for r in summary.rejected:
+        print(f"  {r.event_id} {r.agent} {r.action}: {r.reason}")
+    print(f"event log: {path}")
 
 
 if __name__ == "__main__":

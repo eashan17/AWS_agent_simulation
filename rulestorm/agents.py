@@ -162,6 +162,11 @@ class Agents:
                          f"{', '.join(c.attendance.pending) or 'none'}")
         elif c.pending_requests:
             lines.append(f"Pending exception requests: {', '.join(c.pending_requests)}")
+        if c.role == "student":
+            lines.append("Your recorded absences that no exception request covers: "
+                         f"{', '.join(f'session {n}' for n in c.uncovered_absences) or 'none'}")
+        if c.last_outcomes:
+            lines += ["", "What happened to the actions of your last decision:", *(f"- {o}" for o in c.last_outcomes)]
         memory = self.memory.get(c.agent)
         if memory:
             lines += ["", "Your recent decisions:", *(f"- {m}" for m in memory)]
@@ -280,3 +285,31 @@ def run_term(blueprint: Blueprint, agents: Agents | None = None, on_week=None) -
     agents = agents or Agents(blueprint)
     engine = Term(blueprint, agents.decide_phase).run(on_week)
     return engine, summarise(engine, agents)
+
+
+def run_local(store, blueprint_id: str, out_dir: str = "runs", on_week=None) -> tuple[str, RunSummary, float, str]:
+    """A real term on the approved blueprint, in this process (the background runner is slice 7a).
+    Writes the event log, the blueprint and the summary to <out_dir>/<run_id>.json (UTF-8) so a
+    run can be read by hand. Returns (run_id, summary, seconds, path)."""
+    import time
+    import uuid
+    from pathlib import Path
+
+    from rulestorm.policy import require_approved
+
+    record = require_approved(store, blueprint_id)
+    run_id = f"L-{uuid.uuid4().hex[:8]}"
+    started = time.monotonic()
+    engine, summary = run_term(record.blueprint, on_week=on_week)
+    seconds = round(time.monotonic() - started, 1)
+    path = Path(out_dir) / f"{run_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "run_id": run_id,
+        "blueprint_id": blueprint_id,
+        "seconds": seconds,
+        "summary": summary.model_dump(),
+        "blueprint": record.blueprint.model_dump(),
+        "events": [e.model_dump() for e in engine.events],
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    return run_id, summary, seconds, str(path)
