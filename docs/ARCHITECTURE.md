@@ -233,6 +233,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 - **Example inputs:** they stay descriptive. The AI proposes numbers as assumptions and the user approves them.
 - **Region:** ap-southeast-2 (Sydney), fixed by the account. No Claude model runs in-Region there.
 - **Global caps:** live in `/etc/rulestorm.env`, not Parameter Store.
+- **Live account (25 Nov, team decision):** our one current account is the live account, and development stays in it too, so the live caps are lower than the code's defaults (10 runs and 1,000 model calls a day, in `deploy/rulestorm.env`). It had USD 100 of credits on 25 Nov; the server, address and disk take about USD 18 up to 17 Dec. Bedrock was already called here during development, so the Budgets alert comes before the first deploy rather than before the first Bedrock call. The deploy (`deploy/deploy.sh`, `deploy/rulestorm.service`, `docs/DEPLOY.md`) installs a git tag into `/opt/rulestorm/releases/<tag>`, keeps the store in `/var/lib/rulestorm`, and runs the app as user `rulestorm` on port 80 with only `CAP_NET_BIND_SERVICE`.
 - **Earlier team decisions (BRIEF):** no Streamlit, Vercel or Supabase; SQLite, not DynamoDB; 2–3 AWS accounts (one live); link shared with the team and judges only, no login; deploy freeze 30 Nov–5 Dec.
 
 ## Not doing

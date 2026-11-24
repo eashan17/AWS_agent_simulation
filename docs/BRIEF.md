@@ -137,7 +137,7 @@ What the PS requires: "build and deploy on the AWS Free Tier", a live URL on AWS
 
 | Account | Owner | What runs there |
 |---|---|---|
-| **Live** | `[MISSING: teammate's name]` | Only the judged deployment (EC2 + Bedrock + always-free services). Nobody develops or experiments here, so its credits go only to the live link through 17 Dec. |
+| **Live** | Our current account, the one `rulestorm-dev` signs in to (team decision, 25 Nov: no teammate could open a second account, so this one is live **and** used for development; keep test runs light; USD 100 of Free plan credits on 25 Nov) | Only the judged deployment (EC2 + Bedrock + always-free services). Nobody develops or experiments here, so its credits go only to the live link through 17 Dec. |
 | **Dev 1** (and **Dev 2** if a third teammate qualifies) | `[MISSING: teammates' names]` | Each owner's own development, the model bake-off, test runs and three-policy comparison experiments. Also the **standby**: the same deploy script can bring the app up here if the live account fails. The link would change (Elastic IP and CloudFront belong to one account), so use standby only in an emergency, and never during the Round 1 judging window (30 Nov–5 Dec). |
 
 - **One setup script, run per account**: Region, Bedrock model access, IAM role and users, Budgets alert, CloudFront. Each account needs its own Bedrock model access and its own Budgets alert.
