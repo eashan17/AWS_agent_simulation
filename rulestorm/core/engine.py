@@ -520,9 +520,13 @@ class Engine:
                 if_approved = self.count(check.count, person, assume_pending_approved=True)
                 passed = now.value is not None and (
                     now.value >= threshold if check.comparison == ">=" else now.value <= threshold)
+                # Missed records link here directly unless a request covers them: those link
+                # through the request (pending) or don't count (approved), so each missed
+                # occurrence reaches the check by one path.
+                covered = {s for r in now.pending for s in self.requests[r].steps}
+                covered |= {s for r in now.approved for s in self.requests[r].approved_steps}
                 missed = [self.record_event[(duty.id, person, s)] for s in sorted(self.recorded_steps[duty.id])
-                          if self.records.get((duty.id, person, s)) == "missed"
-                          and not any(s in self.requests[r].approved_steps for r in now.approved)]
+                          if self.records.get((duty.id, person, s)) == "missed" and s not in covered]
                 events.append(self.emit(
                     "check_evaluated", self.person_with_role(check.run_by), period,
                     payload={"check": check.id, "person": person, "count": now.model_dump(),

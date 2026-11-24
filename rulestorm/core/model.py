@@ -253,6 +253,7 @@ class TemplateCheck(BaseModel):
             f"actions {len(t.actions)}, request types {len(t.request_types)}, "
             f"counts {len(t.counts)}, checks {len(t.checks)}",
             "parameters: " + ", ".join(p.name for p in t.parameters),
+            "dry run: ok",
         ]
 
 
@@ -290,6 +291,10 @@ def check_template(raw: dict, source: str = "<data>") -> TemplateCheck:
         errors = [f"{'.'.join(str(p) for p in e['loc']) or 'template'}: {e['msg']}" for e in exc.errors()]
         return TemplateCheck(source=source, valid=False, errors=errors)
     errors = _reference_errors(template)
+    if not errors:  # the dry run needs sound references: a full term with a scripted decider
+        from rulestorm.core.term import dry_run
+
+        errors = dry_run(template)
     return TemplateCheck(source=source, valid=not errors, errors=errors, template=None if errors else template)
 
 

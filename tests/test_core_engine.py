@@ -322,6 +322,8 @@ def test_a_single_threshold_check_records_both_figures_and_pending_requests(temp
     assert working.payload["count_if_pending_approved"]["value"] == 66.7
     assert working.payload["pending_requests"] == ["R1"]
     assert {filed.event_id, held.event_id} <= set(working.caused_by)
-    missed = [engine.record_event[("attend_class", "working", s)] for s in (1, 3)]
-    assert set(missed) <= set(working.caused_by)  # the check records its count
+    # the check records its count: the uncovered miss directly, the covered one through its request
+    assert engine.record_event[("attend_class", "working", 3)] in working.caused_by
+    assert engine.record_event[("attend_class", "working", 1)] not in working.caused_by
+    assert engine.record_event[("attend_class", "working", 1)] in filed.caused_by
     assert checks["resident"].payload["passed"] is True

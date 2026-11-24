@@ -1,0 +1,345 @@
+"""The term loop over a template's calendar, in the fixed phase order.
+
+    period start: capacity disruptions, then pending-request triggers
+    each step:    obstacles and cancellations -> triggered people decide -> requests processed
+                  `each_step` -> the recorder rule records the duty
+    period end:   requests processed `period_end` -> checks (if due)
+
+Only LLM people decide, and only when one of the template's triggers names them. Every
+decision records `caused_by=[its triggers]`, and every action it produces records
+`caused_by=[decision]`. All contexts of one phase share the same snapshot and are sorted by
+person ID, so results never depend on timing.
+"""
+
+from collections import defaultdict
+from collections.abc import Callable
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from rulestorm.core.engine import CountResult, Engine, Event
+from rulestorm.core.model import Template
+
+
+class Proposal(BaseModel):
+    action: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class DecisionContext(BaseModel):
+    """What a triggered person sees."""
+
+    person: str
+    role: str
+    period: int
+    step: int
+    triggers: list[Event]
+    profile: dict[str, Any] | None = None  # from the blueprint's profiles parameter
+    counts: dict[str, CountResult] = Field(default_factory=dict)  # people who owe a duty
+    attributes: dict[str, int] = Field(default_factory=dict)
+    pending_requests: list[str] = Field(default_factory=list)
+    # Facts the person would know: what became of their last decision's actions, and their
+    # missed occurrences that no request covers yet.
+    last_outcomes: list[str] = Field(default_factory=list)
+    uncovered_missed: list[int] = Field(default_factory=list)
+
+
+class PhaseDecision(BaseModel):
+    person: str
+    proposals: list[Proposal] = Field(default_factory=list)
+    reason: str = ""
+    strategy: str = ""
+    error: str | None = None  # set when the person's call failed: recorded as "no action"
+
+
+# Given every triggered person's context for one phase, return their decisions.
+Decider = Callable[[list[DecisionContext]], list[PhaseDecision]]
+
+
+class Term:
+    def __init__(self, template: Template, values: dict[str, Any], decider: Decider) -> None:
+        self.t = template
+        self.decider = decider
+        self.engine = Engine(template, values)
+        profiles = next((p.name for p in template.parameters if p.type == "profiles"), None)
+        self.profiles: dict[str, dict] = dict(values.get(profiles) or {}) if profiles else {}
+        self.triggers: dict[str, list[str]] = defaultdict(list)
+        self.near: set[tuple[str, str]] = set()  # (count, person) currently near the threshold
+        self.last_decision: dict[str, str] = {}  # person -> event ID of their latest decision
+        self.of_kind = {tr.kind: tr for tr in template.triggers}
+
+    # --- triggers -----------------------------------------------------------------------------
+
+    def trigger(self, person: str, event: Event) -> None:
+        """Only LLM people decide; rule roles run at their phase and are never asked."""
+        if self.engine.roles[self.engine.role_of[person]].llm and event.event_id not in self.triggers[person]:
+            self.triggers[person].append(event.event_id)
+
+    def notify(self, kind: str, event: Event, person: str | None = None) -> None:
+        trigger = self.of_kind.get(kind)
+        if trigger is None:
+            return
+        if person:
+            self.trigger(person, event)
+        for role in trigger.notifies:
+            for other in sorted(p for p, r in self.engine.role_of.items() if r == role):
+                self.trigger(other, event)
+
+    # --- the calendar -------------------------------------------------------------------------
+
+    def run(self, on_period: Callable[[int], None] | None = None) -> Engine:
+        for period in range(1, self.t.calendar.periods + 1):
+            self.run_period(period)
+            if on_period:
+                on_period(period)
+        self.engine.current_step = None
+        return self.engine
+
+    def run_period(self, period: int) -> None:
+        e = self.engine
+        e.start_period(period)
+        pending_after = self.of_kind.get("request_pending")
+        if pending_after is not None:
+            for request in list(e.requests.values()):
+                waited = period - request.filed_period
+                if request.status == "pending" and waited >= (pending_after.periods or 1):
+                    event = e.emit("request_pending", "engine", period,
+                                   payload={"request_id": request.request_id, "person": request.person,
+                                            "periods_pending": waited},
+                                   caused_by=e.pending_causes([request.request_id]))
+                    self.notify("request_pending", event, request.person)
+
+        spp = self.t.calendar.steps_per_period
+        for step in range((period - 1) * spp + 1, period * spp + 1):
+            self.run_step(period, step)
+        e.current_step = None
+
+        for rt in self.t.request_types:
+            if rt.processed == "period_end":
+                e.process_queue(rt.id, period)
+        e.run_checks(period)
+
+    def run_step(self, period: int, step: int) -> None:
+        e = self.engine
+        e.current_step = step
+        for event in e.start_step(step):
+            if event.type == "obstacle":
+                for person in event.payload["people"]:
+                    self.notify("obstacle_hit", event, person)
+        self.decision_phase(period, step)
+        for rt in self.t.request_types:
+            if rt.processed == "each_step":
+                e.process_queue(rt.id, period, step)
+        recorded = e.record_step(step)
+
+        missed_by_duty: dict[str, list[Event]] = defaultdict(list)
+        for event in recorded:
+            person = event.payload["person"]
+            if event.payload["outcome"] == "missed":
+                missed_by_duty[event.payload["duty"]].append(event)
+                self.notify("own_duty_missed", event, person)
+            self.check_near_threshold(period, person, event)
+        many = self.of_kind.get("many_missed")
+        for duty, missed in missed_by_duty.items():
+            if many is not None and len(missed) >= (many.min_people or 1):
+                event = e.emit("many_missed", "engine", period, step,
+                               payload={"duty": duty, "people": [m.payload["person"] for m in missed]},
+                               caused_by=[m.event_id for m in missed])
+                self.notify("many_missed", event)
+
+    def check_near_threshold(self, period: int, person: str, latest: Event) -> None:
+        """Fires once each time a person's count comes within `within` of a check's threshold."""
+        near_by = self.of_kind.get("count_near_threshold")
+        if near_by is None:
+            return
+        e = self.engine
+        for check in self.t.checks:
+            if check.threshold_param is None or self.engine.counts[check.count].duty != latest.payload["duty"]:
+                continue
+            threshold = e.value(check.threshold_param)
+            value = e.count(check.count, person).value
+            near = value is not None and abs(value - threshold) <= (near_by.within or 0)
+            key = (check.count, person)
+            if near and key not in self.near:
+                event = e.emit("count_near_threshold", "engine", period, latest.step,
+                               payload={"count": check.count, "person": person, "value": value,
+                                        "threshold": threshold},
+                               caused_by=[latest.event_id])
+                self.notify("count_near_threshold", event, person)
+            if near:
+                self.near.add(key)
+            else:
+                self.near.discard(key)
+
+    # --- decisions ----------------------------------------------------------------------------
+
+    def decision_phase(self, period: int, step: int) -> None:
+        e = self.engine
+        if not self.triggers:
+            return
+        contexts = [self.context(person, period, step) for person in sorted(self.triggers)]
+        self.triggers.clear()
+
+        by_person = {d.person: d for d in self.decider(contexts)}
+        for context in contexts:
+            decision = by_person.get(context.person, PhaseDecision(person=context.person, error="no decision returned"))
+            recorded = e.emit("decision", context.person, period, step,
+                              payload={"proposals": [p.model_dump() for p in decision.proposals],
+                                       "reason": decision.reason, "strategy": decision.strategy,
+                                       "no_action": not decision.proposals, "error": decision.error},
+                              caused_by=[t.event_id for t in context.triggers])
+            self.last_decision[context.person] = recorded.event_id
+            for proposal in decision.proposals:
+                e.propose(context.person, proposal.action, period, caused_by=[recorded.event_id], **proposal.params)
+
+    def context(self, person: str, period: int, step: int) -> DecisionContext:
+        e = self.engine
+        role = e.role_of[person]
+        counts = {c.id: e.count(c.id, person) for c in self.t.counts if e.owes(person, e.duties[c.duty])}
+        own = [r.request_id for r in e.requests.values() if r.person == person and r.status == "pending"]
+        handles = {rt.id for rt in self.t.request_types if rt.handled_by == role}
+        return DecisionContext(
+            person=person, role=role, period=period, step=step,
+            triggers=[e.event(t) for t in self.triggers[person]],
+            profile=self.profiles.get(person),
+            counts=counts,
+            attributes={attr: v for (who, attr), v in e.attributes.items() if who == person},
+            pending_requests=own if counts else [r.request_id for r in e.requests.values()
+                                                 if r.status == "pending" and (r.request_type in handles or not handles)],
+            last_outcomes=self.outcomes_of(person),
+            uncovered_missed=self.uncovered_missed(person),
+        )
+
+    def outcomes_of(self, person: str) -> list[str]:
+        """What the engine did with each action of the person's latest decision."""
+        decision_id = self.last_decision.get(person)
+        if decision_id is None:
+            return []
+        word = self.t.terms.get("request", "request")
+        outcomes = []
+        for event in self.engine.events[int(decision_id.removeprefix("E-")):]:
+            if decision_id not in event.caused_by:
+                continue
+            p = event.payload
+            if event.type == "action_rejected":
+                outcomes.append(f"refused: {p['action']} {p['params']} (reason: {p['reason']})")
+            elif event.type == "request_filed":
+                outcomes.append(f"done: {word} {p['request_id']} filed for "
+                                f"{self.t.calendar.step_label}s {p['steps']}, now pending")
+            else:
+                outcomes.append(f"done: {event.type} {p}")
+        return outcomes
+
+    def uncovered_missed(self, person: str) -> list[int]:
+        e = self.engine
+        missed = []
+        for (duty, who, step), outcome in e.records.items():
+            if who == person and outcome == "missed" and step not in e.cancelled[duty]:
+                if not any(r.person == person and step in (r.steps if r.status == "pending" else r.approved_steps)
+                           for r in e.requests.values()):
+                    missed.append(step)
+        return sorted(missed)
+
+
+def simulate(template: Template, values: dict[str, Any], decider: Decider,
+             on_period: Callable[[int], None] | None = None) -> Engine:
+    return Term(template, values, decider).run(on_period)
+
+
+# --- the dry run (part of the template check) --------------------------------------------------
+
+
+def dry_run_values(template: Template) -> dict[str, Any]:
+    """Values made only from the parameter specs, for the dry run: never used in a real run."""
+    llm_people = [p.id for p in template.people if next(r for r in template.roles if r.id == p.role).llm]
+    values: dict[str, Any] = {}
+    for p in template.parameters:
+        if p.type == "int":
+            values[p.name] = (p.min + p.max) // 2
+        elif p.type == "bool":
+            values[p.name] = False
+        elif p.type == "choice":
+            values[p.name] = p.choices[0]
+        elif p.type == "profiles":
+            values[p.name] = {person: {"description": "dry run", "goals": ["dry run"]} for person in llm_people}
+        elif p.type == "attribute":
+            attribute = next(a for a in template.attributes if a.id == p.attribute)
+            values[p.name] = {person.id: (attribute.min + attribute.max) // 2
+                              for person in template.people if person.role == attribute.role}
+        elif p.type == "disruptions":
+            values[p.name] = _dry_run_disruptions(template)
+    return values
+
+
+def _dry_run_disruptions(template: Template) -> list[dict[str, Any]]:
+    disruptions = []
+    for i, d in enumerate(template.disruptions):
+        period = min(i + 1, template.calendar.periods)
+        if d.kind == "obstacle":
+            duty = next(x for x in template.duties if x.id == d.duty)
+            attribute = next((a for a in template.attributes if a.id == duty.obstacle_attribute), None)
+            people = [p.id for p in template.people if p.role == duty.owed_by]
+            disruptions.append({"kind": d.id, "period": period, "steps": [1], "people": people,
+                                "delay": attribute.max if attribute else 1, "description": "dry run"})
+        elif d.kind == "capacity":
+            disruptions.append({"kind": d.id, "period": period, "capacity": 0, "description": "dry run"})
+        else:
+            disruptions.append({"kind": d.id, "period": period,
+                                "steps": [template.calendar.steps_per_period], "description": "dry run"})
+    return disruptions
+
+
+def scripted_decider(template: Template) -> Decider:
+    """Tries every action the person's role allows, with parameters built from their types.
+    Refusals are fine; the dry run checks the engine never breaks."""
+    roles = {r.id: r for r in template.roles}
+    actions = {a.id: a for a in template.actions}
+    owers = [p.id for p in template.people if any(d.owed_by == p.role for d in template.duties)]
+
+    def params_for(action, context: DecisionContext) -> dict[str, Any]:
+        params = {}
+        for spec in action.params:
+            if spec.type == "step":
+                params[spec.name] = context.step
+            elif spec.type == "step_list":
+                params[spec.name] = context.uncovered_missed[-1:] or [context.step]
+            elif spec.type == "person":
+                params[spec.name] = owers[0] if owers else context.person
+            elif spec.type == "bool":
+                params[spec.name] = True
+            elif spec.type == "str":
+                params[spec.name] = "dry run"
+        return params
+
+    def decide(contexts: list[DecisionContext]) -> list[PhaseDecision]:
+        return [PhaseDecision(person=c.person, reason="dry run",
+                              proposals=[Proposal(action=a, params=params_for(actions[a], c))
+                                         for a in roles[c.role].actions])
+                for c in contexts]
+
+    return decide
+
+
+def dry_run(template: Template) -> list[str]:
+    """Runs a full term with the scripted decider. Returns what broke (empty means ok)."""
+    try:
+        engine = simulate(template, dry_run_values(template), scripted_decider(template))
+    except Exception as exc:  # noqa: BLE001 - any crash is a dry-run failure to report
+        return [f"dry run failed: {type(exc).__name__}: {exc}"]
+    errors = []
+    for i, event in enumerate(engine.events, 1):
+        if event.event_id != f"E-{i:04d}":
+            errors.append(f"dry run: event {event.event_id} is out of sequence")
+        for cause in event.caused_by:
+            if int(cause.removeprefix("E-")) >= i:
+                errors.append(f"dry run: {event.event_id} is caused by a later event {cause}")
+    for duty in template.duties:
+        unrecorded = [s for s in range(1, engine.total_steps + 1)
+                      if s not in engine.recorded_steps[duty.id] | engine.cancelled[duty.id]]
+        if unrecorded:
+            errors.append(f"dry run: duty '{duty.id}' was never recorded at steps {unrecorded}")
+    if template.checks and not any(e.type == "check_evaluated" for e in engine.events):
+        errors.append("dry run: no check ran")
+    if not any(e.type == "decision" for e in engine.events):
+        errors.append("dry run: nobody was ever asked to decide")
+    return errors[:5]
