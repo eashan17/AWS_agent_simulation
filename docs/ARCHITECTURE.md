@@ -15,7 +15,7 @@ Arrows show which way data moves. Everything runs in one Python process on one E
             ├─ POST /api/blueprints/{id}/approve ─> store
             ├─ POST /api/runs ─> one active run? (else 409) ─> daily run cap (atomic, else 429)
             │      ─> runner thread (returns run_id at once; any exception → status failed + error)
-            │      runner: the approved, frozen blueprint (policy parameters + scenario values)
+            │      runner: the approved, frozen blueprint (policy parameters + scenario values, incl. student profiles)
             │        └─> engine loop, one decision phase per session (20)
             │              ├─ disruption schedule ─> events
             │              ├─ affected LLM agents (4 students, faculty, advisor) ─> llm.decide, in parallel
@@ -38,10 +38,10 @@ Arrows show which way data moves. Everything runs in one Python process on one E
 | Module | What it holds |
 |---|---|
 | `education.py` | The education model's structure only: entity and action types, the 8 agent roles and the 4 student archetypes, and the pre-filled example input text. No scenario numbers: those come from the blueprint |
-| `policy.py` | Blueprint schema and `interpret` |
+| `policy.py` | Blueprint schema and `interpret`. Each student profile holds a description, 1–4 goals, constraints and a travel buffer, all from the user's text or approved AI assumptions (slice 3c) |
 | `llm.py` | Model adapter: Bedrock and a scripted fake |
 | `engine.py` | State, actions, permissions, arrival and lateness rule, FIFO queue, attendance and eligibility maths, event log |
-| `agents.py` | 6 LLM agents and 2 rule agents, with compact memory and current strategy |
+| `agents.py` | 6 LLM agents and 2 rule agents, with compact memory and current strategy. A student's prompt is built from its blueprint profile (`DecisionContext.profile`); faculty and advisor prompts use their role, the policy parameters and the policy's stated purpose. No agent goals or personalities are written in code |
 | `detect.py` | Objective-failure and bottleneck detectors; follows `caused_by` links and writes the ordered chain onto each finding |
 | `evidence.py` | Builds the hero view from a finding's chain, including the attendance figure with pending requests approved |
 | `store.py` | Storage interface + SQLite |
@@ -113,7 +113,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 | Background runs | A thread in the single uvicorn process, with one active run at a time. Progress goes to the store, and the UI polls. Exceptions mark the run failed, and interrupted runs are marked failed on startup | Must-have 6. A run is several minutes of Bedrock calls, and judges may start one on their own | SQS worker (nice-to-have 14) |
 | Parallel calls | Affected agents in one phase are called in parallel (max 4; 2 if Bedrock limits are low), all on the same snapshot. Proposals are sorted by agent ID before validation | Cuts wall-clock time, and sorting keeps results independent of thread timing | Sequential calls |
 | Storage | SQLite on the instance's EBS disk, behind one Storage interface, with the same backend in tests | The hero view reads one finding and its listed events. No free-tier capacity limits (see BRIEF Storage decision) | A JSON file per run on disk, behind the same interface |
-| Demo data | `fixtures/demo_run.json`: an export of one real, `completed` (not degraded) Bedrock run from the example input that contains the hero finding. It bundles its policy and approved blueprint, so the demo never waits on Bedrock. It carries a schema version and has a test that loads it, checks `llm_errors == 0` and finds the finding. Written in UTF-8 by Python, not by a shell redirect. `reset-demo` loads it. Recorded by 28 Nov noon | The 3-minute demo must reach the hero moment without waiting for a fresh run, and it replays what actually happened | Keep doing real runs and export the first one with the finding. Never a hand-made or fake-model run |
+| Demo data | `fixtures/demo_run.json`: an export of one real, `completed` (not degraded) Bedrock run from the example input that contains the hero finding. It bundles its policy and approved blueprint, so the demo never waits on Bedrock. It must be recorded after slice 3c, so the bundled blueprint passes the current schema (student descriptions and goals present). It carries a schema version and has a test that loads it, checks `llm_errors == 0` and finds the finding. Written in UTF-8 by Python, not by a shell redirect. `reset-demo` loads it. Recorded by 28 Nov noon | The 3-minute demo must reach the hero moment without waiting for a fresh run, and it replays what actually happened | Keep doing real runs and export the first one with the finding. Never a hand-made or fake-model run |
 | Spend guard | A per-run LLM-call cap, plus global daily caps on runs, LLM calls and blueprint calls, all taken atomically. Settings live in `/etc/rulestorm.env` on EC2 and `.env` locally. Over a cap → HTTP 429. One active run → 409 | Credit exhaustion suspends the live account and kills the link | Budgets alert email; optional budget action denying Bedrock |
 | Hosting | One EC2 t3.small or t4g.small (standard CPU credits), Ubuntu 24.04 (Python 3.12 built in), ap-southeast-2 (Sydney), Elastic IP, systemd service on port 80, IAM instance role, Session Manager (no SSH port) | The PS needs a live AWS link. One box has no request timeouts for long runs | — (required) |
 | HTTPS link | CloudFront, origin = the EC2 public DNS name (Elastic IP attached first). `/api/*`: all methods, CachingDisabled + AllViewer origin-request policies, 60 s origin timeout. Static files cached | Browsers warn on plain HTTP | Submit `http://<elastic-ip>` |
@@ -129,6 +129,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 - **Build hours:** about 40–60 across the team. Scope is the must-haves plus the counterfactual (R11). CloudWatch metrics (R12) and the three-policy comparison (R13) come only after the UI. The UI phase starts on the morning of 28 Nov whatever is done; the last deploy is 29 Nov.
 - **Must-have 4:** 6 agents decide through Bedrock (4 students, faculty, advisor). The attendance administrator and examination officer are rule-following code. All 8 appear in the simulation.
 - **Must-have 2:** the blueprint fills the parameters of our education model, covering both policy and scenario values. Nothing is hard-coded to force an outcome; every value comes from the user's input or an approved AI assumption (team rule, 24 Nov). Full CSR generation stays nice-to-have 15.
+- **Agent structure (slice 3c, 24 Nov):** the 8 roles, the 4 archetype names, role permissions, triggers and engine mechanics are fixed in code, as BRIEF must-have 4 defines them. Each student's description, goals, constraints and travel buffer come from the blueprint, and every decision comes from Bedrock at run time. AI-defined roles, actions or permissions would be the full CSR (nice-to-have 15) and are not in this build.
 - **Fake model:** for automated tests only, never in the app or the demo. The demo replays a recorded real run.
 - **After the slice critique (24 Nov, team approved):**
   - decision triggers and `caused_by` links on every decision, with the detector following them;
