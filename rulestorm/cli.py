@@ -61,6 +61,12 @@ def main(argv: list[str] | None = None) -> None:
     run_commands = run.add_subparsers(dest="run_command", required=True)
     local_cmd = run_commands.add_parser("local", help="run one real term here, with Bedrock agents")
     local_cmd.add_argument("--blueprint", required=True, help="an approved blueprint ID")
+    export_cmd = run_commands.add_parser("export", help="save a finished run, its blueprint and policy to a file (slice 10)")
+    export_cmd.add_argument("run_id", help="a finished run in the store")
+    export_cmd.add_argument("--out", required=True, help="the file to write, e.g. rulestorm/fixtures/demo_run.json")
+    export_cmd.add_argument("--hero", help="the finding shown as the hero (default: the run's first finding)")
+    reset_cmd = commands.add_parser("reset-demo", help="restore the seeded demo run as run `demo` (no Bedrock)")
+    reset_cmd.add_argument("--fixture", help="the demo file (default: rulestorm/fixtures/demo_run.json)")
 
     explore = commands.add_parser("explore", help="stress variants of an approved blueprint (slices 6c, L8)")
     explore_commands = explore.add_subparsers(dest="explore_command", required=True)
@@ -133,6 +139,29 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "run" and args.run_command == "local":
         run_local_command(args.blueprint)
+    elif args.command == "run" and args.run_command == "export":
+        from rulestorm.fixture import FixtureError, export_run, write_fixture
+
+        try:
+            bundle = export_run(Store(), args.run_id, hero=args.hero)
+        except FixtureError as exc:
+            raise SystemExit(str(exc))
+        path = write_fixture(bundle, args.out)
+        hero = bundle["hero"]
+        print(f"exported run {args.run_id} (schema {bundle['schema']}): {len(bundle['events'])} events, "
+              f"{len(bundle['findings'])} findings, blueprint {bundle['blueprint']['id']}, policy {bundle['policy']['id']}")
+        print(f"hero: {hero['finding_id']} {hero['kind']} {hero['person']}: {hero['title']}")
+        print(f"wrote {path}")
+    elif args.command == "reset-demo":
+        from rulestorm.fixture import DEFAULT_PATH, FixtureError, restore_demo
+
+        try:
+            restored = restore_demo(Store(), args.fixture or DEFAULT_PATH)
+        except FixtureError as exc:
+            raise SystemExit(f"reset-demo refused: {exc}")
+        print(f"restored run {restored['run_id']} (schema {restored['schema']}) with policy and blueprint")
+        print(f"from {restored['source_run_id']}: {restored['events']} events, {restored['findings']} findings, "
+              f"hero {restored['hero']}")
     elif args.command == "explore":
         explore_command(args.explore_command, args.blueprint_id, getattr(args, "max_runs", 10))
 

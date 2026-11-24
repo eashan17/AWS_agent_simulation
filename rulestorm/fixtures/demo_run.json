@@ -1,0 +1,4436 @@
+{
+ "schema": 2,
+ "exported_at": "2026-11-24T20:02:24+00:00",
+ "source_run_id": "L-ff6f0ca8",
+ "hero": {
+  "finding_id": "L-ff6f0ca8-F1",
+  "kind": "check_failed",
+  "person": "working",
+  "title": "Students fall below the attendance threshold and lose exam eligibility"
+ },
+ "run": {
+  "blueprint_id": "B-da347452",
+  "template": "attendance@1",
+  "status": "completed",
+  "period": 10,
+  "periods": 10,
+  "model_id": "deepseek.v3.2",
+  "summary": {
+   "status": "completed",
+   "model_id": "deepseek.v3.2",
+   "llm_cap": 150,
+   "llm_calls": 28,
+   "llm_errors": 0,
+   "cap_hits": 0,
+   "timeouts": 0,
+   "decisions": 28,
+   "decisions_by_agent": {
+    "advisor": 3,
+    "commuter": 3,
+    "faculty": 3,
+    "family": 6,
+    "resident": 6,
+    "working": 7
+   },
+   "no_actions": 2,
+   "rejected": [
+    {
+     "event_id": "E-0041",
+     "agent": "family",
+     "action": "submit_exception_request",
+     "reason": "precondition: occurrence_recorded"
+    },
+    {
+     "event_id": "E-0045",
+     "agent": "working",
+     "action": "skip",
+     "reason": "bad parameters: session must be a whole number"
+    },
+    {
+     "event_id": "E-0074",
+     "agent": "family",
+     "action": "submit_exception_request",
+     "reason": "precondition: occurrence_recorded"
+    },
+    {
+     "event_id": "E-0131",
+     "agent": "family",
+     "action": "attend",
+     "reason": "bad parameters: session must be a whole number"
+    }
+   ],
+   "input_tokens": 24172,
+   "output_tokens": 2824
+  },
+  "error": null,
+  "started_at": "2026-11-24T19:57:53+00:00",
+  "finished_at": "2026-11-24T19:58:20+00:00"
+ },
+ "events": [
+  {
+   "event_id": "E-0001",
+   "seq": 1,
+   "period": 1,
+   "step": 1,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.1": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0002",
+   "seq": 2,
+   "period": 1,
+   "step": 1,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.1": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0003",
+   "seq": 3,
+   "period": 1,
+   "step": 1,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.1": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0004",
+   "seq": 4,
+   "period": 1,
+   "step": 1,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.1": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0005",
+   "seq": 5,
+   "period": 1,
+   "step": 2,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.2": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0006",
+   "seq": 6,
+   "period": 1,
+   "step": 2,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.2": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0007",
+   "seq": 7,
+   "period": 1,
+   "step": 2,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.2": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0008",
+   "seq": 8,
+   "period": 1,
+   "step": 2,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.2": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0009",
+   "seq": 9,
+   "period": 1,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0010",
+   "seq": 10,
+   "period": 2,
+   "step": 3,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.3": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0011",
+   "seq": 11,
+   "period": 2,
+   "step": 3,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.3": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0012",
+   "seq": 12,
+   "period": 2,
+   "step": 3,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.3": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0013",
+   "seq": 13,
+   "period": 2,
+   "step": 3,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.3": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0014",
+   "seq": 14,
+   "period": 2,
+   "step": 4,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.4": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0015",
+   "seq": 15,
+   "period": 2,
+   "step": 4,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.4": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0016",
+   "seq": 16,
+   "period": 2,
+   "step": 4,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.4": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0017",
+   "seq": 17,
+   "period": 2,
+   "step": 4,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.4": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0018",
+   "seq": 18,
+   "period": 2,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0019",
+   "seq": 19,
+   "period": 3,
+   "step": 5,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.5": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0020",
+   "seq": 20,
+   "period": 3,
+   "step": 5,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.5": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0021",
+   "seq": 21,
+   "period": 3,
+   "step": 5,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.5": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0022",
+   "seq": 22,
+   "period": 3,
+   "step": 5,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.5": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0023",
+   "seq": 23,
+   "period": 3,
+   "step": 6,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.6": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0024",
+   "seq": 24,
+   "period": 3,
+   "step": 6,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.6": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0025",
+   "seq": 25,
+   "period": 3,
+   "step": 6,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.6": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0026",
+   "seq": 26,
+   "period": 3,
+   "step": 6,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.6": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0027",
+   "seq": 27,
+   "period": 3,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0028",
+   "seq": 28,
+   "period": 4,
+   "step": 7,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.7": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0029",
+   "seq": 29,
+   "period": 4,
+   "step": 7,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.7": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0030",
+   "seq": 30,
+   "period": 4,
+   "step": 7,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.7": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0031",
+   "seq": 31,
+   "period": 4,
+   "step": 7,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.7": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0032",
+   "seq": 32,
+   "period": 4,
+   "step": 8,
+   "type": "occurrence_cancelled",
+   "actor": "environment",
+   "payload": {
+    "disruption": "session_cancelled",
+    "description": "Session cancelled",
+    "duty": "attend_class"
+   },
+   "state_change": {
+    "occurrence.attend_class.8": {
+     "from": "scheduled",
+     "to": "cancelled"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0033",
+   "seq": 33,
+   "period": 4,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0034",
+   "seq": 34,
+   "period": 5,
+   "step": null,
+   "type": "capacity_changed",
+   "actor": "environment",
+   "payload": {
+    "disruption": "admin_capacity",
+    "description": "Office short-staffed",
+    "request_type": "exception",
+    "capacity": 2
+   },
+   "state_change": {
+    "capacity.exception.5": {
+     "from": 5,
+     "to": 2
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0035",
+   "seq": 35,
+   "period": 5,
+   "step": 9,
+   "type": "obstacle",
+   "actor": "environment",
+   "payload": {
+    "disruption": "transport",
+    "description": "Train line disruption",
+    "duty": "attend_class",
+    "delay": 45,
+    "people": [
+     "commuter",
+     "resident",
+     "working",
+     "family"
+    ]
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0036",
+   "seq": 36,
+   "period": 5,
+   "step": 9,
+   "type": "decision",
+   "actor": "commuter",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 9,
+       "travel_buffer_min": 60
+      }
+     }
+    ],
+    "reason": "Train line delay is 45 minutes, which is within my 60-minute travel buffer, so I can still make it on time. I need to maintain perfect attendance to keep exam eligibility secure.",
+    "strategy": "Use my travel buffer to absorb delays and attend every session possible.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0035"
+   ]
+  },
+  {
+   "event_id": "E-0037",
+   "seq": 37,
+   "period": 5,
+   "step": 9,
+   "type": "duty_planned",
+   "actor": "commuter",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.commuter.9": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0036"
+   ]
+  },
+  {
+   "event_id": "E-0038",
+   "seq": 38,
+   "period": 5,
+   "step": 9,
+   "type": "attribute_set",
+   "actor": "commuter",
+   "payload": {
+    "action": "attend",
+    "attribute": "travel_buffer_min"
+   },
+   "state_change": {
+    "travel_buffer_min.commuter": {
+     "from": 60,
+     "to": 60
+    }
+   },
+   "caused_by": [
+    "E-0036"
+   ]
+  },
+  {
+   "event_id": "E-0039",
+   "seq": 39,
+   "period": 5,
+   "step": 9,
+   "type": "decision",
+   "actor": "family",
+   "payload": {
+    "proposals": [
+     {
+      "action": "skip",
+      "params": {
+       "session": 9
+      }
+     },
+     {
+      "action": "submit_exception_request",
+      "params": {
+       "sessions": [
+        9
+       ],
+       "reason": "Train line disruption causing 45-minute delay"
+      }
+     }
+    ],
+    "reason": "Train disruption causes 45-minute delay, exceeding my 20-minute buffer. I can’t make it on time, so I must skip the session to prioritize family stability and will later submit an exception for this absence.",
+    "strategy": "Maintain high attendance while using exception requests for unavoidable, documented absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0035"
+   ]
+  },
+  {
+   "event_id": "E-0040",
+   "seq": 40,
+   "period": 5,
+   "step": 9,
+   "type": "duty_planned",
+   "actor": "family",
+   "payload": {
+    "action": "skip",
+    "duty": "attend_class",
+    "plan": "miss"
+   },
+   "state_change": {
+    "plan.attend_class.family.9": {
+     "from": null,
+     "to": "miss"
+    }
+   },
+   "caused_by": [
+    "E-0039"
+   ]
+  },
+  {
+   "event_id": "E-0041",
+   "seq": 41,
+   "period": 5,
+   "step": 9,
+   "type": "action_rejected",
+   "actor": "family",
+   "payload": {
+    "role": "student",
+    "action": "submit_exception_request",
+    "params": {
+     "sessions": [
+      9
+     ],
+     "reason": "Train line disruption causing 45-minute delay"
+    },
+    "reason": "precondition: occurrence_recorded",
+    "detail": "session 9 had not been recorded yet when you sent this"
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0039"
+   ]
+  },
+  {
+   "event_id": "E-0042",
+   "seq": 42,
+   "period": 5,
+   "step": 9,
+   "type": "decision",
+   "actor": "resident",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 9
+      }
+     }
+    ],
+    "reason": "I am a resident living on or near campus, so a train line disruption likely does not affect me as much as commuters. My travel buffer is 15 minutes, and the disruption delay is 45 minutes, but I can likely find an alternative route or mode of transport given my proximity.…",
+    "strategy": "Maintain perfect attendance by overcoming minor transport issues.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0035"
+   ]
+  },
+  {
+   "event_id": "E-0043",
+   "seq": 43,
+   "period": 5,
+   "step": 9,
+   "type": "duty_planned",
+   "actor": "resident",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.resident.9": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0042"
+   ]
+  },
+  {
+   "event_id": "E-0044",
+   "seq": 44,
+   "period": 5,
+   "step": 9,
+   "type": "decision",
+   "actor": "working",
+   "payload": {
+    "proposals": [
+     {
+      "action": "skip",
+      "params": {
+       "session": "week 5 session 9"
+      }
+     }
+    ],
+    "reason": "Train disruption delay of 45 minutes exceeds my 30-minute buffer, making me late. I'll miss this session and submit an exception request later, as this is an exceptional transport issue covered by the policy.",
+    "strategy": "Maintain exam eligibility by using the exception process for documented transport disruptions.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0035"
+   ]
+  },
+  {
+   "event_id": "E-0045",
+   "seq": 45,
+   "period": 5,
+   "step": 9,
+   "type": "action_rejected",
+   "actor": "working",
+   "payload": {
+    "role": "student",
+    "action": "skip",
+    "params": {
+     "session": "week 5 session 9"
+    },
+    "reason": "bad parameters: session must be a whole number",
+    "detail": "bad parameters: session must be a whole number"
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0044"
+   ]
+  },
+  {
+   "event_id": "E-0046",
+   "seq": 46,
+   "period": 5,
+   "step": 9,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.9": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0037"
+   ]
+  },
+  {
+   "event_id": "E-0047",
+   "seq": 47,
+   "period": 5,
+   "step": 9,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "missed",
+    "plan": "meet",
+    "obstacle": "E-0035"
+   },
+   "state_change": {
+    "record.attend_class.resident.9": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0035",
+    "E-0043"
+   ]
+  },
+  {
+   "event_id": "E-0048",
+   "seq": 48,
+   "period": 5,
+   "step": 9,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "missed",
+    "plan": "meet",
+    "obstacle": "E-0035"
+   },
+   "state_change": {
+    "record.attend_class.working.9": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0035"
+   ]
+  },
+  {
+   "event_id": "E-0049",
+   "seq": 49,
+   "period": 5,
+   "step": 9,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "missed",
+    "plan": "miss",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.9": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0040"
+   ]
+  },
+  {
+   "event_id": "E-0050",
+   "seq": 50,
+   "period": 5,
+   "step": 9,
+   "type": "many_missed",
+   "actor": "engine",
+   "payload": {
+    "duty": "attend_class",
+    "people": [
+     "resident",
+     "working",
+     "family"
+    ]
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0047",
+    "E-0048",
+    "E-0049"
+   ]
+  },
+  {
+   "event_id": "E-0051",
+   "seq": 51,
+   "period": 5,
+   "step": 10,
+   "type": "decision",
+   "actor": "faculty",
+   "payload": {
+    "proposals": [
+     {
+      "action": "edit_attendance",
+      "params": {
+       "student": "resident",
+       "session": 9,
+       "present": false
+      }
+     },
+     {
+      "action": "edit_attendance",
+      "params": {
+       "student": "working",
+       "session": 9,
+       "present": false
+      }
+     },
+     {
+      "action": "edit_attendance",
+      "params": {
+       "student": "family",
+       "session": 9,
+       "present": false
+      }
+     }
+    ],
+    "reason": "Event E-0050 reported many students missed session 9. I must accurately record this absence for 'resident', 'working', and 'family' to maintain correct attendance records for future eligibility checks.",
+    "strategy": "Record factual attendance to ensure fairness and accurate data for week 6 eligibility review.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0050"
+   ]
+  },
+  {
+   "event_id": "E-0052",
+   "seq": 52,
+   "period": 5,
+   "step": 9,
+   "type": "record_corrected",
+   "actor": "faculty",
+   "payload": {
+    "action": "edit_attendance",
+    "duty": "attend_class",
+    "person": "resident"
+   },
+   "state_change": {
+    "record.attend_class.resident.9": {
+     "from": "missed",
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0051",
+    "E-0047"
+   ]
+  },
+  {
+   "event_id": "E-0053",
+   "seq": 53,
+   "period": 5,
+   "step": 9,
+   "type": "record_corrected",
+   "actor": "faculty",
+   "payload": {
+    "action": "edit_attendance",
+    "duty": "attend_class",
+    "person": "working"
+   },
+   "state_change": {
+    "record.attend_class.working.9": {
+     "from": "missed",
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0051",
+    "E-0048"
+   ]
+  },
+  {
+   "event_id": "E-0054",
+   "seq": 54,
+   "period": 5,
+   "step": 9,
+   "type": "record_corrected",
+   "actor": "faculty",
+   "payload": {
+    "action": "edit_attendance",
+    "duty": "attend_class",
+    "person": "family"
+   },
+   "state_change": {
+    "record.attend_class.family.9": {
+     "from": "missed",
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0051",
+    "E-0049"
+   ]
+  },
+  {
+   "event_id": "E-0055",
+   "seq": 55,
+   "period": 5,
+   "step": 10,
+   "type": "decision",
+   "actor": "family",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 10
+      }
+     },
+     {
+      "action": "submit_exception_request",
+      "params": {
+       "sessions": [
+        9
+       ],
+       "reason": "Train line disruption causing 45-minute delay (exceeds 20 min buffer)"
+      }
+     }
+    ],
+    "reason": "I missed session 9 due to a train disruption, which is now recorded. I need to submit an exception request for that absence to protect my attendance percentage, as family demands remain unpredictable. I will attend session 10 as planned to maintain my high attendance rate.",
+    "strategy": "Maintain high attendance while using exception requests for unavoidable, documented absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0049"
+   ]
+  },
+  {
+   "event_id": "E-0056",
+   "seq": 56,
+   "period": 5,
+   "step": 10,
+   "type": "duty_planned",
+   "actor": "family",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.family.10": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0055"
+   ]
+  },
+  {
+   "event_id": "E-0057",
+   "seq": 57,
+   "period": 5,
+   "step": 10,
+   "type": "request_filed",
+   "actor": "family",
+   "payload": {
+    "request_id": "R1",
+    "request_type": "exception",
+    "person": "family",
+    "steps": [
+     9
+    ],
+    "dropped": [],
+    "reason": "Train line disruption causing 45-minute delay (exceeds 20 min buffer)",
+    "awaiting_endorsement_by": null
+   },
+   "state_change": {
+    "request.R1": {
+     "from": null,
+     "to": "pending"
+    }
+   },
+   "caused_by": [
+    "E-0055",
+    "E-0054"
+   ]
+  },
+  {
+   "event_id": "E-0058",
+   "seq": 58,
+   "period": 5,
+   "step": 10,
+   "type": "decision",
+   "actor": "resident",
+   "payload": {
+    "proposals": [
+     {
+      "action": "submit_exception_request",
+      "params": {
+       "sessions": [
+        9
+       ],
+       "reason": "Train line disruption prevented attendance despite living near campus."
+      }
+     }
+    ],
+    "reason": "I missed session 9 due to a train disruption, which is a recorded absence. To maintain eligibility and high grades, I should file an exception request for that session.",
+    "strategy": "Maintain eligibility by formally addressing any recorded absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0047"
+   ]
+  },
+  {
+   "event_id": "E-0059",
+   "seq": 59,
+   "period": 5,
+   "step": 10,
+   "type": "request_filed",
+   "actor": "resident",
+   "payload": {
+    "request_id": "R2",
+    "request_type": "exception",
+    "person": "resident",
+    "steps": [
+     9
+    ],
+    "dropped": [],
+    "reason": "Train line disruption prevented attendance despite living near campus.",
+    "awaiting_endorsement_by": null
+   },
+   "state_change": {
+    "request.R2": {
+     "from": null,
+     "to": "pending"
+    }
+   },
+   "caused_by": [
+    "E-0058",
+    "E-0052"
+   ]
+  },
+  {
+   "event_id": "E-0060",
+   "seq": 60,
+   "period": 5,
+   "step": 10,
+   "type": "decision",
+   "actor": "working",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 10
+      }
+     }
+    ],
+    "reason": "I am not late this session, so I should attend to keep my attendance above 80%. I'll handle the previous absence via an exception request later.",
+    "strategy": "Maintain exam eligibility by attending when possible and submitting one exception request for the documented transport disruption.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0048"
+   ]
+  },
+  {
+   "event_id": "E-0061",
+   "seq": 61,
+   "period": 5,
+   "step": 10,
+   "type": "duty_planned",
+   "actor": "working",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.working.10": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0060"
+   ]
+  },
+  {
+   "event_id": "E-0062",
+   "seq": 62,
+   "period": 5,
+   "step": 10,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.10": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0063",
+   "seq": 63,
+   "period": 5,
+   "step": 10,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.10": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0064",
+   "seq": 64,
+   "period": 5,
+   "step": 10,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.10": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0061"
+   ]
+  },
+  {
+   "event_id": "E-0065",
+   "seq": 65,
+   "period": 5,
+   "step": 10,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.10": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0056"
+   ]
+  },
+  {
+   "event_id": "E-0066",
+   "seq": 66,
+   "period": 5,
+   "step": null,
+   "type": "request_decided",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_id": "R1",
+    "decision": "approved",
+    "rule": "approve_if_covered_missed",
+    "approved_steps": [
+     9
+    ],
+    "rejected_steps": [],
+    "waited_periods": 0
+   },
+   "state_change": {
+    "request.R1": {
+     "from": "pending",
+     "to": "approved"
+    }
+   },
+   "caused_by": [
+    "E-0034",
+    "E-0057"
+   ]
+  },
+  {
+   "event_id": "E-0067",
+   "seq": 67,
+   "period": 5,
+   "step": null,
+   "type": "request_decided",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_id": "R2",
+    "decision": "approved",
+    "rule": "approve_if_covered_missed",
+    "approved_steps": [
+     9
+    ],
+    "rejected_steps": [],
+    "waited_periods": 0
+   },
+   "state_change": {
+    "request.R2": {
+     "from": "pending",
+     "to": "approved"
+    }
+   },
+   "caused_by": [
+    "E-0034",
+    "E-0059"
+   ]
+  },
+  {
+   "event_id": "E-0068",
+   "seq": 68,
+   "period": 5,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 2,
+    "processed": [
+     "R1",
+     "R2"
+    ],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0034",
+    "E-0066",
+    "E-0067"
+   ]
+  },
+  {
+   "event_id": "E-0069",
+   "seq": 69,
+   "period": 6,
+   "step": 11,
+   "type": "obstacle",
+   "actor": "environment",
+   "payload": {
+    "disruption": "transport",
+    "description": "Major storm causing delays",
+    "duty": "attend_class",
+    "delay": 60,
+    "people": [
+     "commuter",
+     "resident",
+     "working",
+     "family"
+    ]
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0070",
+   "seq": 70,
+   "period": 6,
+   "step": 11,
+   "type": "decision",
+   "actor": "commuter",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 11
+      }
+     }
+    ],
+    "reason": "The transport delay is exactly my 60-minute buffer, so I can still make it. My attendance is perfect so far; I must attend to maintain exam eligibility.",
+    "strategy": "Use my travel buffer to absorb delays and attend every session possible.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0069"
+   ]
+  },
+  {
+   "event_id": "E-0071",
+   "seq": 71,
+   "period": 6,
+   "step": 11,
+   "type": "duty_planned",
+   "actor": "commuter",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.commuter.11": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0070"
+   ]
+  },
+  {
+   "event_id": "E-0072",
+   "seq": 72,
+   "period": 6,
+   "step": 11,
+   "type": "decision",
+   "actor": "family",
+   "payload": {
+    "proposals": [
+     {
+      "action": "skip",
+      "params": {
+       "session": 11
+      }
+     },
+     {
+      "action": "submit_exception_request",
+      "params": {
+       "sessions": [
+        11
+       ],
+       "reason": "Major storm causing 60 min transport delay, exceeding my 20 min buffer; cannot attend due to family care responsibilities."
+      }
+     }
+    ],
+    "reason": "A major storm is causing a 60-minute transport delay, which far exceeds my 20-minute buffer. With unpredictable family demands, I cannot safely or reliably make it to class on time, so I must skip and request an exception for this documented absence.",
+    "strategy": "Maintain eligibility by using exception requests for unavoidable, documented absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0069"
+   ]
+  },
+  {
+   "event_id": "E-0073",
+   "seq": 73,
+   "period": 6,
+   "step": 11,
+   "type": "duty_planned",
+   "actor": "family",
+   "payload": {
+    "action": "skip",
+    "duty": "attend_class",
+    "plan": "miss"
+   },
+   "state_change": {
+    "plan.attend_class.family.11": {
+     "from": null,
+     "to": "miss"
+    }
+   },
+   "caused_by": [
+    "E-0072"
+   ]
+  },
+  {
+   "event_id": "E-0074",
+   "seq": 74,
+   "period": 6,
+   "step": 11,
+   "type": "action_rejected",
+   "actor": "family",
+   "payload": {
+    "role": "student",
+    "action": "submit_exception_request",
+    "params": {
+     "sessions": [
+      11
+     ],
+     "reason": "Major storm causing 60 min transport delay, exceeding my 20 min buffer; cannot attend due to family care responsibilities."
+    },
+    "reason": "precondition: occurrence_recorded",
+    "detail": "session 11 had not been recorded yet when you sent this"
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0072"
+   ]
+  },
+  {
+   "event_id": "E-0075",
+   "seq": 75,
+   "period": 6,
+   "step": 11,
+   "type": "decision",
+   "actor": "resident",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 11
+      }
+     }
+    ],
+    "reason": "I am a resident living on or near campus, so the major storm and transport delay, while significant, likely affects me less than commuters. My attendance is currently perfect and I aim to maintain it by attempting to get to class, even if I might be late.",
+    "strategy": "Maintain perfect attendance by overcoming transport issues where possible.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0069"
+   ]
+  },
+  {
+   "event_id": "E-0076",
+   "seq": 76,
+   "period": 6,
+   "step": 11,
+   "type": "duty_planned",
+   "actor": "resident",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.resident.11": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0075"
+   ]
+  },
+  {
+   "event_id": "E-0077",
+   "seq": 77,
+   "period": 6,
+   "step": 11,
+   "type": "decision",
+   "actor": "working",
+   "payload": {
+    "proposals": [
+     {
+      "action": "skip",
+      "params": {
+       "session": 11
+      }
+     }
+    ],
+    "reason": "Major storm causing 60-minute delay exceeds my 30-minute travel buffer, making me late. I'll miss session 11 and submit an exception request later for this documented transport disruption.",
+    "strategy": "Maintain exam eligibility by using the exception process for documented transport disruptions.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0069"
+   ]
+  },
+  {
+   "event_id": "E-0078",
+   "seq": 78,
+   "period": 6,
+   "step": 11,
+   "type": "duty_planned",
+   "actor": "working",
+   "payload": {
+    "action": "skip",
+    "duty": "attend_class",
+    "plan": "miss"
+   },
+   "state_change": {
+    "plan.attend_class.working.11": {
+     "from": null,
+     "to": "miss"
+    }
+   },
+   "caused_by": [
+    "E-0077"
+   ]
+  },
+  {
+   "event_id": "E-0079",
+   "seq": 79,
+   "period": 6,
+   "step": 11,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.11": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0071"
+   ]
+  },
+  {
+   "event_id": "E-0080",
+   "seq": 80,
+   "period": 6,
+   "step": 11,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "missed",
+    "plan": "meet",
+    "obstacle": "E-0069"
+   },
+   "state_change": {
+    "record.attend_class.resident.11": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0069",
+    "E-0076"
+   ]
+  },
+  {
+   "event_id": "E-0081",
+   "seq": 81,
+   "period": 6,
+   "step": 11,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "missed",
+    "plan": "miss",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.11": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0078"
+   ]
+  },
+  {
+   "event_id": "E-0082",
+   "seq": 82,
+   "period": 6,
+   "step": 11,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "missed",
+    "plan": "miss",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.11": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0073"
+   ]
+  },
+  {
+   "event_id": "E-0083",
+   "seq": 83,
+   "period": 6,
+   "step": 11,
+   "type": "count_near_threshold",
+   "actor": "engine",
+   "payload": {
+    "count": "attendance_pct",
+    "person": "working",
+    "value": 80.0,
+    "threshold": 80
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0081"
+   ]
+  },
+  {
+   "event_id": "E-0084",
+   "seq": 84,
+   "period": 6,
+   "step": 11,
+   "type": "many_missed",
+   "actor": "engine",
+   "payload": {
+    "duty": "attend_class",
+    "people": [
+     "resident",
+     "working",
+     "family"
+    ]
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0080",
+    "E-0081",
+    "E-0082"
+   ]
+  },
+  {
+   "event_id": "E-0085",
+   "seq": 85,
+   "period": 6,
+   "step": 12,
+   "type": "obstacle",
+   "actor": "environment",
+   "payload": {
+    "disruption": "transport",
+    "description": "Major storm causing delays",
+    "duty": "attend_class",
+    "delay": 60,
+    "people": [
+     "commuter",
+     "resident",
+     "working",
+     "family"
+    ]
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0086",
+   "seq": 86,
+   "period": 6,
+   "step": 12,
+   "type": "decision",
+   "actor": "advisor",
+   "payload": {
+    "proposals": [
+     {
+      "action": "advise_student",
+      "params": {
+       "student": "working",
+       "advice": "Your attendance is exactly at the 80% threshold for exam eligibility. If you have any recorded absences due to exceptional circumstances, consider submitting an exception request now."
+      }
+     }
+    ],
+    "reason": "Event E-0083 indicates the 'working' student is precisely at the 80% attendance threshold in week 6, when eligibility is checked. This is a critical juncture; they need to be aware of the exception process to protect their eligibility status if any absences were exceptional.",
+    "strategy": "Proactively advise students at the eligibility threshold about the exception request process.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0083"
+   ]
+  },
+  {
+   "event_id": "E-0087",
+   "seq": 87,
+   "period": 6,
+   "step": 12,
+   "type": "response_given",
+   "actor": "advisor",
+   "payload": {
+    "action": "advise_student",
+    "to": "working",
+    "student": "working",
+    "advice": "Your attendance is exactly at the 80% threshold for exam eligibility. If you have any recorded absences due to exceptional circumstances, consider submitting an exception request now."
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0086"
+   ]
+  },
+  {
+   "event_id": "E-0088",
+   "seq": 88,
+   "period": 6,
+   "step": 12,
+   "type": "decision",
+   "actor": "commuter",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 12
+      }
+     }
+    ],
+    "reason": "The storm delay is exactly my 60-minute buffer, so I can still make it to session 12. I must maintain my perfect attendance for exam eligibility.",
+    "strategy": "Use my travel buffer to absorb delays and attend every session possible.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0085"
+   ]
+  },
+  {
+   "event_id": "E-0089",
+   "seq": 89,
+   "period": 6,
+   "step": 12,
+   "type": "duty_planned",
+   "actor": "commuter",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.commuter.12": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0088"
+   ]
+  },
+  {
+   "event_id": "E-0090",
+   "seq": 90,
+   "period": 6,
+   "step": 12,
+   "type": "decision",
+   "actor": "faculty",
+   "payload": {
+    "proposals": [
+     {
+      "action": "edit_attendance",
+      "params": {
+       "student": "resident",
+       "session": 11,
+       "present": false
+      }
+     },
+     {
+      "action": "edit_attendance",
+      "params": {
+       "student": "working",
+       "session": 11,
+       "present": false
+      }
+     },
+     {
+      "action": "edit_attendance",
+      "params": {
+       "student": "family",
+       "session": 11,
+       "present": false
+      }
+     }
+    ],
+    "reason": "Event E-0084 shows three students missed session 11. As faculty, I must accurately record these absences to maintain fair attendance records, especially with eligibility being checked in week 6.",
+    "strategy": "Record factual attendance to ensure fairness and accurate data for week 6 eligibility checks.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0084"
+   ]
+  },
+  {
+   "event_id": "E-0091",
+   "seq": 91,
+   "period": 6,
+   "step": 11,
+   "type": "record_corrected",
+   "actor": "faculty",
+   "payload": {
+    "action": "edit_attendance",
+    "duty": "attend_class",
+    "person": "resident"
+   },
+   "state_change": {
+    "record.attend_class.resident.11": {
+     "from": "missed",
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0090",
+    "E-0080"
+   ]
+  },
+  {
+   "event_id": "E-0092",
+   "seq": 92,
+   "period": 6,
+   "step": 11,
+   "type": "record_corrected",
+   "actor": "faculty",
+   "payload": {
+    "action": "edit_attendance",
+    "duty": "attend_class",
+    "person": "working"
+   },
+   "state_change": {
+    "record.attend_class.working.11": {
+     "from": "missed",
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0090",
+    "E-0081"
+   ]
+  },
+  {
+   "event_id": "E-0093",
+   "seq": 93,
+   "period": 6,
+   "step": 11,
+   "type": "record_corrected",
+   "actor": "faculty",
+   "payload": {
+    "action": "edit_attendance",
+    "duty": "attend_class",
+    "person": "family"
+   },
+   "state_change": {
+    "record.attend_class.family.11": {
+     "from": "missed",
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0090",
+    "E-0082"
+   ]
+  },
+  {
+   "event_id": "E-0094",
+   "seq": 94,
+   "period": 6,
+   "step": 12,
+   "type": "decision",
+   "actor": "family",
+   "payload": {
+    "proposals": [
+     {
+      "action": "skip",
+      "params": {
+       "session": 12
+      }
+     },
+     {
+      "action": "submit_exception_request",
+      "params": {
+       "sessions": [
+        11
+       ],
+       "reason": "Major storm causing 60 min transport delay, exceeding my 20 min buffer; cannot attend due to family care responsibilities."
+      }
+     }
+    ],
+    "reason": "Major storm causing 60-minute transport delay, which exceeds my 20-minute buffer. With family care responsibilities, I cannot risk a long commute in these conditions and must skip session 12. I will also submit an exception request for my now-recorded absence from session 11.",
+    "strategy": "Maintain eligibility by using exception requests for unavoidable, documented absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0082",
+    "E-0085"
+   ]
+  },
+  {
+   "event_id": "E-0095",
+   "seq": 95,
+   "period": 6,
+   "step": 12,
+   "type": "duty_planned",
+   "actor": "family",
+   "payload": {
+    "action": "skip",
+    "duty": "attend_class",
+    "plan": "miss"
+   },
+   "state_change": {
+    "plan.attend_class.family.12": {
+     "from": null,
+     "to": "miss"
+    }
+   },
+   "caused_by": [
+    "E-0094"
+   ]
+  },
+  {
+   "event_id": "E-0096",
+   "seq": 96,
+   "period": 6,
+   "step": 12,
+   "type": "request_filed",
+   "actor": "family",
+   "payload": {
+    "request_id": "R3",
+    "request_type": "exception",
+    "person": "family",
+    "steps": [
+     11
+    ],
+    "dropped": [],
+    "reason": "Major storm causing 60 min transport delay, exceeding my 20 min buffer; cannot attend due to family care responsibilities.",
+    "awaiting_endorsement_by": null
+   },
+   "state_change": {
+    "request.R3": {
+     "from": null,
+     "to": "pending"
+    }
+   },
+   "caused_by": [
+    "E-0094",
+    "E-0093"
+   ]
+  },
+  {
+   "event_id": "E-0097",
+   "seq": 97,
+   "period": 6,
+   "step": 12,
+   "type": "decision",
+   "actor": "resident",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 12
+      }
+     }
+    ],
+    "reason": "I am a resident living on or near campus; despite the major storm causing a 60-minute transport delay, my 15-minute travel buffer and proximity may allow me to still attempt to attend and possibly arrive late, rather than risk another recorded absence.…",
+    "strategy": "Maintain attendance by attempting to overcome transport disruptions where feasible.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0080",
+    "E-0085"
+   ]
+  },
+  {
+   "event_id": "E-0098",
+   "seq": 98,
+   "period": 6,
+   "step": 12,
+   "type": "duty_planned",
+   "actor": "resident",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.resident.12": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0097"
+   ]
+  },
+  {
+   "event_id": "E-0099",
+   "seq": 99,
+   "period": 6,
+   "step": 12,
+   "type": "decision",
+   "actor": "working",
+   "payload": {
+    "proposals": [],
+    "reason": "I just missed session 11 due to the storm and my attendance is exactly 80%, which is the threshold for exam eligibility. However, eligibility is checked in week 6, so I must act now to secure it.…",
+    "strategy": "Secure exam eligibility by submitting an exception request for documented transport-related absences.",
+    "no_action": true,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0081",
+    "E-0083",
+    "E-0085"
+   ]
+  },
+  {
+   "event_id": "E-0100",
+   "seq": 100,
+   "period": 6,
+   "step": 12,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.12": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0089"
+   ]
+  },
+  {
+   "event_id": "E-0101",
+   "seq": 101,
+   "period": 6,
+   "step": 12,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "missed",
+    "plan": "meet",
+    "obstacle": "E-0085"
+   },
+   "state_change": {
+    "record.attend_class.resident.12": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0085",
+    "E-0098"
+   ]
+  },
+  {
+   "event_id": "E-0102",
+   "seq": 102,
+   "period": 6,
+   "step": 12,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "missed",
+    "plan": "meet",
+    "obstacle": "E-0085"
+   },
+   "state_change": {
+    "record.attend_class.working.12": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0085"
+   ]
+  },
+  {
+   "event_id": "E-0103",
+   "seq": 103,
+   "period": 6,
+   "step": 12,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "missed",
+    "plan": "miss",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.12": {
+     "from": null,
+     "to": "missed"
+    }
+   },
+   "caused_by": [
+    "E-0095"
+   ]
+  },
+  {
+   "event_id": "E-0104",
+   "seq": 104,
+   "period": 6,
+   "step": 12,
+   "type": "count_near_threshold",
+   "actor": "engine",
+   "payload": {
+    "count": "attendance_pct",
+    "person": "resident",
+    "value": 80.0,
+    "threshold": 80
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0101"
+   ]
+  },
+  {
+   "event_id": "E-0105",
+   "seq": 105,
+   "period": 6,
+   "step": 12,
+   "type": "count_near_threshold",
+   "actor": "engine",
+   "payload": {
+    "count": "attendance_pct",
+    "person": "family",
+    "value": 80.0,
+    "threshold": 80
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0103"
+   ]
+  },
+  {
+   "event_id": "E-0106",
+   "seq": 106,
+   "period": 6,
+   "step": 12,
+   "type": "many_missed",
+   "actor": "engine",
+   "payload": {
+    "duty": "attend_class",
+    "people": [
+     "resident",
+     "working",
+     "family"
+    ]
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0101",
+    "E-0102",
+    "E-0103"
+   ]
+  },
+  {
+   "event_id": "E-0107",
+   "seq": 107,
+   "period": 6,
+   "step": null,
+   "type": "request_decided",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_id": "R3",
+    "decision": "approved",
+    "rule": "approve_if_covered_missed",
+    "approved_steps": [
+     11
+    ],
+    "rejected_steps": [],
+    "waited_periods": 0
+   },
+   "state_change": {
+    "request.R3": {
+     "from": "pending",
+     "to": "approved"
+    }
+   },
+   "caused_by": [
+    "E-0096"
+   ]
+  },
+  {
+   "event_id": "E-0108",
+   "seq": 108,
+   "period": 6,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [
+     "R3"
+    ],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0107"
+   ]
+  },
+  {
+   "event_id": "E-0109",
+   "seq": 109,
+   "period": 6,
+   "step": null,
+   "type": "check_evaluated",
+   "actor": "exam_officer",
+   "payload": {
+    "check": "exam_eligibility",
+    "person": "commuter",
+    "count": {
+     "count": "attendance_pct",
+     "person": "commuter",
+     "kind": "rate",
+     "met": 11,
+     "due": 11,
+     "missed": 0,
+     "value": 100.0,
+     "pending": [],
+     "approved": [],
+     "rejected": []
+    },
+    "count_if_pending_approved": {
+     "count": "attendance_pct",
+     "person": "commuter",
+     "kind": "rate",
+     "met": 11,
+     "due": 11,
+     "missed": 0,
+     "value": 100.0,
+     "pending": [],
+     "approved": [],
+     "rejected": []
+    },
+    "comparison": ">=",
+    "threshold": 80,
+    "pending_requests": [],
+    "passed": true
+   },
+   "state_change": {
+    "check.exam_eligibility.commuter": {
+     "from": null,
+     "to": "passed"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0110",
+   "seq": 110,
+   "period": 6,
+   "step": null,
+   "type": "check_evaluated",
+   "actor": "exam_officer",
+   "payload": {
+    "check": "exam_eligibility",
+    "person": "resident",
+    "count": {
+     "count": "attendance_pct",
+     "person": "resident",
+     "kind": "rate",
+     "met": 8,
+     "due": 10,
+     "missed": 2,
+     "value": 80.0,
+     "pending": [],
+     "approved": [
+      "R2"
+     ],
+     "rejected": []
+    },
+    "count_if_pending_approved": {
+     "count": "attendance_pct",
+     "person": "resident",
+     "kind": "rate",
+     "met": 8,
+     "due": 10,
+     "missed": 2,
+     "value": 80.0,
+     "pending": [],
+     "approved": [
+      "R2"
+     ],
+     "rejected": []
+    },
+    "comparison": ">=",
+    "threshold": 80,
+    "pending_requests": [],
+    "passed": true
+   },
+   "state_change": {
+    "check.exam_eligibility.resident": {
+     "from": null,
+     "to": "passed"
+    }
+   },
+   "caused_by": [
+    "E-0091",
+    "E-0101"
+   ]
+  },
+  {
+   "event_id": "E-0111",
+   "seq": 111,
+   "period": 6,
+   "step": null,
+   "type": "check_evaluated",
+   "actor": "exam_officer",
+   "payload": {
+    "check": "exam_eligibility",
+    "person": "working",
+    "count": {
+     "count": "attendance_pct",
+     "person": "working",
+     "kind": "rate",
+     "met": 8,
+     "due": 11,
+     "missed": 3,
+     "value": 72.7,
+     "pending": [],
+     "approved": [],
+     "rejected": []
+    },
+    "count_if_pending_approved": {
+     "count": "attendance_pct",
+     "person": "working",
+     "kind": "rate",
+     "met": 8,
+     "due": 11,
+     "missed": 3,
+     "value": 72.7,
+     "pending": [],
+     "approved": [],
+     "rejected": []
+    },
+    "comparison": ">=",
+    "threshold": 80,
+    "pending_requests": [],
+    "passed": false
+   },
+   "state_change": {
+    "check.exam_eligibility.working": {
+     "from": null,
+     "to": "failed"
+    }
+   },
+   "caused_by": [
+    "E-0053",
+    "E-0092",
+    "E-0102"
+   ]
+  },
+  {
+   "event_id": "E-0112",
+   "seq": 112,
+   "period": 6,
+   "step": null,
+   "type": "check_evaluated",
+   "actor": "exam_officer",
+   "payload": {
+    "check": "exam_eligibility",
+    "person": "family",
+    "count": {
+     "count": "attendance_pct",
+     "person": "family",
+     "kind": "rate",
+     "met": 8,
+     "due": 9,
+     "missed": 1,
+     "value": 88.9,
+     "pending": [],
+     "approved": [
+      "R1",
+      "R3"
+     ],
+     "rejected": []
+    },
+    "count_if_pending_approved": {
+     "count": "attendance_pct",
+     "person": "family",
+     "kind": "rate",
+     "met": 8,
+     "due": 9,
+     "missed": 1,
+     "value": 88.9,
+     "pending": [],
+     "approved": [
+      "R1",
+      "R3"
+     ],
+     "rejected": []
+    },
+    "comparison": ">=",
+    "threshold": 80,
+    "pending_requests": [],
+    "passed": true
+   },
+   "state_change": {
+    "check.exam_eligibility.family": {
+     "from": null,
+     "to": "passed"
+    }
+   },
+   "caused_by": [
+    "E-0103"
+   ]
+  },
+  {
+   "event_id": "E-0113",
+   "seq": 113,
+   "period": 7,
+   "step": 13,
+   "type": "decision",
+   "actor": "advisor",
+   "payload": {
+    "proposals": [
+     {
+      "action": "advise_student",
+      "params": {
+       "student": "resident",
+       "advice": "Your attendance is exactly at the 80% threshold for exam eligibility. If you have any recorded absences due to exceptional circumstances, consider submitting an exception request."
+      }
+     },
+     {
+      "action": "advise_student",
+      "params": {
+       "student": "family",
+       "advice": "Your attendance is exactly at the 80% threshold for exam eligibility. If you have any recorded absences due to exceptional circumstances, consider submitting an exception request."
+      }
+     }
+    ],
+    "reason": "Events E-0104 and E-0105 show both 'resident' and 'family' students are at the precise 80% attendance threshold. Week 6 eligibility check is done, but we are in week 7 and should still advise them about the exception process for any recorded absences due to exceptional circumstances.",
+    "strategy": "Proactively advise all students at the eligibility threshold about the exception request option.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0104",
+    "E-0105"
+   ]
+  },
+  {
+   "event_id": "E-0114",
+   "seq": 114,
+   "period": 7,
+   "step": 13,
+   "type": "response_given",
+   "actor": "advisor",
+   "payload": {
+    "action": "advise_student",
+    "to": "resident",
+    "student": "resident",
+    "advice": "Your attendance is exactly at the 80% threshold for exam eligibility. If you have any recorded absences due to exceptional circumstances, consider submitting an exception request."
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0113"
+   ]
+  },
+  {
+   "event_id": "E-0115",
+   "seq": 115,
+   "period": 7,
+   "step": 13,
+   "type": "response_given",
+   "actor": "advisor",
+   "payload": {
+    "action": "advise_student",
+    "to": "family",
+    "student": "family",
+    "advice": "Your attendance is exactly at the 80% threshold for exam eligibility. If you have any recorded absences due to exceptional circumstances, consider submitting an exception request."
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0113"
+   ]
+  },
+  {
+   "event_id": "E-0116",
+   "seq": 116,
+   "period": 7,
+   "step": 13,
+   "type": "decision",
+   "actor": "faculty",
+   "payload": {
+    "proposals": [],
+    "reason": "No immediate action needed; session 13 is about to take place, and no requests have been submitted that require recording attendance or editing. I will proceed with the session as scheduled.",
+    "strategy": "Conduct session 13 and accurately record attendance after it occurs.",
+    "no_action": true,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0106"
+   ]
+  },
+  {
+   "event_id": "E-0117",
+   "seq": 117,
+   "period": 7,
+   "step": 13,
+   "type": "decision",
+   "actor": "family",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 13
+      }
+     }
+    ],
+    "reason": "Attendance is 88.9%, but I have a new recorded absence from session 12. I need to attend this week's session to maintain my attendance buffer above the 80% threshold, as family demands remain unpredictable.",
+    "strategy": "Maintain high attendance while using exception requests for unavoidable, documented absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0103",
+    "E-0105"
+   ]
+  },
+  {
+   "event_id": "E-0118",
+   "seq": 118,
+   "period": 7,
+   "step": 13,
+   "type": "duty_planned",
+   "actor": "family",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.family.13": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0117"
+   ]
+  },
+  {
+   "event_id": "E-0119",
+   "seq": 119,
+   "period": 7,
+   "step": 13,
+   "type": "decision",
+   "actor": "resident",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 13
+      }
+     }
+    ],
+    "reason": "I must attend session 13 to maintain my 80% attendance and achieve high grades, as I have no pending requests and my last absence was just recorded.",
+    "strategy": "Maintain exam eligibility by attending all remaining sessions.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0101",
+    "E-0104"
+   ]
+  },
+  {
+   "event_id": "E-0120",
+   "seq": 120,
+   "period": 7,
+   "step": 13,
+   "type": "duty_planned",
+   "actor": "resident",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.resident.13": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0119"
+   ]
+  },
+  {
+   "event_id": "E-0121",
+   "seq": 121,
+   "period": 7,
+   "step": 13,
+   "type": "decision",
+   "actor": "working",
+   "payload": {
+    "proposals": [
+     {
+      "action": "submit_exception_request",
+      "params": {
+       "sessions": [
+        9,
+        11,
+        12
+       ],
+       "reason": "Transport disruptions due to major storm and prior documented delay"
+      }
+     }
+    ],
+    "reason": "My attendance is now 72.7% below the 80% threshold for exam eligibility. I have three recorded absences (sessions 9, 11, 12) with no pending requests. I need to submit a formal exception request covering all these absences due to exceptional transport circumstances to regain eligibility.",
+    "strategy": "Regain exam eligibility by submitting a single exception request for all documented transport-related absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0087",
+    "E-0102"
+   ]
+  },
+  {
+   "event_id": "E-0122",
+   "seq": 122,
+   "period": 7,
+   "step": 13,
+   "type": "request_filed",
+   "actor": "working",
+   "payload": {
+    "request_id": "R4",
+    "request_type": "exception",
+    "person": "working",
+    "steps": [
+     9,
+     11,
+     12
+    ],
+    "dropped": [],
+    "reason": "Transport disruptions due to major storm and prior documented delay",
+    "awaiting_endorsement_by": null
+   },
+   "state_change": {
+    "request.R4": {
+     "from": null,
+     "to": "pending"
+    }
+   },
+   "caused_by": [
+    "E-0121",
+    "E-0053",
+    "E-0092",
+    "E-0102"
+   ]
+  },
+  {
+   "event_id": "E-0123",
+   "seq": 123,
+   "period": 7,
+   "step": 13,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.13": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0124",
+   "seq": 124,
+   "period": 7,
+   "step": 13,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.13": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0120"
+   ]
+  },
+  {
+   "event_id": "E-0125",
+   "seq": 125,
+   "period": 7,
+   "step": 13,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.13": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0126",
+   "seq": 126,
+   "period": 7,
+   "step": 13,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.13": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0118"
+   ]
+  },
+  {
+   "event_id": "E-0127",
+   "seq": 127,
+   "period": 7,
+   "step": 13,
+   "type": "count_near_threshold",
+   "actor": "engine",
+   "payload": {
+    "count": "attendance_pct",
+    "person": "working",
+    "value": 75.0,
+    "threshold": 80
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0125"
+   ]
+  },
+  {
+   "event_id": "E-0128",
+   "seq": 128,
+   "period": 7,
+   "step": 14,
+   "type": "decision",
+   "actor": "advisor",
+   "payload": {
+    "proposals": [
+     {
+      "action": "advise_student",
+      "params": {
+       "student": "working",
+       "advice": "Your attendance is now 75%, below the 80% threshold. If any recorded absences were due to exceptional circumstances, you may need an exception. A request R4 is pending."
+      }
+     }
+    ],
+    "reason": "Event E-0127 shows 'working' student's attendance has dropped to 75%, which is below the 80% eligibility threshold. Since eligibility is checked in week 6, the student is now at risk. I should advise them on available options, noting there is a pending request R4.",
+    "strategy": "Advise students who fall below the threshold after the eligibility check about exception requests for recorded absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0127"
+   ]
+  },
+  {
+   "event_id": "E-0129",
+   "seq": 129,
+   "period": 7,
+   "step": 14,
+   "type": "response_given",
+   "actor": "advisor",
+   "payload": {
+    "action": "advise_student",
+    "to": "working",
+    "student": "working",
+    "advice": "Your attendance is now 75%, below the 80% threshold. If any recorded absences were due to exceptional circumstances, you may need an exception. A request R4 is pending."
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0128"
+   ]
+  },
+  {
+   "event_id": "E-0130",
+   "seq": 130,
+   "period": 7,
+   "step": 14,
+   "type": "decision",
+   "actor": "family",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": "session 14"
+      }
+     }
+    ],
+    "reason": "My attendance is at 90% but I have one uncovered absence (session 12). I should attend this session to maintain a comfortable buffer above the 80% eligibility threshold, given my unpredictable family demands.",
+    "strategy": "Maintain high attendance while using exception requests for unavoidable, documented absences.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0115"
+   ]
+  },
+  {
+   "event_id": "E-0131",
+   "seq": 131,
+   "period": 7,
+   "step": 14,
+   "type": "action_rejected",
+   "actor": "family",
+   "payload": {
+    "role": "student",
+    "action": "attend",
+    "params": {
+     "session": "session 14"
+    },
+    "reason": "bad parameters: session must be a whole number",
+    "detail": "bad parameters: session must be a whole number"
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0130"
+   ]
+  },
+  {
+   "event_id": "E-0132",
+   "seq": 132,
+   "period": 7,
+   "step": 14,
+   "type": "decision",
+   "actor": "resident",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 14
+      }
+     }
+    ],
+    "reason": "Attend session 14 to maintain or improve my attendance percentage above the 80% threshold, as I have two recorded absences without exception coverage.",
+    "strategy": "Secure exam eligibility and high grades by attending all remaining sessions.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0114"
+   ]
+  },
+  {
+   "event_id": "E-0133",
+   "seq": 133,
+   "period": 7,
+   "step": 14,
+   "type": "duty_planned",
+   "actor": "resident",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.resident.14": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0132"
+   ]
+  },
+  {
+   "event_id": "E-0134",
+   "seq": 134,
+   "period": 7,
+   "step": 14,
+   "type": "decision",
+   "actor": "working",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 14
+      }
+     }
+    ],
+    "reason": "My attendance is 75% and I have a pending request for three absences. Attending session 14 is crucial to maintain or improve my attendance percentage while waiting for the request outcome.",
+    "strategy": "Maximize attendance to stay above the threshold while my pending exception request is processed.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0127"
+   ]
+  },
+  {
+   "event_id": "E-0135",
+   "seq": 135,
+   "period": 7,
+   "step": 14,
+   "type": "duty_planned",
+   "actor": "working",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.working.14": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0134"
+   ]
+  },
+  {
+   "event_id": "E-0136",
+   "seq": 136,
+   "period": 7,
+   "step": 14,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.14": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0137",
+   "seq": 137,
+   "period": 7,
+   "step": 14,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.14": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0133"
+   ]
+  },
+  {
+   "event_id": "E-0138",
+   "seq": 138,
+   "period": 7,
+   "step": 14,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.14": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0135"
+   ]
+  },
+  {
+   "event_id": "E-0139",
+   "seq": 139,
+   "period": 7,
+   "step": 14,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.14": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0140",
+   "seq": 140,
+   "period": 7,
+   "step": null,
+   "type": "request_decided",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_id": "R4",
+    "decision": "approved",
+    "rule": "approve_if_covered_missed",
+    "approved_steps": [
+     9,
+     11,
+     12
+    ],
+    "rejected_steps": [],
+    "waited_periods": 0
+   },
+   "state_change": {
+    "request.R4": {
+     "from": "pending",
+     "to": "approved"
+    }
+   },
+   "caused_by": [
+    "E-0122"
+   ]
+  },
+  {
+   "event_id": "E-0141",
+   "seq": 141,
+   "period": 7,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [
+     "R4"
+    ],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0140"
+   ]
+  },
+  {
+   "event_id": "E-0142",
+   "seq": 142,
+   "period": 8,
+   "step": 15,
+   "type": "decision",
+   "actor": "working",
+   "payload": {
+    "proposals": [
+     {
+      "action": "attend",
+      "params": {
+       "session": 15
+      }
+     }
+    ],
+    "reason": "My attendance is 100% so far after approvals, but I need to maintain it. Session 15 is now, so I'll attend normally to keep my record clean.",
+    "strategy": "Maintain perfect attendance to secure exam eligibility.",
+    "no_action": false,
+    "error": null
+   },
+   "state_change": {},
+   "caused_by": [
+    "E-0129"
+   ]
+  },
+  {
+   "event_id": "E-0143",
+   "seq": 143,
+   "period": 8,
+   "step": 15,
+   "type": "duty_planned",
+   "actor": "working",
+   "payload": {
+    "action": "attend",
+    "duty": "attend_class",
+    "plan": "meet"
+   },
+   "state_change": {
+    "plan.attend_class.working.15": {
+     "from": null,
+     "to": "meet"
+    }
+   },
+   "caused_by": [
+    "E-0142"
+   ]
+  },
+  {
+   "event_id": "E-0144",
+   "seq": 144,
+   "period": 8,
+   "step": 15,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.15": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0145",
+   "seq": 145,
+   "period": 8,
+   "step": 15,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.15": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0146",
+   "seq": 146,
+   "period": 8,
+   "step": 15,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.15": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": [
+    "E-0143"
+   ]
+  },
+  {
+   "event_id": "E-0147",
+   "seq": 147,
+   "period": 8,
+   "step": 15,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.15": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0148",
+   "seq": 148,
+   "period": 8,
+   "step": 16,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.16": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0149",
+   "seq": 149,
+   "period": 8,
+   "step": 16,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.16": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0150",
+   "seq": 150,
+   "period": 8,
+   "step": 16,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.16": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0151",
+   "seq": 151,
+   "period": 8,
+   "step": 16,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.16": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0152",
+   "seq": 152,
+   "period": 8,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0153",
+   "seq": 153,
+   "period": 9,
+   "step": 17,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.17": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0154",
+   "seq": 154,
+   "period": 9,
+   "step": 17,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.17": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0155",
+   "seq": 155,
+   "period": 9,
+   "step": 17,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.17": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0156",
+   "seq": 156,
+   "period": 9,
+   "step": 17,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.17": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0157",
+   "seq": 157,
+   "period": 9,
+   "step": 18,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.18": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0158",
+   "seq": 158,
+   "period": 9,
+   "step": 18,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.18": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0159",
+   "seq": 159,
+   "period": 9,
+   "step": 18,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.18": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0160",
+   "seq": 160,
+   "period": 9,
+   "step": 18,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.18": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0161",
+   "seq": 161,
+   "period": 9,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0162",
+   "seq": 162,
+   "period": 10,
+   "step": 19,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.19": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0163",
+   "seq": 163,
+   "period": 10,
+   "step": 19,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.19": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0164",
+   "seq": 164,
+   "period": 10,
+   "step": 19,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.19": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0165",
+   "seq": 165,
+   "period": 10,
+   "step": 19,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.19": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0166",
+   "seq": 166,
+   "period": 10,
+   "step": 20,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "commuter",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.commuter.20": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0167",
+   "seq": 167,
+   "period": 10,
+   "step": 20,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "resident",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.resident.20": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0168",
+   "seq": 168,
+   "period": 10,
+   "step": 20,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "working",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.working.20": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0169",
+   "seq": 169,
+   "period": 10,
+   "step": 20,
+   "type": "duty_recorded",
+   "actor": "faculty",
+   "payload": {
+    "duty": "attend_class",
+    "person": "family",
+    "outcome": "met",
+    "plan": "meet",
+    "obstacle": null
+   },
+   "state_change": {
+    "record.attend_class.family.20": {
+     "from": null,
+     "to": "met"
+    }
+   },
+   "caused_by": []
+  },
+  {
+   "event_id": "E-0170",
+   "seq": 170,
+   "period": 10,
+   "step": null,
+   "type": "queue_processed",
+   "actor": "attendance_admin",
+   "payload": {
+    "request_type": "exception",
+    "capacity": 5,
+    "processed": [],
+    "pending": []
+   },
+   "state_change": {},
+   "caused_by": []
+  }
+ ],
+ "findings": [
+  {
+   "finding_id": "L-ff6f0ca8-F1",
+   "run_id": "L-ff6f0ca8",
+   "kind": "check_failed",
+   "title": "Students fall below the attendance threshold and lose exam eligibility",
+   "person": "working",
+   "check": "exam_eligibility",
+   "check_label": "exam eligibility",
+   "check_event_id": "E-0111",
+   "period": 6,
+   "outcome": "not eligible",
+   "count": {
+    "count": "attendance_pct",
+    "person": "working",
+    "kind": "rate",
+    "met": 8,
+    "due": 11,
+    "missed": 3,
+    "value": 72.7,
+    "pending": [],
+    "approved": [],
+    "rejected": []
+   },
+   "count_if_pending_approved": {
+    "count": "attendance_pct",
+    "person": "working",
+    "kind": "rate",
+    "met": 8,
+    "due": 11,
+    "missed": 3,
+    "value": 72.7,
+    "pending": [],
+    "approved": [],
+    "rejected": []
+   },
+   "pending_requests": [],
+   "disruptions": [
+    "E-0035",
+    "E-0069",
+    "E-0085"
+   ],
+   "chain": [
+    "E-0035",
+    "E-0048",
+    "E-0050",
+    "E-0051",
+    "E-0053",
+    "E-0069",
+    "E-0077",
+    "E-0078",
+    "E-0081",
+    "E-0084",
+    "E-0085",
+    "E-0090",
+    "E-0092",
+    "E-0102",
+    "E-0111"
+   ]
+  }
+ ],
+ "blueprint": {
+  "policy_id": "P-5f406a3e",
+  "model_id": "deepseek.v3.2",
+  "status": "valid",
+  "errors": [],
+  "template_id": "attendance",
+  "template_version": 1,
+  "pick_reason": "Policy regulates minimum attendance for exam eligibility with exceptions and a fixed eligibility check.",
+  "blueprint": {
+   "template_id": "attendance",
+   "template_version": 1,
+   "values": {
+    "threshold_pct": 80,
+    "scope": "per_course",
+    "exception_rule": "Exceptional circumstances may be considered through formally approved exceptions.",
+    "request_timing": "after_missed",
+    "partial_at_submit": false,
+    "partial_at_decide": true,
+    "decision_rule": "approve_if_covered_missed",
+    "office_capacity_per_week": 5,
+    "checkpoint_week": 6,
+    "disruptions": [
+     {
+      "kind": "transport",
+      "period": 5,
+      "steps": [
+       1
+      ],
+      "people": [
+       "commuter",
+       "resident",
+       "working",
+       "family"
+      ],
+      "delay": 45,
+      "capacity": null,
+      "description": "Train line disruption"
+     },
+     {
+      "kind": "transport",
+      "period": 6,
+      "steps": [
+       1,
+       2
+      ],
+      "people": [
+       "commuter",
+       "resident",
+       "working",
+       "family"
+      ],
+      "delay": 60,
+      "capacity": null,
+      "description": "Major storm causing delays"
+     },
+     {
+      "kind": "admin_capacity",
+      "period": 5,
+      "steps": [],
+      "people": [],
+      "delay": 0,
+      "capacity": 2,
+      "description": "Office short-staffed"
+     },
+     {
+      "kind": "session_cancelled",
+      "period": 4,
+      "steps": [
+       2
+      ],
+      "people": [],
+      "delay": 0,
+      "capacity": null,
+      "description": "Session cancelled"
+     }
+    ],
+    "profiles": {
+     "commuter": {
+      "description": "Student who commutes long distances",
+      "goals": [
+       "Maintain exam eligibility despite travel risks"
+      ],
+      "constraints": [
+       "Vulnerable to transport delays"
+      ]
+     },
+     "resident": {
+      "description": "Student living on or near campus",
+      "goals": [
+       "Attend all sessions",
+       "Achieve high grades"
+      ],
+      "constraints": [
+       "No major external constraints"
+      ]
+     },
+     "working": {
+      "description": "Student with fixed part-time work hours",
+      "goals": [
+       "Balance work and studies"
+      ],
+      "constraints": [
+       "Work schedule inflexible"
+      ]
+     },
+     "family": {
+      "description": "Student with family care responsibilities",
+      "goals": [
+       "Manage attendance around family needs"
+      ],
+      "constraints": [
+       "Unpredictable family demands"
+      ]
+     },
+     "faculty": {
+      "description": "Teaches the course",
+      "goals": [
+       "High student participation",
+       "Fair policy application"
+      ],
+      "constraints": [
+       "Must record attendance accurately"
+      ]
+     },
+     "advisor": {
+      "description": "Advises the course's students",
+      "goals": [
+       "Help students stay eligible",
+       "Navigate exceptions"
+      ],
+      "constraints": []
+     }
+    },
+    "slack_min": {
+     "commuter": 60,
+     "resident": 15,
+     "working": 30,
+     "family": 20
+    }
+   },
+   "facts": [
+    {
+     "field": "threshold_pct",
+     "statement": "Minimum attendance is 80%."
+    },
+    {
+     "field": "scope",
+     "statement": "Attendance is counted per course."
+    },
+    {
+     "field": "exception_rule",
+     "statement": "Exceptional circumstances considered via formal exceptions."
+    },
+    {
+     "field": "people",
+     "statement": "Includes commuter, resident, working, family, faculty, advisor, admin, officer."
+    },
+    {
+     "field": "environment",
+     "statement": "One course, one term, transport disruptions occur."
+    },
+    {
+     "field": "environment",
+     "statement": "Attendance office has limited weekly request capacity."
+    },
+    {
+     "field": "environment",
+     "statement": "Eligibility checked at a set point in term."
+    }
+   ],
+   "assumptions": [
+    {
+     "field": "request_timing",
+     "statement": "Requests filed after missed classes."
+    },
+    {
+     "field": "partial_at_submit",
+     "statement": "Request with any invalid class is refused whole."
+    },
+    {
+     "field": "partial_at_decide",
+     "statement": "Office can approve part of a request."
+    },
+    {
+     "field": "decision_rule",
+     "statement": "Office approves if covered classes are recorded absences."
+    },
+    {
+     "field": "office_capacity_per_week",
+     "statement": "Office can process 5 requests per week."
+    },
+    {
+     "field": "slack_min",
+     "statement": "Commuter has 60 min slack, resident 15, working 30, family 20."
+    },
+    {
+     "field": "checkpoint_week",
+     "statement": "Stress variant 'Early checkpoint with many disruptions': checkpoint_week 10 -> 6"
+    },
+    {
+     "field": "disruptions",
+     "statement": "Stress variant 'Early checkpoint with many disruptions': Early eligibility check before all exceptions can be processed, penalizing students for late-week disruptions."
+    }
+   ]
+  },
+  "attempts": 1,
+  "seconds": 12.53,
+  "retried": [],
+  "input_tokens": 1888,
+  "output_tokens": 575,
+  "parent_id": "B-ff06a1d1",
+  "variant": "Early checkpoint with many disruptions",
+  "weak_point": "Early eligibility check before all exceptions can be processed, penalizing students for late-week disruptions.",
+  "id": "B-da347452",
+  "approved": true,
+  "created_at": "2026-11-24T19:57:37+00:00"
+ },
+ "policy": {
+  "text": "Students must maintain at least 80% attendance in each course to be eligible for examinations. Exceptional circumstances may be considered through formally approved exceptions.",
+  "purpose": "Improve class participation, encourage consistent attendance and maintain academic standards.",
+  "environment": "One institution and one course over a term. Students include a long-distance commuter, a resident student, a student with fixed work hours and a student with family responsibilities. Faculty, an academic advisor, an attendance administrator and an examination officer are involved. Transport disruptions happen during the term. The attendance office can process only a few exception requests a week, and eligibility is checked at a set point in the term.",
+  "id": "P-5f406a3e",
+  "created_at": "2026-11-24T19:56:39+00:00"
+ }
+}

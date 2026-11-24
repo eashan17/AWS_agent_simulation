@@ -55,6 +55,6 @@ Setup (once): `python -m venv .venv` then `.venv\Scripts\python -m pip install -
 dev: `python -m uvicorn rulestorm.api:app --reload --port 8000`
 test: `python -m pytest`
 cli: `python -m rulestorm.cli <command>`
-reset-demo: (added with the seeded demo run, must-have 9)
+reset-demo: `python -m rulestorm.cli reset-demo` (restores the seeded real run as run `demo`; no Bedrock)
 demo: (added by /ship 2)
 deploy: (EC2 deploy script, added once the live AWS account exists)

@@ -286,6 +286,45 @@ class Store:
         row = self._conn().execute("SELECT record FROM findings WHERE id = ?", (finding_id,)).fetchone()
         return json.loads(row["record"]) if row else None
 
+    # --- the seeded demo run (slice 10) --------------------------------------------------------
+
+    def restore_policy(self, policy: Policy) -> None:
+        """Adds a bundled policy under its own ID; one already there is kept."""
+        conn = self._conn()
+        with conn:
+            conn.execute("INSERT OR IGNORE INTO policies (id, text, purpose, environment, created_at) "
+                         "VALUES (?, ?, ?, ?, ?)",
+                         (policy.id, policy.text, policy.purpose, policy.environment, policy.created_at))
+
+    def restore_blueprint(self, record: BlueprintRecord) -> None:
+        """Adds a bundled blueprint under its own ID; one already there is kept (an approved
+        blueprint is frozen, so it can't be overwritten)."""
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO blueprints (id, policy_id, model_id, status, approved, record, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (record.id, record.policy_id, record.model_id, record.status, int(record.approved),
+                 record.model_dump_json(), record.created_at))
+
+    def replace_run(self, run: dict, events: list[dict], findings: list[dict]) -> None:
+        """Puts a whole finished run in place of any run with the same ID, in one transaction."""
+        conn = self._conn()
+        with conn:
+            for table, key in (("findings", "run_id"), ("events", "run_id"), ("runs", "id")):
+                conn.execute(f"DELETE FROM {table} WHERE {key} = ?", (run["id"],))
+            conn.execute(
+                "INSERT INTO runs (id, blueprint_id, template, status, period, periods, model_id, summary, error, "
+                "started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run["id"], run["blueprint_id"], run["template"], run["status"], run["period"], run["periods"],
+                 run["model_id"], json.dumps(run["summary"], ensure_ascii=False) if run["summary"] else None,
+                 run["error"], run["started_at"], run["finished_at"]))
+            conn.executemany("INSERT INTO events (run_id, seq, event) VALUES (?, ?, ?)",
+                             [(run["id"], e["seq"], json.dumps(e, ensure_ascii=False)) for e in events])
+            conn.executemany("INSERT INTO findings (id, run_id, kind, record) VALUES (?, ?, ?, ?)",
+                             [(f["finding_id"], run["id"], f["kind"], json.dumps(f, ensure_ascii=False))
+                              for f in findings])
+
     def update_blueprint(self, blueprint_id: str, blueprint: TemplateBlueprint) -> BlueprintRecord:
         """Edit a blueprint before approval (e.g. corrected assumptions). Refused once approved."""
         record = self.get_blueprint(blueprint_id)

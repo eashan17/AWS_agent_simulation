@@ -151,7 +151,7 @@ The template has its own pre-filled example policy (for example: "Residents must
 - The templates hold structure (who exists, what they may do, what is counted and checked), never scenario numbers.
 - The pre-filled example inputs are ordinary, editable user input.
 
-**Hero chain from real runs:** nothing in code or a template is changed to make a finding appear. The demo replays a recorded real run (must-have 9). The hero is whichever real finding is strongest at the 26 Nov checkpoint (team choice).
+**Hero chain from real runs:** nothing in code or a template is changed to make a finding appear. The demo replays a recorded real run (must-have 9). The hero is whichever real finding is strongest at the 26 Nov checkpoint (team choice). Chosen 25 Nov: the eligibility failure in L-ff6f0ca8 (`check_failed`, the working student at 72.7% after storms), bundled in `fixtures/demo_run.json` and restored as run `demo` with `reset-demo`, which re-detects the findings from the bundled events and refuses a file whose blueprint no longer fits its template.
 
 ## What carries over and what is ported
 - **Unchanged:**
