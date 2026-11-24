@@ -24,7 +24,7 @@ from rulestorm.education import (
     TERM_WEEKS,
 )
 from rulestorm.engine import Attendance, Engine, Event
-from rulestorm.policy import Blueprint
+from rulestorm.policy import Blueprint, StudentProfile
 
 
 class Proposal(BaseModel):
@@ -42,6 +42,7 @@ class DecisionContext(BaseModel):
     triggers: list[Event]
     attendance: Attendance | None = None  # students only
     travel_buffer_min: int | None = None  # students only
+    profile: StudentProfile | None = None  # students only: description, goals, constraints from the blueprint
     pending_requests: list[str] = Field(default_factory=list)
 
 
@@ -69,6 +70,7 @@ class Term:
         students = [s.archetype for s in blueprint.scenario.students]
         self.engine = Engine(blueprint.policy.threshold_pct, students)
         self.engine.travel_buffer = {s.archetype: s.travel_buffer_min for s in blueprint.scenario.students}
+        self.profiles = {s.archetype: s for s in blueprint.scenario.students}
         self.triggers: dict[str, list[str]] = defaultdict(list)
         self.near_threshold: set[str] = set()
 
@@ -151,6 +153,7 @@ class Term:
             if role == "student":
                 context.attendance = e.attendance(agent)
                 context.travel_buffer_min = e.travel_buffer.get(agent)
+                context.profile = self.profiles[agent]
                 context.pending_requests = context.attendance.pending
             else:
                 context.pending_requests = [r.request_id for r in e.requests.values() if r.status == "pending"]

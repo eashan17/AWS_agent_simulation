@@ -20,10 +20,10 @@ VALID = {
     },
     "scenario": {
         "students": [
-            {"archetype": "commuter", "constraints": ["long commute"], "travel_buffer_min": 30},
-            {"archetype": "resident", "constraints": ["none"], "travel_buffer_min": 10},
-            {"archetype": "working", "constraints": ["fixed work hours"], "travel_buffer_min": 15},
-            {"archetype": "family", "constraints": ["care duties"], "travel_buffer_min": 20},
+            {"archetype": "commuter", "description": "travels two hours by bus", "goals": ["keep eligibility"], "constraints": ["long commute"], "travel_buffer_min": 30},
+            {"archetype": "resident", "description": "lives in the hostel", "goals": ["good grades"], "constraints": ["none"], "travel_buffer_min": 10},
+            {"archetype": "working", "description": "works evening shifts", "goals": ["keep the job"], "constraints": ["fixed work hours"], "travel_buffer_min": 15},
+            {"archetype": "family", "description": "cares for a parent", "goals": ["balance home and study"], "constraints": ["care duties"], "travel_buffer_min": 20},
         ],
         "admin_capacity_per_week": 2,
         "checkpoint_week": 6,
@@ -103,3 +103,20 @@ def test_post_blueprint_route(store, policy) -> None:
         assert http.post("/api/blueprints", json={"policy_id": "P-missing"}).status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+def test_student_without_goals_rejected(policy) -> None:
+    no_goals = copy.deepcopy(VALID)
+    no_goals["scenario"]["students"][0]["goals"] = []
+    with pytest.raises(ValidationError, match="goals"):
+        Blueprint.model_validate(no_goals)
+    missing = copy.deepcopy(VALID)
+    del missing["scenario"]["students"][1]["description"]
+    draft = interpret(policy, FakeModel([json.dumps(missing), json.dumps(missing)]))
+    assert draft.status == "invalid" and "description" in draft.errors[0]
+
+
+def test_prompt_asks_for_description_and_goals(policy) -> None:
+    model = FakeModel([json.dumps(VALID)])
+    interpret(policy, model)
+    assert "description" in model.prompts[0] and "goals" in model.prompts[0]

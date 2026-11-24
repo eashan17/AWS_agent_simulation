@@ -67,7 +67,7 @@ Arrows show which way data moves. Everything runs in one Python process on one E
 - The detector follows these `caused_by` links from the eligibility evaluation back to the root disruption. It stores the chain it finds, in order, on the finding, instead of matching a fixed list of steps.
 
 **Where scenario values come from (team rule: no hard-coded scenario rules):**
-- Every number and event the run uses comes from the user's input or from an AI assumption shown for approval. That covers student constraints (commute, work hours, family commitments), admin capacity per week, checkpoint week, and the disruption schedule (week, type, size, who is affected).
+- Every number and event the run uses comes from the user's input or from an AI assumption shown for approval. That covers each student's description and goals (slice 3c; only the 4 archetype names are fixed), student constraints (commute, work hours, family commitments), admin capacity per week, checkpoint week, and the disruption schedule (week, type, size, who is affected).
 - The policymaker approves it all on the review screen, and the approved blueprint is frozen, so a run and its counterfactual use the same values.
 - The code holds only the engine's general mechanics (attendance formula, FIFO queue, lateness rule, permissions, eligibility check), as BRIEF must-have 3 defines them.
 - The pre-filled example input describes the conditions of our spec's sample run in plain words, for example "the attendance office can process only a few exception requests a week" or "transport disruptions happen during the term". It is ordinary user input and editable on screen.

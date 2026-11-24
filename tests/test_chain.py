@@ -13,10 +13,10 @@ from test_blueprint import VALID
 # stay pending until the week-6 checkpoint.
 SCENARIO = {
     "students": [
-        {"archetype": "commuter", "constraints": ["long commute"], "travel_buffer_min": 30},
-        {"archetype": "resident", "constraints": ["none"], "travel_buffer_min": 10},
-        {"archetype": "working", "constraints": ["fixed work hours"], "travel_buffer_min": 15},
-        {"archetype": "family", "constraints": ["care duties"], "travel_buffer_min": 20},
+        {"archetype": "commuter", "description": "travels two hours by bus", "goals": ["keep eligibility"], "constraints": ["long commute"], "travel_buffer_min": 30},
+        {"archetype": "resident", "description": "lives in the hostel", "goals": ["good grades"], "constraints": ["none"], "travel_buffer_min": 10},
+        {"archetype": "working", "description": "works evening shifts", "goals": ["keep the job"], "constraints": ["fixed work hours"], "travel_buffer_min": 15},
+        {"archetype": "family", "description": "cares for a parent", "goals": ["balance home and study"], "constraints": ["care duties"], "travel_buffer_min": 20},
     ],
     "admin_capacity_per_week": 0,
     "checkpoint_week": 6,
@@ -171,3 +171,21 @@ def test_eligibility_links_to_the_queue_event_that_held_the_request(engine) -> N
 
 def test_no_triggers_no_decisions_before_the_disruption(engine) -> None:
     assert all(e.week >= 3 for e in of_type(engine, "decision"))
+
+
+def test_student_description_and_goals_reach_their_decision_context() -> None:
+    seen: dict[str, DecisionContext] = {}
+
+    def recording(contexts: list[DecisionContext]) -> list[PhaseDecision]:
+        for c in contexts:
+            seen.setdefault(c.agent, c)
+        return decider(contexts)
+
+    bp = blueprint()
+    simulate(bp, recording)
+    by_archetype = {s.archetype: s for s in bp.scenario.students}
+    assert "commuter" in seen and "advisor" in seen
+    commuter = seen["commuter"].profile
+    assert commuter.description == by_archetype["commuter"].description
+    assert commuter.goals == by_archetype["commuter"].goals
+    assert seen["advisor"].profile is None

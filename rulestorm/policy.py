@@ -52,7 +52,14 @@ class PolicyParameters(BaseModel):
 
 
 class StudentProfile(BaseModel):
+    """The archetype name is fixed by the education model; everything else comes from the
+    user's text or an AI assumption the user approves (slice 3c)."""
+
     archetype: Archetype
+    description: str = Field(
+        min_length=1, max_length=200, description="who this student is, in this institution's setting"
+    )
+    goals: list[str] = Field(min_length=1, max_length=4, description="what this student wants this term")
     constraints: list[str] = Field(min_length=1, max_length=5)
     travel_buffer_min: int = Field(
         ge=0, le=180, description="minutes of slack before class; a longer delay makes them late"
@@ -137,7 +144,10 @@ def blueprint_prompt(policy: Policy) -> str:
         "You turn an institution's attendance policy into the parameters of an education "
         "policy simulation. The simulated term has one course, "
         f"{TERM_WEEKS} weeks and {SESSIONS_PER_WEEK} sessions a week.\n"
-        f"Students: exactly four, one of each archetype: {archetypes}.\n"
+        f"Students: exactly four, one of each archetype: {archetypes}. For each, write a "
+        "one-sentence description of who they are in this institution's setting, 1-4 goals "
+        "for the term, their constraints and their travel buffer, drawn from the user's text "
+        "where it says, otherwise proposed. Make each student distinct.\n"
         "Disruptions: type 'transport' (set delay_min and the affected archetypes) or "
         "'admin_capacity' (set admin_capacity_during, how many exception requests the "
         "attendance office can process that week).\n"
