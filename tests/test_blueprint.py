@@ -312,3 +312,15 @@ def test_a_retried_reply_records_why_and_the_tokens(policy) -> None:
     assert draft.status == "valid" and len(draft.retried) == 1
     assert "label these in facts or assumptions" in draft.retried[0]
     assert draft.input_tokens > 0 and draft.output_tokens > 0
+
+
+def test_profiles_stay_short_so_a_fill_leaves_room_for_its_retry() -> None:
+    """At most 2 goals and 2 constraints each: curfew fills with 8 profiles took 40-44 s before."""
+    from pydantic import ValidationError
+
+    from rulestorm.blueprint import PersonProfile
+
+    PersonProfile(description="x", goals=["a", "b"], constraints=["c", "d"])
+    for extra in ({"goals": ["a", "b", "c"]}, {"goals": ["a"], "constraints": ["c", "d", "e"]}):
+        with pytest.raises(ValidationError):
+            PersonProfile(description="x", **extra)

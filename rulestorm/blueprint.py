@@ -23,10 +23,16 @@ MAX_LABELS = 8
 MAX_DISRUPTIONS = 10
 
 
+# Kept short on purpose: with 8 people, profiles were 43% of a curfew fill's output and pushed it
+# to 40-44 s, leaving no room for a retry in the 55 s budget (24 Nov, after slice L9d).
+MAX_GOALS = 2
+MAX_CONSTRAINTS = 2
+
+
 class PersonProfile(BaseModel):
     description: str = Field(min_length=1, max_length=200, description="who this person is, in this setting")
-    goals: list[str] = Field(min_length=1, max_length=3, description="what this person wants this term")
-    constraints: list[str] = Field(default_factory=list, max_length=5, description="what limits them")
+    goals: list[str] = Field(min_length=1, max_length=MAX_GOALS, description="what this person wants this term")
+    constraints: list[str] = Field(default_factory=list, max_length=MAX_CONSTRAINTS, description="what limits them")
 
 
 class Label(BaseModel):
@@ -205,8 +211,8 @@ def _allowed(t: Template, p: Parameter) -> str:
     if p.type == "profiles":
         llm_roles = {r.id for r in t.roles if r.llm}
         people = [x.id for x in t.people if x.role in llm_roles]
-        return (f"for each of {', '.join(people)}: a description (under 20 words), 1-3 goals "
-                "(under 8 words each) and 0-5 constraints, drawn from the user's text where it says")
+        return (f"for each of {', '.join(people)}: a description (under 12 words), 1-{MAX_GOALS} goals "
+                f"and 0-{MAX_CONSTRAINTS} constraints (under 6 words each), drawn from the user's text where it says")
     if p.type == "disruptions":
         kinds = []
         for d in t.disruptions:

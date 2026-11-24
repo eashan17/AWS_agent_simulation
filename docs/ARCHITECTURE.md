@@ -166,7 +166,7 @@ The template has its own pre-filled example policy (for example: "Residents must
 
 ## Model adapter contract
 `decide(prompt, schema) -> schema instance`. Unchanged:
-- **JSON and validation:** JSON in the prompt, Pydantic validation, one retry with the error included.
+- **JSON and validation:** JSON in the prompt, written compactly on one line (asked for since 24 Nov: pretty-printed replies were 40% whitespace and took a curfew fill to 40–44 s), Pydantic validation, one retry with the error included.
 - **Timeouts:** adaptive boto retries, `connect_timeout=5`. Agent calls use `read_timeout` 25 s and get up to 5 attempts. Each decision phase has a 40 s deadline; calls unfinished then are timeout "no actions".
 - **Blueprint calls:** no boto retries, at most 2 attempts per call, and all calls share one 55 s wall-clock budget (each attempt runs in a background thread and is abandoned at the deadline). A retry is skipped if under 15 s remain.
 - **Actions per decision:** 0 to 3, or one per request waiting for that person (to consent to, or to decide at an open slot) if more; the reply's token limit grows by 80 for each action above 3 (added in L9d, after a guardian with four requests could consent to only three).
@@ -212,7 +212,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 
 ## Speed target
 - **Hero moment:** opening a stored run, its findings and a finding's evidence each answer in under 1 second.
-- **Blueprint:** under 30 s typical (pick a few seconds, fill about 20 s), 55 s hard limit, with a progress message.
+- **Blueprint:** under 30 s typical (pick about 3 s, fill about 22–27 s; measured 24 Nov: curfew 28.9–30.0 s, attendance 24.7 s), 55 s hard limit, with a progress message.
 - **Fresh run:** progress within 5 s, updates every 3 s. A whole run under 5 min (attendance measured at 20–54 s; curfew is measured in its slice).
 
 ## Settled questions

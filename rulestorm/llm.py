@@ -71,7 +71,8 @@ def _extract_json(text: str) -> str:
 
 def _prompt_with_schema(prompt: str, schema: type[BaseModel]) -> str:
     return (
-        f"{prompt}\n\nReply with one JSON object only, no other text. "
+        f"{prompt}\n\nReply with one JSON object only, no other text, written compactly on a single line "
+        "(no indentation or line breaks: whitespace costs time). "
         f"It must match this JSON schema:\n{json.dumps(schema.model_json_schema())}"
     )
 
