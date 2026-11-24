@@ -76,6 +76,12 @@ A template may only use these. Anything outside them needs new engine code, by d
 | **Trigger** | from today's five: an obstacle hits a person; a person's own duty is missed; a count comes within N of the threshold (plus listed roles); a request has been pending ≥ N periods (plus listed roles); ≥ K people missed in one step (to a listed role). Also, for the new blocks: a request awaiting consent reaches its `endorsed_by` person; a request awaiting an LLM decision reaches its `decided_by` person at its processing slot; an escalation outcome reaches its listed roles | Decides who is asked in each phase. No other new triggers, so attendance call counts stay as 6b measured |
 | **Parameter spec** | name, type, range, `kind: policy / environment / people`, a sentence template for prompts | What the blueprint must fill. Variants vary only `environment`; the three-policy comparison varies only `policy` |
 
+**General-feature rule (24 Nov):**
+- A block or engine feature is added only if a second template could use it.
+- Template-specific words, labels and sentences live in the template, never in `core/` or `prompts.py`. Parameter sentences may name other parameters' values; that's general formatting, kept.
+- Tests prove behaviour and numbers exactly, not one template's old wording.
+- The test-case loader for `engine check --case` moves out of `core/engine.py` and gets a general case format in L9c.
+
 **Causality rules (general forms of the ones slices 4–5 proved):**
 - Every decision records `caused_by=[its trigger]`, and every action it produces records `caused_by=[decision_id]`.
 - A missed occurrence caused by an obstacle records `caused_by=[disruption_id, decision_id]`.
@@ -152,8 +158,8 @@ The template has its own pre-filled example policy (for example: "Residents must
   - the agent framework (`CallBudget`, `CappedModel`, parallel phases, deadline, degraded status);
   - the runner and caps (7a/7b, not built yet), deploy, and the UI plan.
 - **Ported in its own slice:**
-  - **Agent prompts:** generated from the template, keeping the 6b fixes (the slack line, the absences no request covers, the outcomes of the person's last actions). A golden-prompt test makes the generated attendance prompt match today's prompt text before the switch-over.
-  - **`explore.py`:** reads the template's terms and event types, and its prompt gains the queue maths next to `absences_to_fall_below`.
+  - **Agent prompts:** generated from the template, keeping the 6b fixes (the slack line, the absences no request covers, the outcomes of the person's last actions). A golden-prompt test (built in L5 as an exact copy) is narrowed at the switch-over (L7): an exact match only for the lines carrying the 6b fixes, and the same facts (not the same wording) for the rest. That keeps one template's old wording from shaping the engine.
+  - **`explore.py`:** reads the template's terms and event types, and its prompt gains the queue maths and a general **misses until the check fails** figure (from the count kind, threshold and check timing), which replaces the attendance-only `absences_to_fall_below`.
 - **Not built yet:** detectors (slice 8) and evidence (slice 9). They're written on the general model from the start.
 - **Switch-over rule:** the old engine is deleted only after a real attendance run on `core/` matches 6b. That means decisions only for triggered people, similar counts (about 13 decisions, 14–17 calls) and no new kinds of rejection reason.
 - **Go/no-go on 25 Nov at 15:00:** if there's no match, fall back to "Level 1.5": add request timing and partial acceptance to today's engine, and move curfew to after the UI. The fallback code is at git tag `pre-level2` (commit `189ac53`).
