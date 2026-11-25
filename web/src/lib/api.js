@@ -92,6 +92,9 @@ export const api = {
   startSearch: (blueprintId, maxRuns) =>
     request('POST', `/api/blueprints/${encodeURIComponent(blueprintId)}/search`, { max_runs: maxRuns }),
   getSearch: (id) => request('GET', `/api/searches/${encodeURIComponent(id)}`),
+  // the POST waits for the one AI call that writes the three versions
+  startComparison: (blueprintId) => request('POST', '/api/comparisons', { blueprint_id: blueprintId }, { timeoutMs: 65000 }),
+  getComparison: (id) => request('GET', `/api/comparisons/${encodeURIComponent(id)}`),
   compare: (a, b) => request('GET', `/api/runs/${encodeURIComponent(a)}/compare/${encodeURIComponent(b)}`),
 }
 

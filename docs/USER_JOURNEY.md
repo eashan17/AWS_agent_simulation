@@ -122,6 +122,12 @@ The BRIEF's 8-screen demo journey maps onto this: Landing = S1; Policy input = S
 - **Errors:** 409 with `search_id` ("Another search is running right now" → Watch it), with `run_id` (Watch it) or `comparison_id`; 429 when today has fewer than 3 runs left.
 - **Demo:** a search takes several minutes and up to 9 of the day's runs, so record one before the demo and open it by its address.
 
+## S9b Compare policies (slice 17, optional)
+- **Where:** Blueprint review → **Compare policies** tab, `#/blueprint/<id>/compare[/<comparison id>]`.
+- **Calls:** `POST /api/comparisons {blueprint_id}` (waits for one AI call, 10–30 s: show the waiting state), then `GET /api/comparisons/{id}` every 3 s while `running`.
+- **Shows:** the within-model banner; values kept in every version (`kept`); one card per version with its approach, what it changed and its run; the trade-off table (`table.rows`, one column per version) and the per-person check rows, rows that differ marked; the AI-choice `note`; "You decide" with links to each run's findings. No score, no winner.
+- **Errors:** 409 (a run, search or comparison is going), 429 (fewer than 3 runs left today), `invalid` (the AI's versions failed the checks).
+
 ## S5 Run (launch, live timeline, finished)
 - **Goal:** watch the term unfold week by week, see who decided what and why, then go to the findings.
 - **Calls:**

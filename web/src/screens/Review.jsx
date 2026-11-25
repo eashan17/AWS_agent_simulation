@@ -8,6 +8,7 @@ import { FactBadge, FactLegend } from '../domain/labels.jsx'
 import { DisruptionList, LabelLines, ParamRow, labelFor, sectionLabels } from '../domain/blueprint.jsx'
 import { PersonCard } from '../domain/people.jsx'
 import { SearchTab } from '../domain/search.jsx'
+import { ComparisonTab } from '../domain/comparison.jsx'
 import { Machine } from '../sim/Agent.jsx'
 import TimeRuler from '../sim/TimeRuler.jsx'
 import { api } from '../lib/api.js'
@@ -301,9 +302,11 @@ export default function Review({ id, tab, arg }) {
             <Tabs value={tab} onChange={(v) => navigate(v === 'blueprint' ? `/blueprint/${record.id}` : `/blueprint/${record.id}/${v}`)}
               tabs={[{ id: 'blueprint', label: 'Blueprint' },
                 { id: 'stress', label: 'Stress test', hint: record.approved ? undefined : 'Approve first' },
-                { id: 'search', label: 'Search for breaks', hint: record.approved ? undefined : 'Approve first' }]} />
+                { id: 'search', label: 'Search for breaks', hint: record.approved ? undefined : 'Approve first' },
+                { id: 'compare', label: 'Compare policies', hint: record.approved ? undefined : 'Approve first' }]} />
             {tab === 'stress' ? <StressTest bp={record} words={words} />
               : tab === 'search' ? <SearchTab bp={record} words={words} searchId={arg} />
+              : tab === 'compare' ? <ComparisonTab bp={record} words={words} comparisonId={arg} />
                 : <Values bp={record} words={words} />}
           </>
         )}

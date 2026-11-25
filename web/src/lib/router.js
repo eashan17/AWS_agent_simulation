@@ -22,14 +22,14 @@ export function useRoute() {
   return parse(path)
 }
 
-/** Routes: /  /setup  /blueprint/:id[/stress|/search[/:searchId]]  /run/:id  /run/:id/analysis[/:tab[/:arg]]  /runs */
+/** Routes: /  /setup  /blueprint/:id[/stress|/search[/:searchId]|/compare[/:comparisonId]]  /run/:id  /run/:id/analysis[/:tab[/:arg]]  /runs */
 export function parse(path) {
   const parts = path.split('?')[0].split('/').filter(Boolean).map(decodeURIComponent)
   const [a, b, c, d, e] = parts
   if (!a) return { name: 'home', path }
   if (a === 'setup') return { name: 'setup', path }
   if (a === 'runs') return { name: 'runs', path }
-  if (a === 'blueprint' && b) return { name: 'review', id: b, tab: c === 'stress' || c === 'search' ? c : 'blueprint', arg: c === 'search' ? d : undefined, path }
+  if (a === 'blueprint' && b) return { name: 'review', id: b, tab: ['stress', 'search', 'compare'].includes(c) ? c : 'blueprint', arg: c === 'search' || c === 'compare' ? d : undefined, path }
   if (a === 'run' && b && c === 'analysis') return { name: 'analysis', id: b, tab: d || 'summary', arg: e, path }
   if (a === 'run' && b) return { name: 'simulation', id: b, path }
   return { name: 'notfound', path }
