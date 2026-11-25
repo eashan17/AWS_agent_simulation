@@ -290,7 +290,7 @@ def start_search(store, blueprint_id: str, max_runs: int = DEFAULT_RUNS, model: 
         raise ValueError(f"max_runs must be {MIN_RUNS}-{MAX_RUNS}")
     if (active := store.running_search()):
         raise SearchActive(active)
-    if (active := store.running_comparison()):
+    if (active := store.running_comparison() or store.running_repeat()):
         raise ComparisonActive(active)
     if (running := store.running_run()):
         raise RunActive(running)

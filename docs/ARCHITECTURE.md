@@ -46,6 +46,8 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
             ├─ POST /api/blueprints/{id}/search {max_runs} ─> rounds of 2 Bedrock-targeted + 1 random scenario,
             │      each round told how close the last runs came; a break must repeat on a rerun (slice 16)
             ├─ GET /api/searches/{id} ─> rounds, closeness per run, result (broken / not_broken + closest)
+            ├─ POST /api/blueprints/{id}/repeats {times, include_run} ─> the same blueprint run again, in turn (slice 21)
+            ├─ GET /api/repeats/{id} ─> per person failed X of N, findings per run, each measure's spread
             └─ GET /api/findings/{id}/evidence ─> ordered steps, labels in the template's own terms
     CLI: python -m rulestorm.cli <command> calls the same core functions as each route.
     On startup: any run still marked running → failed (interrupted).
@@ -64,6 +66,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `repeats.py` | Repeated runs of one blueprint, summarised as how often each person fails, each finding appears and each measure's spread (slice 21) |
 | `adaptation.py` | How the AI people adapted, by rules over a run's records: a real change to their own value and the later records it changed, first actions, stated-strategy shifts (slice 19) |
 | `editing.py` | Corrects single values and per-person values of an unapproved blueprint; each correction becomes a fact (slice 18) |
 | `search.py` | Guided scenario search: closeness from each run's records, random scenarios within the template's ranges, rounds that push the closest weak point, a confirming rerun (slice 16) |

@@ -180,7 +180,7 @@ def start_comparison(store, blueprint_id: str, model: llm.Model | None = None,
     if template.version != parent.template_version:
         raise ValueError(f"blueprint {blueprint_id} was made with {parent.template_id}@{parent.template_version}, "
                          f"but the template is now {template.ref}")
-    active = store.running_comparison() or store.running_search()  # a search holds the slot too (slice 16)
+    active = store.running_comparison() or store.running_search() or store.running_repeat()  # slices 16, 21
     if active:
         raise ComparisonActive(active)
     running = store.running_run()

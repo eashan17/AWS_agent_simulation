@@ -12,6 +12,7 @@ import { api, ApiError } from '../lib/api.js'
 import { templateIdOf, useAdaptations, useBlueprint, useEvidence, useFindings, useLoad, useRun, useTemplate } from '../lib/hooks.js'
 import { AdaptationList } from '../domain/adaptation.jsx'
 import { PersonPanel } from '../domain/personPanel.jsx'
+import { startRepeats } from '../domain/repeats.jsx'
 import { navigate } from '../lib/router.js'
 import { rememberRun, rememberWhatIf, useSession } from '../lib/session.js'
 import { cap, formatValue, humanize, makeWords, pct } from '../lib/words.js'
@@ -95,6 +96,7 @@ function Summary({ run, events, words, findings, onEvidence, blueprint }) {
           </table>
         </div>
       </Card>
+      <RunAgain run={run} />
       <Card>
         <CardTitle title="How people adapted" sub="Found by rules over this run's records, no AI: a change to their own value and what it changed later, things they did for the first time, and changes in their stated strategy (their own words)" />
         {adapt.loading ? <LoadingBlock label="Reading the records…" />
@@ -106,6 +108,27 @@ function Summary({ run, events, words, findings, onEvidence, blueprint }) {
           onClose={() => setPanel(null)} onJump={(eventId) => navigate(`/run/${run.run_id}?at=${eventId}`)} />
       )}
     </div>
+  )
+}
+
+/** Slice 21: one run is one way the term can go; run the same blueprint again and count how often. */
+function RunAgain({ run }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  if (run.status !== 'completed' && run.status !== 'degraded') return null
+  const go = async () => {
+    setBusy(true); setError(null)
+    try { await startRepeats(run.blueprint_id, 2, run.run_id) } catch (err) { setError(err) } finally { setBusy(false) }
+  }
+  return (
+    <Card className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+      <div className="min-w-0">
+        <h3 className="text-[15px] font-semibold">Is this one run's luck?</h3>
+        <p className="text-[13px] text-ink-2 mt-0.5">Run exactly the same conditions 2 more times and count how often each person fails. Uses 2 of today's runs.</p>
+        <ApiErrorBanner error={error} className="mt-2" context={{ limit: "Today's limit for simulations is reached." }} />
+      </div>
+      <Button onClick={go} disabled={busy} icon={<IconBolt size={16} />}>{busy ? 'Starting…' : 'Run it again'}</Button>
+    </Card>
   )
 }
 

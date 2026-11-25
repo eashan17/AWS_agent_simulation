@@ -69,6 +69,11 @@ class ValuesRequest(BaseModel):
         description="value name -> new value; a person's own value (e.g. slack_min) takes {person: value}")
 
 
+class RepeatRequest(BaseModel):
+    times: int = Field(3, ge=2, le=5, description="new runs of the same blueprint")
+    include_run: str | None = Field(None, max_length=64, description="a finished run of this blueprint to count first")
+
+
 class SearchRequest(BaseModel):
     max_runs: int = Field(6, ge=3, le=9, description="runs the search may use, confirming reruns included")
 
@@ -330,6 +335,50 @@ def post_search(blueprint_id: str, body: SearchRequest | None = None, store: Sto
         raise HTTPException(status_code=429, detail=f"daily limit reached ({exc}), try again tomorrow")
     except ValueError as exc:  # the template changed since the blueprint was made
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.post("/api/blueprints/{blueprint_id}/repeats")
+def post_repeats(blueprint_id: str, body: RepeatRequest | None = None, store: Store = Depends(get_store),
+                 agent_model: llm.Model | None = Depends(get_agent_model),
+                 runs_dir: str = Depends(get_runs_dir)) -> dict:
+    """The same approved blueprint run `times` more times, one after another (slice 21), so outcomes
+    read as how often. Answers at once; follow it with GET /api/repeats/{id}."""
+    from rulestorm.comparison import ComparisonActive
+    from rulestorm.repeats import RepeatActive, RepeatRefused, start_repeats
+    from rulestorm.runner import RunActive
+
+    body = body or RepeatRequest()
+    try:
+        return start_repeats(store, blueprint_id, body.times, body.include_run, agent_model=agent_model, out_dir=runs_dir)
+    except BlueprintNotFound:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    except BlueprintNotApproved:
+        raise HTTPException(status_code=409, detail="blueprint not approved")
+    except RepeatRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RepeatActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "repeated runs are already going", "repeat_id": exc.repeat_id})
+    except ComparisonActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a comparison or search is already running",
+                                                      "comparison_id": exc.comparison_id})
+    except RunActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a run is already running", "run_id": exc.run_id})
+    except DailyCapReached as exc:
+        raise HTTPException(status_code=429, detail=f"daily limit reached ({exc}), try again tomorrow")
+    except ValueError as exc:  # the template changed since the blueprint was made
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.get("/api/repeats/{repeat_id}")
+def get_repeat_route(repeat_id: str, store: Store = Depends(get_store)) -> dict:
+    """Repeated runs as they stand: each run, and from the finished ones how often each person
+    failed, how often each finding appeared, and each measure's spread (slice 21)."""
+    from rulestorm.repeats import RepeatNotFound, get_repeat
+
+    try:
+        return get_repeat(store, repeat_id)
+    except RepeatNotFound:
+        raise HTTPException(status_code=404, detail="repeat not found")
 
 
 @app.get("/api/searches/{search_id}")

@@ -10,6 +10,7 @@ import { SlackEditor } from '../domain/people.jsx'
 import { PersonCard } from '../domain/people.jsx'
 import { SearchTab } from '../domain/search.jsx'
 import { ComparisonTab } from '../domain/comparison.jsx'
+import { RepeatTab } from '../domain/repeats.jsx'
 import { Machine } from '../sim/Agent.jsx'
 import TimeRuler from '../sim/TimeRuler.jsx'
 import { api } from '../lib/api.js'
@@ -312,13 +313,15 @@ export default function Review({ id, tab, arg }) {
               tabs={[{ id: 'blueprint', label: 'Blueprint' },
                 { id: 'stress', label: 'Stress test', hint: record.approved ? undefined : 'Approve first' },
                 { id: 'search', label: 'Search for breaks', hint: record.approved ? undefined : 'Approve first' },
-                { id: 'compare', label: 'Compare policies', hint: record.approved ? undefined : 'Approve first' }]} />
+                { id: 'compare', label: 'Compare policies', hint: record.approved ? undefined : 'Approve first' },
+                { id: 'repeat', label: 'Repeat runs', hint: record.approved ? undefined : 'Approve first' }]} />
             {!record.approved && tab === 'blueprint' && (
               <p className="text-[12.5px] text-ink-3">Not approved yet: you can correct any single value below with <span className="font-medium text-ink-2">Edit</span>. The template checks it, and it becomes your fact. Approval freezes everything.</p>
             )}
             {tab === 'stress' ? <StressTest bp={record} words={words} />
               : tab === 'search' ? <SearchTab bp={record} words={words} searchId={arg} />
               : tab === 'compare' ? <ComparisonTab bp={record} words={words} comparisonId={arg} />
+              : tab === 'repeat' ? <RepeatTab bp={record} words={words} repeatId={arg} />
                 : <Values bp={record} words={words} onSave={record.approved ? null : saveValues} />}
           </>
         )}

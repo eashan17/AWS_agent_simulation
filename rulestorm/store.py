@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS comparisons (
     record TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- Repeated runs of one blueprint (slice 21). Same shape as comparisons.
+CREATE TABLE IF NOT EXISTS repeats (
+    id TEXT PRIMARY KEY,
+    blueprint_id TEXT NOT NULL REFERENCES blueprints(id),
+    status TEXT NOT NULL,
+    record TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 -- Guided scenario searches (slice 16): rounds of targeted and random scenarios, their runs and
 -- closeness, and the result. Same shape as comparisons.
 CREATE TABLE IF NOT EXISTS searches (
@@ -389,6 +397,22 @@ class Store:
     def fail_running_comparisons(self, error: str) -> list[str]:
         """Every comparison still marked running becomes failed with `error`; returns their IDs."""
         return self._fail_running_jobs("comparisons", error)
+
+    def save_repeat(self, record: dict) -> None:
+        self._save_job("repeats", record)
+
+    def update_repeat(self, record: dict) -> None:
+        self._update_job("repeats", record)
+
+    def get_repeat(self, repeat_id: str) -> dict | None:
+        return self._get_job("repeats", repeat_id)
+
+    def running_repeat(self) -> str | None:
+        return self._running_job("repeats")
+
+    def fail_running_repeats(self, error: str) -> list[str]:
+        """Every repeat still marked running becomes failed with `error`; returns their IDs."""
+        return self._fail_running_jobs("repeats", error)
 
     def save_search(self, record: dict) -> None:
         self._save_job("searches", record)
