@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -61,6 +62,11 @@ class BlueprintRequest(BaseModel):
 
 class RunRequest(BaseModel):
     blueprint_id: str = Field(min_length=1, max_length=64)
+
+
+class ValuesRequest(BaseModel):
+    changes: dict[str, Any] = Field(max_length=30,
+        description="value name -> new value; a person's own value (e.g. slack_min) takes {person: value}")
 
 
 class SearchRequest(BaseModel):
@@ -130,6 +136,25 @@ def post_blueprint(
         raise HTTPException(status_code=404, detail="policy not found")
     except DailyCapReached:
         raise HTTPException(status_code=429, detail="daily blueprint limit reached, try again tomorrow")
+
+
+@app.patch("/api/blueprints/{blueprint_id}/values", response_model=BlueprintRecord)
+def patch_values(blueprint_id: str, body: ValuesRequest, store: Store = Depends(get_store)) -> BlueprintRecord:
+    """Correct values of a blueprint before approval (slice 18): each new value is checked by the
+    template and becomes the policymaker's fact. An approved blueprint is frozen (409)."""
+    from rulestorm.editing import EditRefused, correct_values
+    from rulestorm.policy import BlueprintFrozen
+
+    try:
+        return correct_values(store, blueprint_id, body.changes)
+    except BlueprintNotFound:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    except BlueprintFrozen:
+        raise HTTPException(status_code=409, detail="blueprint is approved and frozen; build a new one to change it")
+    except BlueprintInvalid:
+        raise HTTPException(status_code=409, detail="blueprint not valid")
+    except EditRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.post("/api/blueprints/{blueprint_id}/approve", response_model=BlueprintRecord)

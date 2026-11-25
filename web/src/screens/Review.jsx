@@ -6,6 +6,7 @@ import { PageHeader } from '../ui/shell.jsx'
 import { ApiErrorBanner, LoadingBlock, WaitingState } from '../domain/feedback.jsx'
 import { FactBadge, FactLegend } from '../domain/labels.jsx'
 import { DisruptionList, LabelLines, ParamRow, labelFor, sectionLabels } from '../domain/blueprint.jsx'
+import { SlackEditor } from '../domain/people.jsx'
 import { PersonCard } from '../domain/people.jsx'
 import { SearchTab } from '../domain/search.jsx'
 import { ComparisonTab } from '../domain/comparison.jsx'
@@ -40,7 +41,7 @@ function useStartRun() {
   return { busy, error, start }
 }
 
-function Values({ bp, words }) {
+function Values({ bp, words, onSave }) {
   const values = bp.blueprint?.values || {}
   const params = words.template.parameters || []
   const attr = words.template.attributes?.[0]
@@ -66,7 +67,7 @@ function Values({ bp, words }) {
             <CardTitle title={sec.title} sub={sec.sub} action={sectionLabel && <FactBadge kind={sectionLabel.kind} statement={sectionLabel.statement} />}>
               <LabelLines labels={secLabels} className="mt-2" />
             </CardTitle>
-            {list.length > 0 && <div>{order(list, sec.kind).map(({ p, label }) => <ParamRow key={p.name} param={p} value={values[p.name]} label={label} />)}</div>}
+            {list.length > 0 && <div>{order(list, sec.kind).map(({ p, label }) => <ParamRow key={p.name} param={p} value={values[p.name]} label={label} onSave={onSave} />)}</div>}
 
             {sec.kind === 'environment' && disruptionsParam && (
               <div className="mt-5">
@@ -94,6 +95,12 @@ function Values({ bp, words }) {
                       </div>
                       {l && <span className="shrink-0"><FactBadge kind={l.kind} statement={l.statement} /></span>}
                     </div>
+                  )
+                })()}
+                {attrParam && onSave && (() => {
+                  const attribute = words.template.attributes?.find((a) => a.id === attrParam.attribute)
+                  return (
+                    <SlackEditor param={attrParam} attribute={attribute} values={values[attrParam.name] || {}} words={words} onSave={onSave} />
                   )
                 })()}
                 <div className="grid md:grid-cols-2 gap-3">
@@ -231,6 +238,8 @@ export default function Review({ id, tab, arg }) {
   if (bp.error) return <ApiErrorBanner error={bp.error} onRetry={bp.reload} context={{ notfound: 'No blueprint with that ID.' }} />
   if (!record) return null
 
+  // Slice 18: correct values before approval; the record comes back with them as the policymaker's facts.
+  const saveValues = async (changes) => { await api.editValues(record.id, changes); bp.reload() }
   const approve = async () => {
     setApproving(true); setApproveErr(null)
     try { await api.approve(record.id); bp.reload() } catch (err) { setApproveErr(err) } finally { setApproving(false) }
@@ -304,10 +313,13 @@ export default function Review({ id, tab, arg }) {
                 { id: 'stress', label: 'Stress test', hint: record.approved ? undefined : 'Approve first' },
                 { id: 'search', label: 'Search for breaks', hint: record.approved ? undefined : 'Approve first' },
                 { id: 'compare', label: 'Compare policies', hint: record.approved ? undefined : 'Approve first' }]} />
+            {!record.approved && tab === 'blueprint' && (
+              <p className="text-[12.5px] text-ink-3">Not approved yet: you can correct any single value below with <span className="font-medium text-ink-2">Edit</span>. The template checks it, and it becomes your fact. Approval freezes everything.</p>
+            )}
             {tab === 'stress' ? <StressTest bp={record} words={words} />
               : tab === 'search' ? <SearchTab bp={record} words={words} searchId={arg} />
               : tab === 'compare' ? <ComparisonTab bp={record} words={words} comparisonId={arg} />
-                : <Values bp={record} words={words} />}
+                : <Values bp={record} words={words} onSave={record.approved ? null : saveValues} />}
           </>
         )}
         {valid && !words && <LoadingBlock />}

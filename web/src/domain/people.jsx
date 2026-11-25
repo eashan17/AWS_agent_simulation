@@ -1,6 +1,7 @@
 // People: the strip beside the stage and the cards in blueprint review.
-import { useMemo } from 'react'
-import { Badge, cx } from '../ui/primitives.jsx'
+import { useMemo, useState } from 'react'
+import { Badge, Button, cx } from '../ui/primitives.jsx'
+import { explain } from '../lib/api.js'
 import { PersonAvatar } from '../sim/Agent.jsx'
 import { pct } from '../lib/words.js'
 
@@ -71,5 +72,41 @@ export function PersonCard({ id, words, profile, slack, slackLabel }) {
         </div>
       </div>
     </article>
+  )
+}
+
+/** Each person's own value (attendance: the travel buffer), corrected before approval (slice 18). */
+export function SlackEditor({ param, attribute, values, words, onSave }) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(values)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const changed = Object.fromEntries(Object.entries(draft).filter(([id, v]) => v !== values[id]))
+  const save = async () => {
+    setSaving(true); setError(null)
+    try { await onSave({ [param.name]: changed }); setOpen(false) } catch (err) { setError(err) } finally { setSaving(false) }
+  }
+  if (!open) {
+    return <div><Button size="sm" onClick={() => { setDraft(values); setOpen(true) }}>Edit each person's {attribute?.label || param.name}</Button></div>
+  }
+  return (
+    <div className="rounded-2xl bg-white/70 border border-white p-4 flex flex-col gap-3">
+      <div className="text-[13px] font-medium">{attribute?.label || param.name}{attribute ? ` (${attribute.min}–${attribute.max})` : ''}</div>
+      <div className="grid sm:grid-cols-2 gap-2">
+        {Object.keys(values).map((id) => (
+          <label key={id} className="flex items-center justify-between gap-3 text-[13px]">
+            <span>{words.name(id)}</span>
+            <input type="number" inputMode="numeric" aria-label={`${words.name(id)}: ${attribute?.label || param.name}`} min={attribute?.min} max={attribute?.max} value={draft[id] ?? ''}
+              onChange={(e) => setDraft((d) => ({ ...d, [id]: e.target.value === '' ? '' : Number(e.target.value) }))}
+              className="h-9 w-24 rounded-xl border border-line-2 bg-white px-3 tabular" />
+          </label>
+        ))}
+      </div>
+      {error && <div role="alert" className="text-[12.5px] text-bad">{explain(error)}</div>}
+      <div className="flex gap-2">
+        <Button size="sm" variant="primary" onClick={save} disabled={saving || !Object.keys(changed).length || Object.values(changed).some((v) => v === '')}>{saving ? 'Saving…' : 'Save as my facts'}</Button>
+        <Button size="sm" onClick={() => { setOpen(false); setError(null) }} disabled={saving}>Cancel</Button>
+      </div>
+    </div>
   )
 }

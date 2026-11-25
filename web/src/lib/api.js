@@ -81,6 +81,7 @@ export const api = {
   blueprint: (id) => request('GET', `/api/blueprints/${encodeURIComponent(id)}`),
   savePolicy: (body) => request('POST', '/api/policies', body),
   buildBlueprint: (policyId) => request('POST', '/api/blueprints', { policy_id: policyId }, { timeoutMs: 65000 }),
+  editValues: (id, changes) => request('PATCH', `/api/blueprints/${encodeURIComponent(id)}/values`, { changes }),
   approve: (id) => request('POST', `/api/blueprints/${encodeURIComponent(id)}/approve`),
   variants: (id) => request('POST', `/api/blueprints/${encodeURIComponent(id)}/variants`, null, { timeoutMs: 65000 }),
   startRun: (blueprintId) => request('POST', '/api/runs', { blueprint_id: blueprintId }),

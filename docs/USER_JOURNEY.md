@@ -98,7 +98,7 @@ The BRIEF's 8-screen demo journey maps onto this: Landing = S1; Policy input = S
   - After approval:
     - **Run this term** (S5): `POST /api/runs {blueprint_id}`;
     - **Stress-test it first** (S4).
-  - **Edit:** not offered. To change the rule, go back to S2 and build again.
+  - **Edit (slice 18):** before approval every single value has **Edit** (a number field within its range, a menu, a yes/no or a text box) and the people section has **Edit each person's …**. `PATCH /api/blueprints/{id}/values {changes}` checks the value against the template (422 shows the reason under the field) and returns the record with the value as **your fact** ("Corrected by you: … 8 -> 2"). Lists (disruptions, profiles) aren't edited here: to change those, go back to S2 and build again. Approved blueprints show no Edit (409 "frozen").
 - **Errors on approve:** a 409 "blueprint not valid" shouldn't happen from this screen. If it does, show it.
 
 ## S4 Stress test (optional)

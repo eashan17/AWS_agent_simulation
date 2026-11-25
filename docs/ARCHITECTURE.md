@@ -20,6 +20,8 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
             │     (both share one 55 s wall-clock budget) ─> check values against the template
             │     ─> status valid | invalid | out_of_scope ─> store
             ├─ GET  /api/blueprints/{id} ─> the stored record (U0)
+            ├─ PATCH /api/blueprints/{id}/values {changes} ─> corrected values, checked by the template, become
+            │      the policymaker's facts; refused once approved (slice 18)
             ├─ POST /api/blueprints/{id}/approve ─> store (frozen by DB trigger)
             ├─ POST /api/blueprints/{id}/variants ─> blueprint cap ─> explore (environment parameters only)
             ├─ POST /api/runs ─> one active run (409) ─> daily run cap (429) ─> runner thread
@@ -61,6 +63,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `editing.py` | Corrects single values and per-person values of an unapproved blueprint; each correction becomes a fact (slice 18) |
 | `search.py` | Guided scenario search: closeness from each run's records, random scenarios within the template's ranges, rounds that push the closest weak point, a confirming rerun (slice 16) |
 | `comparison.py` | Strict, flexible and progressive policy versions under the same environment and people, run in turn, compared as a trade-off table (slice 15) |
 | `telemetry.py` | One CloudWatch embedded-metric log line per finished run: `LLMCalls`, `Tokens`, `RunDurationSeconds` (slice 14) |
