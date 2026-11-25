@@ -19,6 +19,9 @@ error goes to the server log.
 Findings (slice 8): when a run ends, its problems are found from its events and saved before its
 status changes, so a finished run always has them. A run that finished before slice 8 gets them the
 first time they are asked for (`findings_of`).
+
+Metrics (slice 14): every run that ends, failed or not, reports its model calls, tokens and
+duration through `telemetry.report_run` (CloudWatch on the server; never breaks the run).
 """
 
 import logging
@@ -32,6 +35,7 @@ from rulestorm.core.model import load_template
 from rulestorm.core.term import Term
 from rulestorm import config
 from rulestorm.detect import detect
+from rulestorm.telemetry import report_run
 from rulestorm.policy import DailyCapReached, require_approved
 from rulestorm.store import _now
 
@@ -114,12 +118,14 @@ def _run(store, run_id, record, template, agents, out_dir) -> None:
         findings = detect(run_id, [e.model_dump() for e in engine.events], template)
         store.add_findings(run_id, [f.model_dump() for f in findings])
         store.update_run(run_id, status=summary.status, summary=summary.model_dump(), finished_at=_now())
+        report_run(run_id, template.ref, summary.status, seconds, summary.model_dump())
     except Exception as exc:  # noqa: BLE001 - any failure ends the run `failed`, never stuck `running`
         log.exception("run %s failed", run_id)
         try:
             save_new_events()
         finally:
             store.update_run(run_id, status="failed", error=public_error(exc), finished_at=_now())
+            report_run(run_id, template.ref, "failed", time.monotonic() - started, None)
 
 
 FINISHED = ("completed", "degraded")

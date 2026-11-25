@@ -39,10 +39,17 @@ IAM → Roles → **Create role** → Trusted entity: AWS service → Use case: 
       "Effect": "Allow",
       "Action": ["bedrock:GetFoundationModel", "servicequotas:ListServiceQuotas"],
       "Resource": "*"
+    },
+    {
+      "Sid": "WriteRunLinesToOneLogGroup",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:ap-southeast-2:<account-id>:log-group:/rulestorm/app:*"
     }
   ]
 }
 ```
+The third statement (added 25 Nov, slice 14) lets the app write run lines to one log group only (step 9). Replace `<account-id>` with the account's 12-digit ID.
 
 ### 3. Firewall (security group)
 EC2 → Security Groups → **Create security group**. Name: `rulestorm-web`, in the default VPC.
@@ -98,6 +105,13 @@ Cost: inside CloudFront's always-free allowance (1 TB and 10 million requests a 
   - emails the topic when it goes off and again when the server is OK.
 - Cost: inside the always-free allowances (10 alarms; 1,000 emails a month).
 - This alarm only sees the server. If the app stops while the server is fine, it stays quiet; for that, check `/api/health`.
+
+### 9. Run metrics and logs (CloudWatch Logs, slice 14)
+- CloudWatch → Log groups → **Create log group** `/rulestorm/app` in Sydney, retention **7 days**.
+- The role's third statement (step 2) lets the app write to it; the unit sets `RULESTORM_LOG_GROUP=/rulestorm/app`.
+- Each finished run writes one JSON line (stream `runs-<date>`) in CloudWatch's embedded metric format, so CloudWatch makes three metrics from it in namespace **RuleStorm**, with no dimensions: `LLMCalls`, `Tokens` and `RunDurationSeconds`. A failed run reports only `RunDurationSeconds`.
+- Check from the laptop: `aws cloudwatch list-metrics --namespace RuleStorm --region ap-southeast-2`. Metrics appear a few minutes after the first line.
+- Cost: inside the always-free allowances (5 GB of logs, 10 custom metrics; this uses 3).
 
 ## Deploy (every time)
 

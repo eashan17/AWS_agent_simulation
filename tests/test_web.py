@@ -35,6 +35,6 @@ def test_the_server_unit_points_the_app_at_this_releases_ui() -> None:
     unit = configparser.ConfigParser(interpolation=None, strict=False)
     unit.optionxform = str
     unit.read(ROOT / "deploy" / "rulestorm.service", encoding="utf-8")
-    env = unit["Service"]["Environment"]
-    assert env == "RULESTORM_WEB_DIST=/opt/rulestorm/current/web/dist"
+    env = dict(pair.split("=", 1) for pair in unit["Service"]["Environment"].split())
+    assert env["RULESTORM_WEB_DIST"] == "/opt/rulestorm/current/web/dist"
     assert unit["Service"]["ExecStart"].startswith("/opt/rulestorm/current/.venv/")
