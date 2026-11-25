@@ -7,6 +7,7 @@ import { ApiErrorBanner, LoadingBlock, WaitingState } from '../domain/feedback.j
 import { FactBadge, FactLegend } from '../domain/labels.jsx'
 import { DisruptionList, LabelLines, ParamRow, labelFor, sectionLabels } from '../domain/blueprint.jsx'
 import { PersonCard } from '../domain/people.jsx'
+import { SearchTab } from '../domain/search.jsx'
 import { Machine } from '../sim/Agent.jsx'
 import TimeRuler from '../sim/TimeRuler.jsx'
 import { api } from '../lib/api.js'
@@ -212,7 +213,7 @@ function StressTest({ bp, words }) {
   )
 }
 
-export default function Review({ id, tab }) {
+export default function Review({ id, tab, arg }) {
   const bp = useBlueprint(id)
   const t = useTemplate(bp.data?.template_id)
   const templates = useTemplates()
@@ -297,9 +298,13 @@ export default function Review({ id, tab }) {
               </div>
               <FactLegend />
             </Card>
-            <Tabs value={tab} onChange={(v) => navigate(v === 'stress' ? `/blueprint/${record.id}/stress` : `/blueprint/${record.id}`)}
-              tabs={[{ id: 'blueprint', label: 'Blueprint' }, { id: 'stress', label: 'Stress test', hint: record.approved ? undefined : 'Approve first' }]} />
-            {tab === 'stress' ? <StressTest bp={record} words={words} /> : <Values bp={record} words={words} />}
+            <Tabs value={tab} onChange={(v) => navigate(v === 'blueprint' ? `/blueprint/${record.id}` : `/blueprint/${record.id}/${v}`)}
+              tabs={[{ id: 'blueprint', label: 'Blueprint' },
+                { id: 'stress', label: 'Stress test', hint: record.approved ? undefined : 'Approve first' },
+                { id: 'search', label: 'Search for breaks', hint: record.approved ? undefined : 'Approve first' }]} />
+            {tab === 'stress' ? <StressTest bp={record} words={words} />
+              : tab === 'search' ? <SearchTab bp={record} words={words} searchId={arg} />
+                : <Values bp={record} words={words} />}
           </>
         )}
         {valid && !words && <LoadingBlock />}

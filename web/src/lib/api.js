@@ -89,6 +89,9 @@ export const api = {
   evidence: (fid) => request('GET', `/api/findings/${encodeURIComponent(fid)}/evidence`),
   counterfactual: (id, parameter, value) =>
     request('POST', `/api/runs/${encodeURIComponent(id)}/counterfactual`, { parameter, value }),
+  startSearch: (blueprintId, maxRuns) =>
+    request('POST', `/api/blueprints/${encodeURIComponent(blueprintId)}/search`, { max_runs: maxRuns }),
+  getSearch: (id) => request('GET', `/api/searches/${encodeURIComponent(id)}`),
   compare: (a, b) => request('GET', `/api/runs/${encodeURIComponent(a)}/compare/${encodeURIComponent(b)}`),
 }
 

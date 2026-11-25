@@ -22,7 +22,7 @@ export default function App() {
   switch (route.name) {
     case 'home': page = <Home />; break
     case 'setup': page = <Setup />; break
-    case 'review': page = <Review key={route.id} id={route.id} tab={route.tab} />; break
+    case 'review': page = <Review key={route.id} id={route.id} tab={route.tab} arg={route.arg} />; break
     case 'simulation': page = <Simulation key={route.id} id={route.id} />; break
     case 'analysis': page = <Analysis key={route.id} id={route.id} tab={route.tab} arg={route.arg} />; break
     case 'runs': page = <Runs />; break

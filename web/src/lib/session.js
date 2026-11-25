@@ -18,14 +18,15 @@ let state = {
   draft: null,
   recent: ['demo'],
   whatIfs: {}, // source run id -> [what-if run ids], newest first
+  searches: {}, // blueprint id -> its latest guided search id (slice 16b)
   ...load(),
 }
 const listeners = new Set()
 
 function save() {
   try {
-    const { runId, blueprintId, draft, recent, whatIfs } = state
-    window.localStorage.setItem(KEY, JSON.stringify({ runId, blueprintId, draft, recent, whatIfs }))
+    const { runId, blueprintId, draft, recent, whatIfs, searches } = state
+    window.localStorage.setItem(KEY, JSON.stringify({ runId, blueprintId, draft, recent, whatIfs, searches }))
   } catch { /* fine: it is a convenience */ }
 }
 

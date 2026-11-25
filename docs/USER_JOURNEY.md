@@ -113,6 +113,15 @@ The BRIEF's 8-screen demo journey maps onto this: Landing = S1; Policy input = S
   - **Run** on each approved card: `POST /api/runs`. Only one runs at a time; the others wait.
 - **Errors:** 409 "blueprint not approved" (the parent must be approved first); 429 for the daily blueprint limit.
 
+## S4b Search for breaks (slice 16b, optional)
+- **Goal:** let RuleStorm look for the conditions that break an approved policy, instead of the policymaker guessing.
+- **Where:** Blueprint review → **Search for breaks** tab, `#/blueprint/<id>/search[/<search id>]`.
+- **Calls:** `POST /api/blueprints/{id}/search {max_runs: 3 | 6 | 9}` → `{id, status: "running", …}`, then `GET /api/searches/{id}` every 3 s while `running`.
+- **Shows:** the within-model banner; runs used of the maximum; each round (round 2 onwards says which weak point it pushes); one card per scenario: targeted by the AI or random (no AI), its weak point, what changed (environment values only), each run and rerun with its ID, findings and a closeness bar ("working: 2 absences to spare before 'not eligible' (week 10)").
+- **End:** `broken`: the scenario, both run IDs and an **Evidence** button per finding (to S7); `not_broken`: "The policy held: not broken in N runs" with the closest scenario. Never an invented break.
+- **Errors:** 409 with `search_id` ("Another search is running right now" → Watch it), with `run_id` (Watch it) or `comparison_id`; 429 when today has fewer than 3 runs left.
+- **Demo:** a search takes several minutes and up to 9 of the day's runs, so record one before the demo and open it by its address.
+
 ## S5 Run (launch, live timeline, finished)
 - **Goal:** watch the term unfold week by week, see who decided what and why, then go to the findings.
 - **Calls:**
