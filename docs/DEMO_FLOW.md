@@ -1,92 +1,111 @@
-# Demo flow: the exact click-through
+# Demo flow: one core replay, then the stress-test results
 
-For the Round 2 live demo (3 min + 2 min Q&A) and as the shot list for the Round 1 video (under 3 min). Built from docs/USER_JOURNEY.md, docs/BRIEF.md, docs/RULES.md and the UI as it is in `web/src` (25 Nov). Every ID below was checked on the live server on 25 Nov unless marked **to record**.
+For the Round 2 live demo (3 min + 2 min Q&A) and as the shot list for the Round 1 video (under 3 min). Built from docs/USER_JOURNEY.md, docs/BRIEF.md, docs/SLICES.md (slices up to 21), docs/RULES.md and the UI in `web/src` (26 Nov). IDs marked **live ✓** were checked on the live server on 26 Nov. IDs marked **to record** don't exist there yet.
 
-Link: https://d2emiyaz9dq4bi.cloudfront.net (the app uses `#/...` addresses, so every screen below can be bookmarked).
+Link: https://d2emiyaz9dq4bi.cloudfront.net (every screen has a `#/...` address, so each one below can be bookmarked).
 
-## What the demo must prove (from the judging weights)
-| Criterion | Weight | Where it lands in the demo |
-|---|---|---|
-| Bharat Impact | 30% | 0:00 opening line + the working student who loses exam eligibility because of a train disruption and storms |
-| Working AWS Build | 25% | Everything is the live link; the run is real Bedrock output; closing line names EC2, Bedrock (Sydney), CloudFront, CloudWatch |
-| Innovation | 25% | The evidence chain (hero): every step a recorded event with an ID, labelled fact / calculation / AI interpretation. "Not a chatbot listing downsides." |
-| Demo & Storytelling | 20% | One person's story (the working student) carried from map → finding → evidence → what-if |
+## The idea in one line
+The replay is the hook; the stress-test results are the product. One recorded term shows *how* a rule hurts one student. Then several pre-run scenarios show *where, how often and for whom* the same rule breaks, and what each fix changes, so the policymaker can decide.
 
-## Before going on stage (do once, the day before)
-1. **Record the what-if on the live server. It doesn't exist yet.** L-960f5653 (the what-if in the docs) was a laptop run: `/api/runs/demo/compare/L-960f5653` answers "run not found" on the live server. Open `#/run/demo/analysis/whatif` on the live link and run both:
-   - **Checkpoint week 6 → 8** (recommended for the story: the finding is that the early check left no time to file an exception, so moving the check is the obvious fix to test);
-   - **Office capacity per week 5 → 1** (the backup; the docs' earlier story).
-   Each takes 30–60 s and uses 1 of the day's 10 runs. Write both run IDs here, and keep the one whose comparison reads more clearly (an outcome flip for the working student is the best case; the AI people choose afresh, so it isn't guaranteed).
-   - What-if A (checkpoint 6 → 8): `L-________` **to record**
-   - What-if B (capacity 5 → 1): `L-________` **to record**
-2. **Bookmark these on the demo laptop** (the "What-ifs from this run" list is stored per browser, so a different laptop won't show it):
-   - `#/` · `#/run/demo` · `#/run/demo/analysis` · `#/run/demo/analysis/evidence/demo-F1` · `#/run/demo/analysis/compare/<what-if ID>` · `#/blueprint/B-da347452`
-3. Open each bookmark once and check it loads. Browser at 100% zoom, laptop width, no other tabs.
-4. Recording a run is not a deploy, so this is allowed during the 30 Nov–5 Dec freeze, but keep it to these two runs.
+**What the audience should leave with (fill in the blanks once the scenarios are recorded):**
+> "Your 80% attendance rule holds in a normal term. It breaks when **[the search's breaking condition]**. The people it hurts are the **working** and **[family]** students, because **the eligibility check comes before they can get an exception in**. It isn't one unlucky run: the working student failed in **2 of 3** runs of the same conditions. Moving the check to week 8 **fixed it: working 72.7% → 92.3%, and nobody failed**. The flexible and progressive versions of the rule **[result: who still fails, extra staff work]**. RuleStorm doesn't pick a winner. You decide."
 
-## Main path: 2 min 40 s, no waiting, no live AI calls
-The demo run is a real recorded run (DeepSeek V3.2 on Bedrock, 28 AI decisions, 170 events), restored on every deploy.
+## Part 1: the scenario set (record before the demo)
+Everything new since 25 Nov (searches, policy comparisons, repeated runs) was recorded on a laptop only. On the live server `S-2d62ad10`, `S-187da29f`, `C-f379c698`, `C-108c10ba` and `R-b97baf8d` all answer 404. So each scenario below has to be run once on the live link. Every one is a real run, and none is hand-made.
 
-### 1. Home (0:00–0:20)
-- **Say:** "At Indian colleges, rules like 80% attendance for exam eligibility go live untested. A commuter, a working student and a student with family duties live with the same rule very differently, and staff carry the load. RuleStorm lets the policymaker see that before rollout."
-- **Point at:** the honest line under the title ("It explores possible responses in a simulation; it does not predict what a real college will do.").
+Two blueprints on the live server, both built from the attendance example policy (80% per course, formally approved exceptions):
+- **B-a49b586e**, live ✓: the policy as the AI first read it. Check at week 9, office handles 5 requests a week, a train delay in week 3 hitting the commuter and resident. Two runs exist (`L-a3af1d12`, `L-2237d170`), with **no findings: everyone eligible** (lowest: commuter 94.1%). This is "a normal term".
+- **B-da347452**, live ✓: "Early checkpoint with many disruptions", a harsher version the stress test proposed. Check at week 6, train line in week 5 and storms in week 6 hitting all four students, office short-staffed in week 5. The demo run `demo` is one term of it.
+
+| # | Question it answers for the policymaker | Where to start it | Runs | Recorded ID | What to read off it |
+|---|---|---|---|---|---|
+| 0 | What does one bad term look like, step by step? (**core replay**) | already there | 0 | `demo` live ✓, finding `demo-F1` | working: 8 / 11 = 72.7% at week 6, not eligible; 15-event evidence chain |
+| 1 | Does the rule hold in a normal term? | already there | 0 | `L-a3af1d12` live ✓ | no findings; everyone ≥ 94% |
+| 2 | **Under which conditions does it break, and who is hurt?** | `#/blueprint/B-a49b586e/search` → **Up to 6 runs** → **Search for breaking conditions** | ≤ 6 | `S-261e90f7` live ✓ (5 asked, 4 ran: the day's limit) | the breaking scenario and who reached "not eligible", confirmed by a rerun; or "held in 6 runs" plus the closest call ("working: 2 absences to spare") |
+| 3 | Is the demo's failure luck, or how often does it happen? | `#/run/demo/analysis` → **Run it again** (starts 2 more runs of the same conditions, demo included) | 2 | `R-f9db0944` live ✓ | "working: not eligible in N of 3"; who else fails and how often |
+| 4 | Does a later check fix it? | `#/run/demo/analysis/whatif` → the week the check happens **6 → 8** → **Run the what-if** | 1 | `L-01465ef0` live ✓ | the working student's row in Compare: ✕ → ✓? |
+| 5 | What if the office has fewer staff? | same form → office capacity per week **5 → 1** | 1 | `L-________` to record | longest queue and wait; does anyone fail because a request is still waiting? |
+| 6 | Would a stricter or more flexible version of the rule be better? | `#/blueprint/B-da347452/compare` → **Compare policies** | 3 | `C-________` to record | per version: who failed the check, requests filed, refused actions, staff decisions |
+| 7 | Backup if #2 holds: does the harsher setting break under search? | `#/blueprint/B-da347452/search` → **Up to 3 runs** | ≤ 3 | `S-________` only if needed | on the laptop this broke in round 1 (working not eligible at week 3) |
+
+### Recorded on the live server, 26 Nov (IST; still 25 Nov in UTC)
+- **#4 what-if, check week 6 → 8: `L-01465ef0`.** Compare `#/run/demo/analysis/compare/L-01465ef0`: matched (one environment value). working 72.7% ✕ → **92.3% ✓**; resident 80.0 → 100, family 88.9 → 100, commuter 100 → 100. Failed: [working] → **none**.
+- **#3 repeat: `R-f9db0944`** (`demo` + L-8b9a84e2 + L-909293d2). **working not eligible in 2 of 3** (72.7, 72.7, 80.0); resident 1 of 3 (80.0, 80.0, 72.7); commuter 0 of 3 (100 each); family 0 of 3 (88.9, 87.5, 80.0); check_failed in all 3 runs; requests filed 4 · 4 · 4, refused 4 · 3 · 0, staff decisions 6 · 8 · 7. (The laptop's earlier repeat R-b97baf8d gave working 1 of 3: say "2 of 3" from the live one.)
+- **#2 search on B-a49b586e: `S-261e90f7`, held: "not broken in 4 runs"** (5 asked; the 5th hit the day's limit). Round 1: closest "resident: 2 absences to spare (week 9)"; round 2 pushed that and got closer: **"commuter: 1 absences to spare before 'not eligible' (week 7)"** ("Severe backlog and early cutoff", B-e6ff8845). The screen says "1 absences": read it as "one absence". So #7 (the backup search on B-da347452) is needed.
+- Still to record on 26 Nov after 05:30 IST (the limit resets at midnight UTC): **#6** comparison (3 runs), **#5** capacity 5 → 1 (1 run), **#7** search on B-da347452 (up to 3 runs).
+
+### Recording schedule (the live server allows 10 runs a day, one at a time)
+- **26 Nov (9 runs):** #4 (1 run, about 1 min) → #3 (2 runs, about 2 min) → #2 (up to 6 runs, several minutes). Start each only after the last has finished; a second start gets "Another simulation is running right now".
+- **27 Nov (4–7 runs):** #6 (3 runs) → #5 (1 run) → #7 only if #2 held.
+- Model cost is under USD 1 in total (about 30 calls a run). Recording runs isn't a deploy, so it's allowed during the 30 Nov–5 Dec freeze, but finish by 29 Nov so the IDs are in this file and in the video.
+- **Write each ID into the table above as soon as it exists**, and fill in the blanks in "What the audience should leave with". If a scenario's result is weak (for example, the what-if changes nothing), keep it for Q&A and drop it from the 3 minutes. Never re-run until it gives the "right" answer; report what happened.
+
+### Bookmarks for the demo laptop (one folder, in this order)
+`#/` · `#/run/demo` · `#/run/demo/analysis/evidence/demo-F1` · `#/blueprint/B-a49b586e/search/<S-id>` · `#/blueprint/B-da347452/repeat/<R-id>` · `#/run/demo/analysis/compare/<what-if id>` · `#/blueprint/B-da347452/compare/<C-id>`.
+The "what-ifs from this run" list is kept per browser, so on a different laptop only the bookmarks work. Open each one once before going on stage.
+
+## Part 2: the 3-minute click-through
+
+### A. Core replay: one term, one person (0:00–1:05)
+**1. Home (0:00–0:12)**
+- **Say:** "At Indian colleges, a rule like 80% attendance for exam eligibility goes live untested. A commuter, a working student and a student with family duties live with it very differently. RuleStorm shows that before rollout."
 - **Click:** **Open the demo run**.
 
-### 2. Simulation map, `#/run/demo` (0:20–0:55)
-- **Click:** speed **4×**, then **Play**. Let the map run while you talk.
-- **Say:** "Eight people live through a 10-week term. Four students are AI people with their own goals and constraints; the attendance office and the exam officer are run by rules. Every decision is the AI's; every record and calculation is the rule engine's."
-- **Point at:** the time ruler: the disruption marks in **week 5** (train line, 45 min delay) and **week 6** (storms), and the **check at week 6**.
-- **Click:** the **working** student on the map (or in People). The timeline filters to their events. Click their week-6 decision: they planned to skip the class, with their own stated reason.
-- **Point at** the finished summary row: **28 AI decisions · 28 model calls · 4 refused actions · 0 errors**. "Refused" = the engine blocked actions the rules don't allow.
-- **Click:** **See what went wrong**.
+**2. Map, `#/run/demo` (0:12–0:40)**
+- **Click:** speed **8×**, then **Play**.
+- **Say:** "Eight people live through a 10-week term. The students are AI people with their own goals and limits; the office and the exam officer run on rules. The AI decides; the rule engine records and calculates."
+- **Point at:** the week-5 and week-6 disruption marks and the check at week 6 on the time ruler.
+- **Click:** the **working** student on the map. The person panel opens: 3 absences (sessions 9, 11, 12), exception request R4 **filed in week 7, after the week-6 check**, and 72.7% not eligible. "They asked for an exception. One week too late."
+- **Close** the panel (Esc). **Click:** **See what went wrong**.
 
-### 3. Analysis → Summary (0:55–1:10)
-- **Point at:** the hero finding card (working student, week 6, **8 / 11 = 72.7%, needs 80%, not eligible**) and the misses-by-week chart next to it.
-- **Say:** "Nobody wrote this finding. Rules found it in the records."
-- **Click:** **Show the evidence**.
+**3. Evidence (0:40–1:05)**
+- On Summary, **click:** **Show the evidence**.
+- **Point at:** the three labels (recorded fact · calculated · AI interpretation), then scroll from `E-0035` (train line, week 5) to `E-0111`: **8 / 11 = 72.7% (needs ≥ 80) → not eligible**, recomputed from the run's records.
+- **Say:** "Every step is a recorded event with an ID. That's one term. One run is a story, not an insight. Here is the stress test of this policy."
 
-### 4. Evidence, `demo-F1` (1:10–1:50): the hero
-- **Point at:** the three-label legend: **recorded fact** (blue) · **calculated** (black) · **AI interpretation** (orange).
-- **Scroll the chain top to bottom** (15 events), naming four:
-  1. `E-0035` week 5: train line disruption, recorded fact;
-  2. `E-0048`: working student marked absent, because the delay was over their travel buffer;
-  3. `E-0077` week 6: the working student decided to skip the class, in their own words (AI interpretation);
-  4. `E-0111`: the check: **attendance 8 / 11 = 72.7% (needs ≥ 80) → not eligible**, with "recomputed from this run's records".
-- **Say:** "This is the difference from asking a chatbot. Every step has an event ID, the state it changed, and the calculation. The early check in week 6 came before they could get an exception in."
-- **Click:** **What if?**
+### B. Stress-test results: where, how often, what fixes it (1:05–2:40)
+**4. Search for breaks, `#/blueprint/B-a49b586e/search/<S-id>` (1:05–1:35)**
+- **Say:** "This is the same 80% policy as the AI first read it. In a normal term everyone is eligible. So we let RuleStorm hunt: each round the AI aims at the weak point the last runs came closest to breaking, and random scenarios look where it wouldn't."
+- **Point at:** round 1's cards (targeted / random, what changed, the closeness bars), round 2 naming the weak point it pushes, then the result: **"The policy breaks under …"** with who reached "not eligible", and the confirming rerun. A break counts only once a rerun repeats it.
+- If the search held: point at "The policy held: not broken in N runs" and the closest call ("working: 2 absences to spare"). That is the insight: the working student is always the first to go. Then bookmark #7 if it was recorded.
 
-### 5. What if? (1:50–2:05)
-- **Point at:** the form: **condition = the week the check happens, 6**. Type **8**. Read the line under the title: "Same people, same disruptions, same policy. Only this one condition changes."
-- **Say:** "This takes about 40 seconds of real Bedrock calls, so we ran it earlier." Do **not** press **Run the what-if** on stage.
-- **Click:** the **Compare** tab, then the bookmarked what-if run (or type its ID and press **Compare**).
+**5. Repeat runs, `#/blueprint/B-da347452/repeat/<R-id>` (1:35–1:55)**
+- **Say:** "Is the demo's failure just luck? Same conditions, three runs."
+- **Point at:** the bar "How often each person failed the check": **working, N of 3**, and each run's figure. Then "The spread of each measure" (requests filed, queue, staff decisions).
 
-### 6. Compare and decide (2:05–2:40)
-- **Point at, in order:**
-  - the banner: **within-model evidence, not real-world causality**;
-  - **What changed:** checkpoint week 6 → 8;
-  - the **check results table**: the working student's row, ✕ → ✓ if it flipped (rows that flip are highlighted);
-  - the **"Read this before deciding"** note: the AI people decide afresh each run, so not every difference is caused by the change.
-- **Say:** "RuleStorm gives no score and no verdict. The policymaker decides." Point at the **You decide** panel.
-- **Close (10 s):** "Live on AWS: one EC2 server and Amazon Bedrock in Sydney, served over CloudFront, with CloudWatch watching every run. A rule tested on synthetic students before it touches real ones."
+**6. What-if, `#/run/demo/analysis/compare/<what-if id>` (1:55–2:15)**
+- **Say:** "The failure came from an early check. What if the college checks at week 8 instead? Same people, same disruptions, only that changes."
+- **Point at:** the within-model banner, "What changed: week 6 → 8", and the working student's row (✕ → ✓ if it flipped, highlighted).
 
-## If time remains (in this order)
-| # | What | Where / click | Time | Why it earns the time |
-|---|---|---|---|---|
-| 1 | **Facts vs AI assumptions** on the blueprint | `#/blueprint/B-da347452`: blue facts vs orange dashed assumptions, **Approved and frozen**, the disruptions on the time ruler, people cards ("Wants… / Limited by…"), the "Run by rules, not AI" row | 20–25 s | Covers journey step 2, the second half of the USP ("validated simulation"); no waiting |
-| 2 | **It isn't hard-coded to attendance** | Home → **What it can model** (two templates), or **Test a new policy** → chip **Use the hostel curfew example** (fills the fields; don't build) | 10 s | Innovation: the engine is general, templates are data |
-| 3 | **Plain words in, simulation out** (only if a judge asks, or in the video) | **Test a new policy** → **Build the simulation** | 15–30 s wait | Shows the Bedrock blueprint step live; costs 1 of 50 daily blueprint requests; risky on stage |
-| 4 | **Stress test** | Blueprint → **Stress test** tab → **Propose harsher conditions** | ~20 s wait | The AI hunts for weak points; works only on an approved blueprint |
-| 5 | **AWS proof** (video, or Q&A on a laptop) | CloudWatch console: namespace `RuleStorm` (LLMCalls, Tokens, RunDurationSeconds) | 10 s | Working AWS Build 25% |
+**7. Compare policies, `#/blueprint/B-da347452/compare/<C-id>` (2:15–2:40)**
+- **Say:** "Or change the rule itself. RuleStorm writes a strict, a flexible and a progressive version, keeping what you stated (80%, per course), and runs each under the same conditions."
+- **Point at:** "Kept the same in every version", the three version cards (what each changed), then the trade-off rows: **who failed a check** under each version, requests filed, refused actions and staff decisions. "Flexible helps students but costs the office more work" (read it off the real table).
 
-**Don't show:** the strict / flexible / progressive policy comparison (slice 15). It works through the API only; the UI has no screen for it, and no comparison exists on the live server yet. Mention it in Q&A as built, not shown.
+### C. Insight and decision (2:40–3:00)
+- On the comparison's **You decide** panel, say the insight line from the top of this file with the recorded numbers filled in (15 s).
+- **Close (5 s):** "Live on AWS: one EC2 server and Amazon Bedrock in Sydney, behind CloudFront, with CloudWatch on every run."
 
-## Q&A backups (2 min)
-- **"Is this real or scripted?"** Open `#/run/demo` → the timeline: every AI decision shows its stated reason; IDs are copyable. The run took 27 s and 28 model calls.
-- **"Can it be wrong?"** Point at the honest line on Home and the within-model banner. The AI only proposes actions; the engine checks permissions and does every calculation.
-- **"Why did the student fail?"** The evidence screen, read in one breath: disruption → absent → storm → chose to skip → 8 / 11 at week 6.
-- **If a judge starts a run themselves and another is going:** "Another simulation is running right now" (one run at a time for everyone). That's expected, not a bug.
+**For the Round 1 video:** the same order. Put each Part B scene under a title card naming the question it answers (the "Question" column), and end on the insight line as a full-screen card. Parts A and B can be cut tighter than live because nothing has to load.
+
+## If time remains, or for Q&A
+| What | Where | Time | Why |
+|---|---|---|---|
+| Facts vs AI assumptions, and correcting one | `#/blueprint/B-a49b586e` (approved, so read-only): blue facts vs orange assumptions, frozen. Editing works only on an unapproved blueprint (**Test a new policy** → **Build the simulation** → **Edit** on an assumption) | 20 s read-only / 45 s live | The policymaker stays in control of what the simulation assumes |
+| How people adapted | Analysis of `demo` → Summary → "How people adapted" (10 in the demo: first requests, strategy shifts in their own words) | 15 s | Agents change strategy, and it's measured from records |
+| Run 1, the normal term | `#/run/L-a3af1d12/analysis` | 10 s | The "before" picture: no findings |
+| A second policy type | Home → What it can model, or Setup → **Use the hostel curfew example** | 10 s | The engine isn't hard-coded to attendance |
+| Live AI on stage | Blueprint → **Stress test** → **Propose harsher conditions** (~20 s) | 20 s | Only if a judge asks to see the AI working live |
+| AWS proof | CloudWatch, namespace `RuleStorm` (LLMCalls, Tokens, RunDurationSeconds) | 10 s | Working AWS Build (25%) |
+
+**Q&A answers:**
+- **"Is this real?"** Every run, finding and event has an ID that opens on the live link. Click any AI decision and read the person's own reason.
+- **"Can the AI just make up a failure?"** No: findings come from rules over the records, a break counts only when a rerun repeats it, and the search says "not broken" when it isn't.
+- **"Does this predict my college?"** No: the within-model banner. It shows how the rule *can* break, so you know where to look before rollout.
+- **If a judge starts a run while one is going:** "Another simulation is running right now" is expected; there's one run at a time for everyone.
 
 ## Rough spots to know before you're on stage
-- **The hero is a failure from the early check, not the exception backlog.** BRIEF's hero section describes the backlog chain; the demo run shows the working student filing no exception in time before an early week-6 check. Say it the second way.
-- **Evidence wording:** "a delay of 45 on 'attend class'" has no unit (minutes), and a faculty decision reads "correct a recorded attendance mark" three times. Two faculty "corrections" change absent → absent. Read past them; don't hide them (IDEAS has a 15-minute fix in `evidence.py`, which is a core change: team decision).
-- **Blueprint shown is the stress variant** ("Early checkpoint with many disruptions", B-da347452), not the plain example (B-ff06a1d1 is not on the live server). Call it "the harsher version the stress test proposed".
+- **The demo failure happened in 1 of 3 runs on the laptop** (R-b97baf8d). Say "in this run", and let scenario #3 answer "how often" with the live numbers.
+- **The hero is the early check, not the exception backlog** that BRIEF's hero section describes: the working student filed in week 7, after the week-6 check.
+- **The two blueprints differ in more than difficulty.** The AI gave the students different travel buffers in each (working: 15 min in B-a49b586e, 30 min in B-da347452). Call B-da347452 "the harsher version the stress test proposed", not "the same blueprint with harder weather".
+- **Evidence wording:** "a delay of 45" has no unit (minutes); "correct a recorded attendance mark" repeats three times; two faculty corrections change absent → absent. Read past them (fix is in IDEAS, a core change).
+- **The daily limit:** recording takes most of a day's 10 runs. Don't record on the day of a live demo.
