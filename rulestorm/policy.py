@@ -73,6 +73,9 @@ class BlueprintDraft(BaseModel):
     # Counterfactual reruns (slice 13): the blueprint this one copies with one environment value
     # changed. Kept apart from parent_id so a counterfactual never shows up as a stress variant.
     counterfactual_of: str | None = None
+    # Policy comparisons (slice 15): the approved blueprint this one rewrites as a strict, flexible
+    # or progressive version (`variant` holds which); environment and people are its own.
+    comparison_of: str | None = None
 
 
 class BlueprintRecord(BlueprintDraft):

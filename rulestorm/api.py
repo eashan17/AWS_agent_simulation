@@ -63,6 +63,10 @@ class RunRequest(BaseModel):
     blueprint_id: str = Field(min_length=1, max_length=64)
 
 
+class ComparisonRequest(BaseModel):
+    blueprint_id: str = Field(min_length=1, max_length=64)
+
+
 class CounterfactualRequest(BaseModel):
     parameter: str = Field(min_length=1, max_length=64)
     value: bool | int | str = Field(description="the new value; checked against the template's range or choices")
@@ -224,6 +228,46 @@ def get_compare(run_id: str, other_run_id: str, store: Store = Depends(get_store
         raise HTTPException(status_code=409, detail=str(exc))
     except CounterfactualRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/api/comparisons")
+def post_comparison(body: ComparisonRequest, store: Store = Depends(get_store),
+                    model: llm.Model = Depends(get_blueprint_model),
+                    agent_model: llm.Model | None = Depends(get_agent_model),
+                    runs_dir: str = Depends(get_runs_dir)) -> dict:
+    """Strict, flexible and progressive versions of an approved blueprint's policy, run one after
+    another under its environment and people (slice 15). Answers after the one model call (15-30 s)
+    that proposes them; the runs go on in the background. Follow it with GET /api/comparisons/{id}."""
+    from rulestorm.comparison import ComparisonActive, start_comparison
+    from rulestorm.runner import RunActive
+
+    try:
+        return start_comparison(store, body.blueprint_id, model=model, agent_model=agent_model, out_dir=runs_dir)
+    except BlueprintNotFound:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    except BlueprintNotApproved:
+        raise HTTPException(status_code=409, detail="blueprint not approved")
+    except ComparisonActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a comparison is already running",
+                                                      "comparison_id": exc.comparison_id})
+    except RunActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a run is already running", "run_id": exc.run_id})
+    except DailyCapReached as exc:
+        raise HTTPException(status_code=429, detail=f"daily limit reached ({exc}), try again tomorrow")
+    except ValueError as exc:  # the template changed since the blueprint was made
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.get("/api/comparisons/{comparison_id}")
+def get_comparison_route(comparison_id: str, store: Store = Depends(get_store)) -> dict:
+    """The comparison as it stands: each version's policy changes and run, then a trade-off table
+    with one column per version and no overall score (slice 15). Labelled within-model evidence."""
+    from rulestorm.comparison import ComparisonNotFound, get_comparison
+
+    try:
+        return get_comparison(store, comparison_id)
+    except ComparisonNotFound:
+        raise HTTPException(status_code=404, detail="comparison not found")
 
 
 @app.get("/api/runs/{run_id}/findings")

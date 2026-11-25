@@ -82,6 +82,15 @@ CREATE TABLE IF NOT EXISTS findings (
     record TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS findings_run ON findings (run_id);
+-- Policy comparisons (slice 15): strict, flexible and progressive versions of one approved
+-- blueprint, run one after another. `record` holds the versions, their runs and progress.
+CREATE TABLE IF NOT EXISTS comparisons (
+    id TEXT PRIMARY KEY,
+    blueprint_id TEXT NOT NULL REFERENCES blueprints(id),
+    status TEXT NOT NULL,
+    record TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 USAGE_COUNTERS = ("runs", "llm_calls", "blueprint_calls")
@@ -324,6 +333,37 @@ class Store:
             conn.executemany("INSERT INTO findings (id, run_id, kind, record) VALUES (?, ?, ?, ?)",
                              [(f["finding_id"], run["id"], f["kind"], json.dumps(f, ensure_ascii=False))
                               for f in findings])
+
+    def save_comparison(self, record: dict) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute("INSERT INTO comparisons (id, blueprint_id, status, record, created_at) VALUES (?, ?, ?, ?, ?)",
+                         (record["id"], record["blueprint_id"], record["status"],
+                          json.dumps(record, ensure_ascii=False), record["created_at"]))
+
+    def update_comparison(self, record: dict) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute("UPDATE comparisons SET status = ?, record = ? WHERE id = ?",
+                         (record["status"], json.dumps(record, ensure_ascii=False), record["id"]))
+
+    def get_comparison(self, comparison_id: str) -> dict | None:
+        row = self._conn().execute("SELECT record FROM comparisons WHERE id = ?", (comparison_id,)).fetchone()
+        return json.loads(row["record"]) if row else None
+
+    def running_comparison(self) -> str | None:
+        row = self._conn().execute("SELECT id FROM comparisons WHERE status = 'running' LIMIT 1").fetchone()
+        return row["id"] if row else None
+
+    def fail_running_comparisons(self, error: str) -> list[str]:
+        """Every comparison still marked running becomes failed with `error`; returns their IDs."""
+        out = []
+        for row in self._conn().execute("SELECT record FROM comparisons WHERE status = 'running'").fetchall():
+            record = json.loads(row["record"])
+            record.update(status="failed", error=error, finished_at=_now())
+            self.update_comparison(record)
+            out.append(record["id"])
+        return out
 
     def update_blueprint(self, blueprint_id: str, blueprint: TemplateBlueprint) -> BlueprintRecord:
         """Edit a blueprint before approval (e.g. corrected assumptions). Refused once approved."""
