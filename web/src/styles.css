@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   RuleStorm tokens. Taken from the Wattbank reference (frosted canvas,
+   translucent white panels, black pill, blue data, orange attention)
+   with MatrAIx's mono eyebrows and dotted field.
+   Components use these variables only; no hex values elsewhere.
+   ------------------------------------------------------------------ */
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-canvas: #EEF1F6;
+  --color-ink: #0D1117;
+  --color-ink-2: #3F4859;
+  --color-ink-3: #7C8596;
+  --color-ink-4: #A9B1BF;
+  --color-line: #E2E7EF;
+  --color-line-2: #D3DAE5;
+  --color-surface: #FFFFFF;
+  --color-mist: #F5F7FA;
+
+  --color-blue-50: #F0F5FF;
+  --color-blue-100: #DCE7FF;
+  --color-blue-200: #BCD0FF;
+  --color-blue-400: #6E96FF;
+  --color-blue-600: #2F6BFF;
+  --color-blue-700: #1F55DB;
+  --color-blue-900: #0D2A73;
+
+  --color-orange-50: #FFF4EC;
+  --color-orange-100: #FFE3CE;
+  --color-orange-200: #FFC79E;
+  --color-orange-400: #FF9A4D;
+  --color-orange-500: #FF7A1A;
+  --color-orange-700: #C4530A;
+
+  --color-ok: #14A06B;
+  --color-ok-50: #E6F6EF;
+  --color-bad: #E5484D;
+  --color-bad-50: #FDECEC;
+
+  --radius-chip: 10px;
+  --radius-card: 20px;
+  --radius-panel: 28px;
+
+  --shadow-glass: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 10px 30px -12px rgba(16, 32, 72, 0.18);
+  --shadow-lift: 0 18px 40px -16px rgba(16, 32, 72, 0.28);
+  --shadow-pill: 0 6px 16px -6px rgba(13, 17, 23, 0.45);
+}
+
+:root {
+  /* Person colours: assigned once per run in the template's people order and reused on the
+     stage, the feed, the chart, the tables and the evidence chain. */
+  --p1: #2F6BFF;
+  --p2: #FF7A1A;
+  --p3: #12A5A0;
+  --p4: #7B5CFF;
+  --p5: #E8508A;
+  --p6: #D99A00;
+  --p7: #1E9BE8;
+  --p8: #5BA83A;
+  --staff-1: #4B5870;
+  --staff-2: #6D7D96;
+  --staff-3: #8794AA;
+
+  /* stage scenery */
+  --terrain: #E8EEF6;
+  --terrain-2: #DEE6F1;
+  --terrain-dot: #C9D4E4;
+  --road: #FFFFFF;
+  --road-edge: #D2DBE8;
+  --shrub: #CCDDFB;
+  --shrub-2: #B9CFF7;
+  /* glass: three depths. The frame lets the backdrop through; panels and cards sit on it. */
+  --glass-frame: rgba(255, 255, 255, 0.34);
+  --glass-side: rgba(255, 255, 255, 0.22);
+  --glass-panel: rgba(246, 248, 251, 0.70);
+  --glass: rgba(255, 255, 255, 0.78);
+  --glass-strong: rgba(255, 255, 255, 0.90);
+  --glass-edge: rgba(255, 255, 255, 0.85);
+  /* the one accent: Wattbank's soft blue-to-orange card, translucent, one per screen */
+  --accent-gradient: linear-gradient(172deg, rgba(196, 212, 255, 0.92) 0%, rgba(232, 222, 246, 0.85) 34%, rgba(255, 196, 160, 0.9) 70%, rgba(255, 138, 72, 0.92) 100%);
+  /* a faint wash for selected or hovered surfaces */
+  --wash-blue: linear-gradient(180deg, rgba(220, 231, 255, 0.55), rgba(255, 255, 255, 0));
+  --wash-orange: linear-gradient(180deg, rgba(255, 227, 206, 0.6), rgba(255, 255, 255, 0));
+  color-scheme: light;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: #E9ECF8;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The backdrop: a vivid, blurred colour field behind everything (Wattbank). */
+.app-backdrop {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(60vw 55vh at 0% 0%, #9DB6FF 0%, transparent 70%),
+    radial-gradient(45vw 45vh at 55% -10%, #C9D3FF 0%, transparent 70%),
+    radial-gradient(40vw 50vh at 100% 15%, #A9C8FF 0%, transparent 70%),
+    radial-gradient(50vw 55vh at 0% 100%, #FFD2A8 0%, transparent 70%),
+    radial-gradient(55vw 60vh at 100% 100%, #FF9F6B 0%, transparent 70%),
+    radial-gradient(40vw 40vh at 50% 105%, #FFC6D3 0%, transparent 70%),
+    #E9ECF8;
+}
+.app-backdrop::after { /* soft grain keeps the gradient from banding */
+  content: ""; position: absolute; inset: 0; opacity: .18; mix-blend-mode: overlay;
+  background-image: radial-gradient(rgba(255,255,255,.7) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+/* The app window floating on the backdrop, and its translucent sidebar */
+.glass-frame {
+  background: var(--glass-frame);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 30px 80px -30px rgba(30, 40, 90, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+}
+.glass-panel {
+  background: var(--glass-panel);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.95) inset, 0 12px 32px -18px rgba(20, 34, 80, 0.22);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+.accent-card {
+  background: var(--accent-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 20px 40px -22px rgba(255, 110, 40, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.glass-strong { background: var(--glass-strong); }
+
+.dot-field {
+  background-image: radial-gradient(var(--terrain-dot) 1px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+:focus-visible { outline: 2px solid var(--color-blue-600); outline-offset: 2px; border-radius: 8px; }
+
+/* scrollbars */
+.thin-scroll { scrollbar-width: thin; scrollbar-color: var(--color-line-2) transparent; }
+
+/* ---------- motion ---------- */
+@keyframes rs-pulse { 0% { transform: scale(0.8); opacity: .7 } 100% { transform: scale(2.2); opacity: 0 } }
+@keyframes rs-float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+@keyframes rs-drift { from { transform: translateX(-220px) } to { transform: translateX(1420px) } }
+@keyframes rs-blink { 0%, 92%, 100% { transform: scaleY(1) } 95% { transform: scaleY(0.1) } }
+@keyframes rs-dots { 0%, 20% { opacity: .2 } 50% { opacity: 1 } 100% { opacity: .2 } }
+@keyframes rs-pop { 0% { transform: scale(.6); opacity: 0 } 60% { transform: scale(1.08); opacity: 1 } 100% { transform: scale(1) } }
+@keyframes rs-shimmer { from { background-position: -400px 0 } to { background-position: 400px 0 } }
+@keyframes rs-spin { to { transform: rotate(360deg) } }
+@keyframes rs-sway { 0%, 100% { transform: rotate(-4deg) } 50% { transform: rotate(4deg) } }
+@keyframes rs-rise { from { transform: translateY(6px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+
+.anim-pulse { transform-box: fill-box; transform-origin: center; animation: rs-pulse 1.8s ease-out infinite; }
+.anim-float { animation: rs-float 3.2s ease-in-out infinite; }
+.anim-blink { transform-box: fill-box; transform-origin: center; animation: rs-blink 4.6s infinite; }
+.anim-pop { transform-box: fill-box; transform-origin: center bottom; animation: rs-pop .35s ease-out both; }
+.anim-sway { transform-box: fill-box; transform-origin: bottom center; animation: rs-sway 2.4s ease-in-out infinite; }
+.anim-rise { animation: rs-rise .3s ease-out both; }
+.anim-spin { animation: rs-spin 1s linear infinite; }
+.dots span { animation: rs-dots 1.2s infinite; }
+.dots span:nth-child(2) { animation-delay: .2s }
+.dots span:nth-child(3) { animation-delay: .4s }
+.skeleton {
+  background: linear-gradient(90deg, var(--color-mist) 0%, #fff 50%, var(--color-mist) 100%);
+  background-size: 800px 100%;
+  animation: rs-shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+/* SVG elements keep their transform attribute; animate opacity only */
+@keyframes rs-fadein { from { opacity: 0 } to { opacity: 1 } }
+.svg-pop { animation: rs-fadein .3s ease-out both; }

@@ -251,3 +251,17 @@ def get_evidence(finding_id: str, store: Store = Depends(get_store)) -> dict:
     run = store.get_run(finding["run_id"])
     template = template_named(run["template"].split("@")[0])
     return evidence(finding, store.run_events(finding["run_id"]), template).model_dump()
+
+
+# The UI: web/dist is built on a laptop, committed, and served from the same origin, so every
+# browser call is a same-origin /api/... request. Mounted last, so no /api route is shadowed.
+# On the server the package is installed into the release's venv, so the folder is named by
+# RULESTORM_WEB_DIST (set in deploy/rulestorm.service); locally it is the checkout's web/dist.
+import os as _os  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+_WEB_DIST = _Path(_os.environ.get("RULESTORM_WEB_DIST") or _Path(__file__).resolve().parent.parent / "web" / "dist")
+if (_WEB_DIST / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=_WEB_DIST, html=True), name="web")

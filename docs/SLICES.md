@@ -81,6 +81,7 @@ Re-planned 24 Nov for Level 2 (a general engine plus templates; see ARCHITECTURE
 Status values: todo · doing · done · cut · standby (built only if the gate fails)
 
 **Order and dates:**
+- **Status 25 Nov, UI:** the UI (React + Vite + Tailwind, `web/`, plan in design/FRONTEND_PLAN.md) is built and served by FastAPI at `/` from the committed `web/dist`. Checked locally against the real API: every screen of the demo path (overview, map, summary, findings, evidence for `demo-F1`, what-if form, compare with L-960f5653), blueprint review for B-da347452, the curfew run L-d50a0a92, a 404, and no sideways scroll at 375 px on 7 pages. The server finds `web/dist` through `RULESTORM_WEB_DIST` in the unit (the package runs from the venv), and `deploy.sh` stops if `web/dist/index.html` is missing. 206 tests. Not yet seen working: a new policy built and run from the UI (needs Bedrock: on the live server after the next deploy).
 - **Status 25 Nov evening:** every must-have slice and slice 13 are done and live at https://d2emiyaz9dq4bi.cloudfront.net (tag `live-20261125d`, with U0; 203 tests). Left: 14 and 15 (after the UI, if time). Slice U0 (the two read routes the screens need) done the same evening. Next: the UI phase (/ui) once the Claude Design handoff is in the repo.
 - **Status 24 Nov evening:** ahead of plan. L1–L8, the whole curfew (L9a–L9d), 7a, 7b, 8, H and 9 are done; the L7 gate said go, so L1.5 is cut. The hero run exists: L-eb97fbe7, and its evidence opens. Next, in order: 10, 11, 12.
 - **24 Nov:** L1–L4.
@@ -96,7 +97,7 @@ Status values: todo · doing · done · cut · standby (built only if the gate f
 **For the UI phase:**
 - **Screens:** docs/USER_JOURNEY.md lists every screen (S1–S9), the route each calls with its real JSON keys, its states and error messages, and the demo path. Build from it.
 - **Read-only routes the screens need:** `GET /api/templates/{id}` and `GET /api/blueprints/{id}` were built in slice U0 (25 Nov), so no screen hard-codes a template's words. A variants list and a run list are still open (journey gap table), not needed for the demo path.
-- `.gitignore` ignores every `dist/` folder, so /ui must add `!web/dist/`, and `deploy.sh` must stop if `web/dist/index.html` is missing (it doesn't check yet: add the check when `web/dist` first exists).
+- `.gitignore` ignores every `dist/` folder, so /ui must add `!web/dist/`, and `deploy.sh` must stop if `web/dist/index.html` is missing (both done 25 Nov with the UI).
 - The input screen shows each template's scope line and example input (`GET /api/templates`), so judges don't type an unsupported rule on stage.
 
 **Another way to slice it:** build the hostel curfew template first, then generalise attendance onto it. That's worse: attendance parity (L2–L7) is what protects everything slices 4–6c already proved, and the go/no-go gate only works if that parity is checked first.

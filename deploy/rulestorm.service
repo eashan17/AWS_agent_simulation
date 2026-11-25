@@ -10,6 +10,8 @@ Group=rulestorm
 # The store (RULESTORM_DB_PATH) and runs/ live here; the code is read-only in /opt/rulestorm.
 WorkingDirectory=/var/lib/rulestorm
 EnvironmentFile=/etc/rulestorm.env
+# The built UI (web/dist, committed) in this release; the package itself runs from the venv.
+Environment=RULESTORM_WEB_DIST=/opt/rulestorm/current/web/dist
 ExecStart=/opt/rulestorm/current/.venv/bin/python -m uvicorn rulestorm.api:app --host 0.0.0.0 --port 80 --workers 1
 # Port 80 without root: only this one capability.
 AmbientCapabilities=CAP_NET_BIND_SERVICE

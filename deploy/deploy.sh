@@ -55,6 +55,10 @@ NEW="$REL.new"
 rm -rf "$NEW"
 mkdir -p "$NEW"
 git_src archive "refs/tags/$TAG" | tar -x -C "$NEW"
+if [ ! -f "$NEW/web/dist/index.html" ]; then
+  echo "tag $TAG has no built UI (web/dist/index.html); run npm run build in web/ and commit web/dist" >&2
+  rm -rf "$NEW"; exit 1
+fi
 python3 -m venv "$NEW/.venv"
 "$NEW/.venv/bin/python" -m pip install --quiet --disable-pip-version-check "$NEW"
 rm -rf "$REL"
@@ -98,6 +102,7 @@ pid="$(systemctl show -p MainPID --value "$SVC")"
 user="$(ps -o user:32= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
 echo "rulestorm.service $state ($sub) as user ${user:-?}"
 echo "health: $(curl -fsS http://127.0.0.1/api/health 2>&1 || true)"
+echo "UI page: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>&1 || true)"
 echo "demo run: $(curl -fsS http://127.0.0.1/api/runs/demo 2>/dev/null \
   | python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])' 2>&1 || echo 'not answering')"
 if [ "$state" != active ] || [ "$user" != "$SVC" ]; then
