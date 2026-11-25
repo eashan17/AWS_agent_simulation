@@ -86,6 +86,7 @@ export const api = {
   variants: (id) => request('POST', `/api/blueprints/${encodeURIComponent(id)}/variants`, null, { timeoutMs: 65000 }),
   startRun: (blueprintId) => request('POST', '/api/runs', { blueprint_id: blueprintId }),
   run: (id, after = 0) => request('GET', `/api/runs/${encodeURIComponent(id)}${after ? `?after=${after}` : ''}`),
+  adaptations: (id) => request('GET', `/api/runs/${encodeURIComponent(id)}/adaptations`),
   findings: (id) => request('GET', `/api/runs/${encodeURIComponent(id)}/findings`),
   evidence: (fid) => request('GET', `/api/findings/${encodeURIComponent(fid)}/evidence`),
   counterfactual: (id, parameter, value) =>

@@ -39,6 +39,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
             │      approved ─> the same runner (409 / 429 as above)
             ├─ GET /api/runs/{id} (polled every 3 s, ?after=<seq>), /api/runs/{id}/findings
             ├─ GET /api/runs/{a}/compare/{b} ─> queue length, waiting time and checks for both runs
+            ├─ GET /api/runs/{id}/adaptations ─> value changes and their effect, first actions, strategy shifts (slice 19)
             ├─ POST /api/comparisons {blueprint_id} ─> Bedrock (strict / flexible / progressive policy values)
             │      ─> 3 approved blueprints, run one after another in the background (slice 15)
             ├─ GET /api/comparisons/{id} ─> progress, then a trade-off table per version (no score)
@@ -63,6 +64,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `adaptation.py` | How the AI people adapted, by rules over a run's records: a real change to their own value and the later records it changed, first actions, stated-strategy shifts (slice 19) |
 | `editing.py` | Corrects single values and per-person values of an unapproved blueprint; each correction becomes a fact (slice 18) |
 | `search.py` | Guided scenario search: closeness from each run's records, random scenarios within the template's ranges, rounds that push the closest weak point, a confirming rerun (slice 16) |
 | `comparison.py` | Strict, flexible and progressive policy versions under the same environment and people, run in turn, compared as a trade-off table (slice 15) |

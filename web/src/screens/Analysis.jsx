@@ -9,7 +9,8 @@ import { CalcPanel, EvidenceTimeline, FindingCard, HeroFinding, MissChart } from
 import { PersonAvatar } from '../sim/Agent.jsx'
 import TimeRuler from '../sim/TimeRuler.jsx'
 import { api, ApiError } from '../lib/api.js'
-import { templateIdOf, useBlueprint, useEvidence, useFindings, useLoad, useRun, useTemplate } from '../lib/hooks.js'
+import { templateIdOf, useAdaptations, useBlueprint, useEvidence, useFindings, useLoad, useRun, useTemplate } from '../lib/hooks.js'
+import { AdaptationList } from '../domain/adaptation.jsx'
 import { navigate } from '../lib/router.js'
 import { rememberRun, rememberWhatIf, useSession } from '../lib/session.js'
 import { cap, formatValue, humanize, makeWords, pct } from '../lib/words.js'
@@ -33,6 +34,7 @@ function checkText(e, words) {
 
 /* ------------------------------------------------------------------ Summary */
 function Summary({ run, events, words, findings, onEvidence }) {
+  const adapt = useAdaptations(run.run_id, run.status)
   const s = run.summary || {}
   const filed = events.filter((e) => e.type === 'request_filed').length
   const checks = lastChecks(events)
@@ -90,6 +92,12 @@ function Summary({ run, events, words, findings, onEvidence }) {
             </tbody>
           </table>
         </div>
+      </Card>
+      <Card>
+        <CardTitle title="How people adapted" sub="Found by rules over this run's records, no AI: a change to their own value and what it changed later, things they did for the first time, and changes in their stated strategy (their own words)" />
+        {adapt.loading ? <LoadingBlock label="Reading the records…" />
+          : adapt.error ? <ApiErrorBanner error={adapt.error} onRetry={adapt.reload} />
+            : <AdaptationList items={adapt.data?.adaptations} words={words} />}
       </Card>
     </div>
   )

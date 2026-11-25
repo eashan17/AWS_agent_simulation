@@ -34,6 +34,9 @@ export const useTemplate = (id) => useLoad(id ? `template:${id}` : null, () => a
 export const useBlueprint = (id) => useLoad(id ? `blueprint:${id}` : null, () => api.blueprint(id), { keep: false })
 export const useFindings = (runId, status) =>
   useLoad(runId && status && status !== 'running' ? `findings:${runId}:${status}` : null, () => api.findings(runId))
+/** How the AI people adapted (slice 19); read once the run has finished. */
+export const useAdaptations = (runId, status) =>
+  useLoad(runId && status && status !== 'running' ? `adapt:${runId}:${status}` : null, () => api.adaptations(runId))
 export const useEvidence = (fid) => useLoad(fid ? `evidence:${fid}` : null, () => api.evidence(fid))
 
 export const templateIdOf = (ref) => (ref ? String(ref).split('@')[0] : null)

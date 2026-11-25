@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Chip, cx } from '../ui/primitives.jsx'
 import { PersonAvatar } from '../sim/Agent.jsx'
 import { humanize } from '../lib/words.js'
+import { AdaptedBadge } from './adaptation.jsx'
 
 export const FILTERS = [
   { id: 'disruptions', label: 'Disruptions' },
@@ -123,7 +124,7 @@ const TONE = {
   ink: 'bg-ink text-white border-ink',
 }
 
-export function EventRow({ e, w, current, onClick }) {
+export function EventRow({ e, w, current, onClick, adapted }) {
   const d = describe(e, w)
   const person = e.actor && (w.travellers.includes(e.actor) || w.staff.includes(e.actor)) ? e.actor : e.payload?.person
   return (
@@ -135,6 +136,7 @@ export function EventRow({ e, w, current, onClick }) {
           <span className={cx('block', d.small ? 'text-[12px] text-ink-3' : 'text-[13px] text-ink')}>
             {person && !d.small && <span className="inline-block align-[-3px] mr-1"><PersonAvatar colour={w.colour(person)} ai={w.isAI(person)} size={16} /></span>}
             {d.title}
+            <AdaptedBadge kind={adapted} />
           </span>
           {d.quote && <span className={cx('block mt-1 text-[12.5px] text-ink-2 italic leading-snug', !current && 'line-clamp-2')}>“{d.quote}”</span>}
           {d.sub && current && <span className="block mt-0.5 text-[11.5px] text-ink-3">{d.sub}</span>}
@@ -146,7 +148,7 @@ export function EventRow({ e, w, current, onClick }) {
 }
 
 /** The feed: events so far, grouped by period then step, newest last; follows while playing. */
-export function EventFeed({ events, count, w, filters, setFilters, person, onPick, follow = true, className }) {
+export function EventFeed({ events, count, w, filters, setFilters, person, onPick, follow = true, className, adapted = {} }) {
   const shown = useMemo(() => {
     const upTo = events.slice(0, count)
     return upTo.filter((e) => filters.includes(chipOf(e)) && (!person || peopleOf(e).has(person)))
@@ -189,7 +191,7 @@ export function EventFeed({ events, count, w, filters, setFilters, person, onPic
           <section key={g.k} className="mb-2">
             <h4 className="sticky top-0 z-[1] bg-white/80 backdrop-blur py-1.5 px-2.5 rounded-lg text-[11.5px] font-semibold text-ink-2">{w.where(g.period, g.step)}</h4>
             <ul className="flex flex-col gap-0.5">
-              {g.items.map((e) => <EventRow key={e.event_id} e={e} w={w} current={e.event_id === currentId} onClick={() => onPick?.(e)} />)}
+              {g.items.map((e) => <EventRow key={e.event_id} e={e} w={w} current={e.event_id === currentId} onClick={() => onPick?.(e)} adapted={adapted[e.event_id]} />)}
             </ul>
           </section>
         ))}

@@ -13,7 +13,8 @@ import PlaybackBar from '../sim/PlaybackBar.jsx'
 import { buildLayout } from '../sim/layout.js'
 import { clockAt, deriveWorld, usePlayback } from '../sim/director.js'
 import { api } from '../lib/api.js'
-import { templateIdOf, useBlueprint, useRun, useTemplate } from '../lib/hooks.js'
+import { templateIdOf, useAdaptations, useBlueprint, useRun, useTemplate } from '../lib/hooks.js'
+import { adaptedMap } from '../domain/adaptation.jsx'
 import { navigate } from '../lib/router.js'
 import { rememberRun } from '../lib/session.js'
 import { cap, checkpointValue, duration, makeWords } from '../lib/words.js'
@@ -43,6 +44,8 @@ export default function Simulation({ id }) {
   const { run, events, error, loading, pollError } = useRun(id)
   const t = useTemplate(templateIdOf(run?.template))
   const bp = useBlueprint(run?.blueprint_id)
+  const adapt = useAdaptations(id, run?.status)
+  const adapted = useMemo(() => adaptedMap(adapt.data?.adaptations), [adapt.data])
   const words = useMemo(() => (t.data ? makeWords(t.data) : null), [t.data])
   const { layout, pb, world, clock } = useStage(events, words)
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
@@ -125,7 +128,7 @@ export default function Simulation({ id }) {
               action={person && <Button size="sm" variant="quiet" onClick={() => setPerson(null)}>Show everyone ✕</Button>} />
             {words && (
               <EventFeed className="h-[520px]" events={events} count={pb.count} w={words} filters={filters} setFilters={setFilters} person={person}
-                onPick={(e) => { pb.pause(); pb.seekIndex(events.indexOf(e)) }} follow={pb.playing} />
+                onPick={(e) => { pb.pause(); pb.seekIndex(events.indexOf(e)) }} follow={pb.playing} adapted={adapted} />
             )}
           </Card>
           <Card className="flex flex-col">

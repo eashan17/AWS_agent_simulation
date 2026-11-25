@@ -344,6 +344,23 @@ def get_search_route(search_id: str, store: Store = Depends(get_store)) -> dict:
         raise HTTPException(status_code=404, detail="search not found")
 
 
+@app.get("/api/runs/{run_id}/adaptations")
+def get_adaptations(run_id: str, store: Store = Depends(get_store)) -> dict:
+    """How the AI people adapted (slice 19): a real change to their own value and what it did later,
+    first actions, and shifts in their stated strategy. Rules over the run's records, no model call."""
+    from rulestorm.adaptation import adaptations
+    from rulestorm.evidence import template_named
+
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    found = adaptations(template_named(run["template"].split("@")[0]), store.run_events(run_id))
+    by_person: dict[str, int] = {}
+    for a in found:
+        by_person[a["person"]] = by_person.get(a["person"], 0) + 1
+    return {"run_id": run_id, "status": run["status"], "adaptations": found, "by_person": by_person}
+
+
 @app.get("/api/runs/{run_id}/findings")
 def get_findings(run_id: str, store: Store = Depends(get_store)) -> dict:
     """The problems found in a finished run (slice 8): checks failed and requests still pending at
