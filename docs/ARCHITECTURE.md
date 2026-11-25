@@ -8,7 +8,7 @@ A policymaker types an institutional rule. RuleStorm matches it to a template, f
 ## Pieces and data flow
 Everything runs in one Python process on one EC2 instance. Arrows show the direction data moves.
 
-    browser (UI phase: React + Vite static files served by FastAPI)
+    browser (UI phase: React + Vite static files served by FastAPI; screens in docs/USER_JOURNEY.md)
       └─> CloudFront (HTTPS; /api/* all methods, no cache, 60 s origin timeout)
             └─> EC2 :80  FastAPI, one uvicorn worker (systemd)
             ├─ GET  /api/templates ─> each template's id, title, scope line, example input
@@ -31,7 +31,10 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
             │              period end:   queue processing, then checks (if due)
             │              every event: event_id, seq, period, step, type, actor, payload, state_change, caused_by[]
             │      after the last period: detect (check failed; request pending at the check) ─> findings + chain
-            ├─ GET /api/runs/{id} (polled every 3 s), /api/runs/{id}/findings
+            ├─ POST /api/runs/{id}/counterfactual ─> the run's blueprint with one environment value changed,
+            │      approved ─> the same runner (409 / 429 as above)
+            ├─ GET /api/runs/{id} (polled every 3 s, ?after=<seq>), /api/runs/{id}/findings
+            ├─ GET /api/runs/{a}/compare/{b} ─> queue length, waiting time and checks for both runs
             └─ GET /api/findings/{id}/evidence ─> ordered steps, labels in the template's own terms
     CLI: python -m rulestorm.cli <command> calls the same core functions as each route.
     On startup: any run still marked running → failed (interrupted).
@@ -49,11 +52,13 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `agents.py` | LLM people: prompts generated from the template (with the 6b fixes kept), memory, strategy, cap, deadline, run summary |
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
+| `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `fixture.py` | Export a finished run and restore it as run `demo` (slice 10) |
 | `store.py`, `runner.py`, `api.py`, `cli.py` | Storage (SQLite), background runs, routes, terminal commands |
 | `fixtures/demo_run.json` | The seeded demo run on the new format, with a schema version |
-| `deploy/deploy.sh` | The deploy script |
+| `deploy/deploy.sh`, `deploy/rulestorm.service`, `deploy/rulestorm.env` | The deploy script, the systemd unit and the server's settings template (slice 11; steps in docs/DEPLOY.md) |
 
-Until the switch-over slice, the old `engine.py`, `simulation.py` and `education.py` stay alongside `core/`, and they're deleted there.
+The old `engine.py`, `simulation.py` and `education.py` were deleted at the switch-over (L7, 24 Nov); the old engine stays at git tag `pre-level2`.
 
 ## The building blocks (fixed in code, `rulestorm/core/`)
 A template may only use these. Anything outside them needs new engine code, by design.
@@ -159,7 +164,7 @@ The template has its own pre-filled example policy (for example: "Residents must
   - `store.py` (tables unchanged; records store `template_id@version`);
   - the API routes and CLI shape;
   - the agent framework (`CallBudget`, `CappedModel`, parallel phases, deadline, degraded status);
-  - the runner (7a, built 24 Nov: `runner.py`, one run at a time, events saved each period, the run file written at the end as `run local` writes it) and the caps (7b, not built yet), deploy, and the UI plan.
+  - the runner (7a, built 24 Nov: `runner.py`, one run at a time, events saved each period, the run file written at the end as `run local` writes it) and the caps (7b, built 24 Nov), deploy, and the UI plan.
 - **Ported in its own slice:**
   - **Agent prompts:** generated from the template, keeping the 6b fixes (the slack line, the absences no request covers, the outcomes of the person's last actions). A golden-prompt test (built in L5 as an exact copy) is narrowed at the switch-over (L7): an exact match only for the lines carrying the 6b fixes, and the same facts (not the same wording) for the rest. That keeps one template's old wording from shaping the engine.
     Added on the general engine (L9b–L9d): a "Now:" line naming the current step, with the step on every event line; each person's own requests with the steps they cover and what became of them; for a consenting person, the requests waiting for their consent; for an LLM decider at an open slot, the offered requests and the allowed outcomes; and the number of actions they may propose.
@@ -184,7 +189,7 @@ SQLite, WAL mode, one connection per thread:
 | Table | Fields |
 |---|---|
 | policies | the stored policy texts |
-| blueprints | template id + version, values, facts, assumptions, status, approved, parent_id (variants) |
+| blueprints | template id + version, values, facts, assumptions, status, approved, parent_id (stress variants), counterfactual_of (slice 13 reruns, kept apart so they never count as variants) |
 | runs | status (running / completed / degraded / failed), period and periods, template, model ID, blueprint ID, summary (decisions, calls, llm_errors, cap_hits, tokens), error, started and finished times. A new run is inserted only if none is running, in one statement (built in 7a) |
 | events | run_id, seq, and the whole event (event_id, period, step, type, actor, payload, state_change, caused_by), saved after each period so the timeline can be followed live |
 | decisions | person, prompt hash, raw reply, parsed decision, accepted/rejected + reason, error |
@@ -202,7 +207,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 | Template authoring | Written by us, checked by the template check in pytest | Level 2 trusts tested templates; AI-written templates are Level 3 | A template bug found in a real run is fixed in the file and its version is raised; blueprints keep the version they were made with |
 | Rule-run roles | A fixed library: recorder, queue processor, checker | Keeps the queue and check steps exact and free of LLM calls | Where a role needs judgement, `decided_by: llm` (slice L9b) |
 | Language and API | Python 3.12 + FastAPI + Pydantic + boto3 | The spec's stack; Pydantic checks every blueprint and decision | — |
-| UI | React + Vite + Tailwind, built on a laptop, `web/dist` committed and served by FastAPI (team choice) | Interactive timeline and evidence views; no Node on EC2 | FastAPI templates + plain JS for the hero screens |
+| UI | React + Vite + Tailwind, built on a laptop, `web/dist` committed and served by FastAPI (team choice); screens, calls and states in docs/USER_JOURNEY.md | Interactive timeline and evidence views; no Node on EC2 | FastAPI templates + plain JS for the hero screens |
 | AI model | DeepSeek V3.2 (`deepseek.v3.2`) on Bedrock Converse, in-Region Sydney, for the blueprint and agent decisions (team choice after the day-0 smoke test) | Fast and steady on our account; the Free plan blocks cross-Region | Qwen3 235B (a config change) |
 | Search over documents | No | The input is one short policy text | — |
 | Background runs | A thread in the single uvicorn process, one active run at a time, progress in the store, the UI polls | Must-have 6; judges may start a run themselves | SQS worker (nice-to-have 14) |
@@ -223,7 +228,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 ## Settled questions
 - **Level 2 (24 Nov):** chosen over Level 1. Generality comes from fixed building blocks plus templates as data. AI-drafted templates (Level 3) aren't in this build.
 - **Templates:** attendance (ported) and hostel curfew (a different structure). The AI picks, the user confirms.
-- **Hero:** whichever real finding is strongest at the 26 Nov checkpoint (backlog chain or eligibility failure).
+- **Hero:** chosen 25 Nov: the eligibility failure `demo-F1` (from L-ff6f0ca8), restored as run `demo` on every deploy.
 - **Go/no-go:** 25 Nov at 15:00, with Level 1.5 as the fallback.
 - **Old data:** old blueprints and run logs aren't migrated.
 - **Scope:** both templates are education-institution policies, so "no domains other than education" stays.

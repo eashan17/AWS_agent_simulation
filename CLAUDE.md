@@ -1,6 +1,6 @@
 # RuleStorm
 
-Read first: docs/RULES.md (deadline, demo format, required tech) · docs/BRIEF.md (what and why) · docs/ARCHITECTURE.md (how) · docs/SLICES.md (order, proofs, status)
+Read first: docs/RULES.md (deadline, demo format, required tech) · docs/BRIEF.md (what and why) · docs/ARCHITECTURE.md (how) · docs/SLICES.md (order, proofs, status) · docs/USER_JOURNEY.md (screens for the UI phase) · docs/DEPLOY.md (the live server)
 Set up by /kickoff. All sharing happens through this repo: pull before you start, push when you finish.
 If a file is missing, say which one and use a placeholder; never wait for it.
 
@@ -11,7 +11,7 @@ If it is not installed, skip this and start the task. No other skill runs until 
 
 ## Stack (ask before changing)
 Python 3.12 · FastAPI (API) · Pydantic · Amazon Bedrock via boto3 (ap-southeast-2 Sydney, in-Region models only; Region fixed by the account) · SQLite on the EC2 disk (one storage interface) · Pandas
-UI framework: not chosen yet; decided in /build-plan. No Streamlit. No Vercel, no Supabase.
+UI framework: React + Vite + Tailwind, built on a laptop, `web/dist` served by FastAPI (decided in /build-plan). No Streamlit. No Vercel, no Supabase.
 Hosting: one EC2 instance in the live AWS account, behind CloudFront (see docs/BRIEF.md, Technical decisions). Only EC2 and Bedrock may spend credits; anything else must stay inside an always-free allowance.
 Terminal proofs: `python -m rulestorm.cli <command>` (the CLI calls the same core code the API and UI will use)
 

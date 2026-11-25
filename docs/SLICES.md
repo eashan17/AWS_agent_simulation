@@ -80,6 +80,7 @@ Re-planned 24 Nov for Level 2 (a general engine plus templates; see ARCHITECTURE
 Status values: todo · doing · done · cut · standby (built only if the gate fails)
 
 **Order and dates:**
+- **Status 25 Nov evening:** every must-have slice and slice 13 are done and live at https://d2emiyaz9dq4bi.cloudfront.net (tag `live-20261125c`, 198 tests). Left: 14 and 15 (after the UI, if time). Next: decide the read-only routes the screens need (docs/USER_JOURNEY.md, "Routes the screens need"), then the UI phase (/ui) once the Claude Design handoff is in the repo.
 - **Status 24 Nov evening:** ahead of plan. L1–L8, the whole curfew (L9a–L9d), 7a, 7b, 8, H and 9 are done; the L7 gate said go, so L1.5 is cut. The hero run exists: L-eb97fbe7, and its evidence opens. Next, in order: 10, 11, 12.
 - **24 Nov:** L1–L4.
 - **25 Nov:** L5, L6a, L6b, L7. **Go/no-go at 15:00:** if L7's real runs don't behave like 6b, build L1.5 instead and move the curfew to after the UI. Then L8.
@@ -92,7 +93,9 @@ Status values: todo · doing · done · cut · standby (built only if the gate f
 - **Needs Bedrock:** L6a (canteen proof), L6b, L7, L8, H, L9d, 8 (curl), 10. Every other slice runs on pytest alone.
 
 **For the UI phase:**
-- `.gitignore` ignores every `dist/` folder, so /ui must add `!web/dist/`, and `deploy.sh` must stop if `web/dist/index.html` is missing.
+- **Screens:** docs/USER_JOURNEY.md lists every screen (S1–S9), the route each calls with its real JSON keys, its states and error messages, and the demo path. Build from it.
+- **Read-only routes the screens need:** `GET /api/templates/{id}` and `GET /api/blueprints/{id}` don't exist yet (see the journey's gap table). The UI must not change the core, so they are a small slice before /ui, or the UI hard-codes attendance words.
+- `.gitignore` ignores every `dist/` folder, so /ui must add `!web/dist/`, and `deploy.sh` must stop if `web/dist/index.html` is missing (it doesn't check yet: add the check when `web/dist` first exists).
 - The input screen shows each template's scope line and example input (`GET /api/templates`), so judges don't type an unsupported rule on stage.
 
 **Another way to slice it:** build the hostel curfew template first, then generalise attendance onto it. That's worse: attendance parity (L2–L7) is what protects everything slices 4–6c already proved, and the go/no-go gate only works if that parity is checked first.
