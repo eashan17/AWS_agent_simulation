@@ -11,6 +11,7 @@ import TimeRuler from '../sim/TimeRuler.jsx'
 import { api, ApiError } from '../lib/api.js'
 import { templateIdOf, useAdaptations, useBlueprint, useEvidence, useFindings, useLoad, useRun, useTemplate } from '../lib/hooks.js'
 import { AdaptationList } from '../domain/adaptation.jsx'
+import { PersonPanel } from '../domain/personPanel.jsx'
 import { navigate } from '../lib/router.js'
 import { rememberRun, rememberWhatIf, useSession } from '../lib/session.js'
 import { cap, formatValue, humanize, makeWords, pct } from '../lib/words.js'
@@ -33,8 +34,9 @@ function checkText(e, words) {
 }
 
 /* ------------------------------------------------------------------ Summary */
-function Summary({ run, events, words, findings, onEvidence }) {
+function Summary({ run, events, words, findings, onEvidence, blueprint }) {
   const adapt = useAdaptations(run.run_id, run.status)
+  const [panel, setPanel] = useState(null) // slice 20
   const s = run.summary || {}
   const filed = events.filter((e) => e.type === 'request_filed').length
   const checks = lastChecks(events)
@@ -69,7 +71,7 @@ function Summary({ run, events, words, findings, onEvidence }) {
         </Card>
       </div>
       <Card>
-        <CardTitle title="How each person ended the term" sub="The check result, how often they decided, and their last stated reason" />
+        <CardTitle title="How each person ended the term" sub="The check result, how often they decided, and their last stated reason. Click a name to see everything about them." />
         <div className="overflow-x-auto -mx-2">
           <table className="w-full text-[13px] min-w-[640px]">
             <thead><tr className="text-left text-ink-3 text-[12px]">
@@ -81,7 +83,7 @@ function Summary({ run, events, words, findings, onEvidence }) {
                 const c = checkText(checks[id], words)
                 return (
                   <tr key={id} className="border-t border-line align-top">
-                    <td className="px-2 py-3"><div className="flex items-center gap-2.5"><PersonAvatar colour={words.colour(id)} size={30} mood={c && !c.passed ? 'sad' : 'idle'} /><div><div className="font-medium">{words.name(id)}</div><div className="text-[12px] text-ink-3">{words.label(id)}</div></div></div></td>
+                    <td className="px-2 py-3"><button type="button" onClick={() => setPanel(id)} className="flex items-center gap-2.5 text-left rounded-xl hover:bg-white/60 pr-2" aria-label={`Everything about ${words.name(id)}`}><PersonAvatar colour={words.colour(id)} size={30} mood={c && !c.passed ? 'sad' : 'idle'} /><div><div className="font-medium text-blue-700 underline-offset-2 hover:underline">{words.name(id)}</div><div className="text-[12px] text-ink-3">{words.label(id)}</div></div></button></td>
                     <td className="px-2 py-3">{c ? <span className="inline-flex items-center gap-2"><span className={cx('w-2 h-2 rounded-full', c.passed ? 'bg-ok' : 'bg-bad')} /><span className="tabular font-medium">{c.value}</span><span className="text-ink-3">{c.outcome} · {words.period} {c.period}</span></span> : <span className="text-ink-3">not checked</span>}</td>
                     <td className="px-2 py-3 tabular">{s.decisions_by_agent?.[id] ?? 0}</td>
                     <td className="px-2 py-3 tabular">{refused[id] || 0}</td>
@@ -99,6 +101,10 @@ function Summary({ run, events, words, findings, onEvidence }) {
           : adapt.error ? <ApiErrorBanner error={adapt.error} onRetry={adapt.reload} />
             : <AdaptationList items={adapt.data?.adaptations} words={words} />}
       </Card>
+      {panel && (
+        <PersonPanel id={panel} events={events} words={words} blueprint={blueprint} adaptations={adapt.data?.adaptations}
+          onClose={() => setPanel(null)} onJump={(eventId) => navigate(`/run/${run.run_id}?at=${eventId}`)} />
+      )}
     </div>
   )
 }
@@ -454,7 +460,7 @@ export default function Analysis({ id, tab: rawTab, arg }) {
           {fs.error && <ApiErrorBanner error={fs.error} onRetry={fs.reload} />}
           {fs.loading && tab !== 'whatif' && tab !== 'compare' ? <LoadingBlock label="Finding what went wrong…" /> : (
             <div className="anim-rise" key={tab + (arg || '')}>
-              {tab === 'summary' && <Summary run={run} events={events} words={words} findings={findings} onEvidence={toEvidence} />}
+              {tab === 'summary' && <Summary run={run} events={events} words={words} findings={findings} onEvidence={toEvidence} blueprint={bp.data} />}
               {tab === 'findings' && <Findings run={run} events={events} words={words} findings={findings} onEvidence={toEvidence} />}
               {tab === 'evidence' && <Evidence run={run} events={events} words={words} findings={findings} fid={arg} />}
               {tab === 'whatif' && <WhatIf run={run} words={words} bp={bp.data} />}

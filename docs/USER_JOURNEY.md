@@ -172,6 +172,11 @@ The BRIEF's 8-screen demo journey maps onto this: Landing = S1; Policy input = S
   - `failed`: show `error`, a short sentence, and offer "Run it again".
 - **Errors on start:** 409 with `run_id` ("Another simulation is running" → Watch it); 409 "blueprint not approved"; 429.
 
+## Person panel (slice 20)
+- **Where:** click anyone on the map or in People (S5), or their name in Analysis → Summary's people table. It also filters the timeline to them (S5).
+- **Shows:** who they are (role, AI or rules, profile, their own value at the start), their check result (calculated), their record per occurrence (corrections ringed), their requests with when each was filed and what became of it, how they adapted (slice 19), every decision with their quoted reason and strategy (AI interpretation), and refused actions.
+- **Every item** shows its event ID; clicking it moves the map there (from Analysis it opens `#/run/<id>?at=<event id>`). Esc or Close shuts it; on a phone it fills the screen.
+
 ## S6 Findings
 - **Goal:** see what went wrong in this run, found by rules from the records, not written by an AI.
 - **Calls:** `GET /api/runs/{run_id}/findings` → `{run_id, status, findings: [...]}`. It is empty while the run is going.

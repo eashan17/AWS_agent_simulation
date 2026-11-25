@@ -15,6 +15,7 @@ import { clockAt, deriveWorld, usePlayback } from '../sim/director.js'
 import { api } from '../lib/api.js'
 import { templateIdOf, useAdaptations, useBlueprint, useRun, useTemplate } from '../lib/hooks.js'
 import { adaptedMap } from '../domain/adaptation.jsx'
+import { PersonPanel } from '../domain/personPanel.jsx'
 import { navigate } from '../lib/router.js'
 import { rememberRun } from '../lib/session.js'
 import { cap, checkpointValue, duration, makeWords } from '../lib/words.js'
@@ -50,7 +51,17 @@ export default function Simulation({ id }) {
   const { layout, pb, world, clock } = useStage(events, words)
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [person, setPerson] = useState(null)
+  const [panel, setPanel] = useState(null) // slice 20: the person panel
   const facts = usePeopleFacts(events, pb.count, words || { outcome: () => '' })
+  // Clicking someone follows them on the timeline and opens their panel.
+  const select = (pid) => { setPerson(pid); setPanel(pid) }
+  const jumpTo = (eventId) => {
+    const i = events.findIndex((e) => e.event_id === eventId)
+    if (i >= 0) { pb.pause(); pb.seekIndex(i) }
+  }
+  // `#/run/<id>?at=E-0043` (from a panel in Analysis) opens the map at that event.
+  const at = new URLSearchParams(window.location.hash.split('?')[1] || '').get('at')
+  useEffect(() => { if (at && events.length) jumpTo(at) }, [at, events.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const [rerun, setRerun] = useState({ busy: false, error: null })
 
   useEffect(() => { if (run?.run_id) rememberRun(run.run_id, run.blueprint_id) }, [run?.run_id, run?.blueprint_id])
@@ -111,7 +122,7 @@ export default function Simulation({ id }) {
         <Card pad={false} className="overflow-hidden">
           <div className="p-3 sm:p-4 pb-0">
             {words && layout && world
-              ? <World words={words} layout={layout} world={world} events={events} playback={pb} clock={clock} selected={person} onSelect={setPerson} className="w-full h-auto block rounded-[22px] border border-white" />
+              ? <World words={words} layout={layout} world={world} events={events} playback={pb} clock={clock} selected={person} onSelect={select} className="w-full h-auto block rounded-[22px] border border-white" />
               : <div className="aspect-[2/1] skeleton" />}
           </div>
           <div className="px-4 sm:px-6 pt-4">
@@ -135,7 +146,7 @@ export default function Simulation({ id }) {
             <CardTitle title="People" sub="Click someone to follow them on the map" />
             {words && (
               <div className="thin-scroll overflow-y-auto max-h-[560px] -mx-1 px-1">
-                <PeopleStrip words={words} facts={facts} selected={person} onSelect={setPerson} decisionsByAgent={pb.atEnd ? s.decisions_by_agent : null} />
+                <PeopleStrip words={words} facts={facts} selected={person} onSelect={select} decisionsByAgent={pb.atEnd ? s.decisions_by_agent : null} />
               </div>
             )}
           </Card>
@@ -158,6 +169,10 @@ export default function Simulation({ id }) {
           </Card>
         )}
       </div>
+      {panel && words && (
+        <PersonPanel id={panel} events={events} words={words} blueprint={bp.data} adaptations={adapt.data?.adaptations}
+          onClose={() => setPanel(null)} onJump={jumpTo} />
+      )}
     </div>
   )
 }
