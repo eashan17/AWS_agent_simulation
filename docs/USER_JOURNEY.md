@@ -1,6 +1,6 @@
 # User journey and screens
 
-What the UI phase (`/ui`) builds, screen by screen, on top of the finished core. Everything here uses routes that exist and were proved in slices 1–13. The one exception is listed in **Routes the screens need that don't exist yet**; decide on those before /ui starts, because the UI must not change the core.
+What the UI phase (`/ui`) builds, screen by screen, on top of the finished core. Everything here uses routes that exist and were proved in slices 1–13 and U0. Two optional routes that don't exist yet are listed at the end; the screens work without them.
 
 Written 25 Nov from the code and real responses (run `demo`, run L-960f5653, the live server). Field names below are the real JSON keys.
 
@@ -8,7 +8,7 @@ Written 25 Nov from the code and real responses (run `demo`, run L-960f5653, the
 - **User:** a policymaker at an Indian college. Non-technical; writes rules in plain language; keeps the final decision. On stage, also the judges, who may click through it themselves.
 - **Device:** a laptop browser first (judges and the demo video). It must also work on a phone, read-only, at 16 px side margins with no sideways scrolling.
 - **Link:** https://d2emiyaz9dq4bi.cloudfront.net. The UI is served by FastAPI from the same server (`web/dist`), so every call is a same-origin `/api/...` request. No login, no keys in the browser, and Bedrock is never called from the browser.
-- **Words on screen:** take the template's own words (week/night, session, absent/late, exception request, eligible/not eligible). Never hard-code "attendance" or "student" in the UI: the curfew template must read just as well. See the gap list for where those words come from.
+- **Words on screen:** take the template's own words (week/night, session, absent/late, exception request, eligible/not eligible) from `GET /api/templates/{id}` (`terms`, `calendar`, `people`, `roles`, `parameters`). Never hard-code "attendance" or "student" in the UI: the curfew template must read just as well. A run's `template` is `"attendance@1"`; the ID is the part before `@`.
 
 ## The two paths
 
@@ -219,17 +219,24 @@ The BRIEF's 8-screen demo journey maps onto this: Landing = S1; Policy input = S
 - **Decide panel (bottom):** no AI verdict and no score. Show "You decide", the findings of each run (links to S6), and **Try another condition** (S8) or **Test a new policy** (S2).
 - **Errors:** 409 (a run still going: keep polling); 404; 422 (different templates).
 
-## Routes the screens need that don't exist yet
-The UI must not change the core, so decide these before /ui. Each is a small read-only route on data the server already holds, with no Bedrock.
+## Read routes for the screens
+Built in slice U0 (25 Nov), read-only, no Bedrock, each under 0.01 s:
 
-| # | Route | Needed by | Why | Without it |
-|---|---|---|---|---|
-| 1 | `GET /api/templates/{id}`: `terms`, `calendar` (period and step labels), `people` (id, label, role), `roles` (label, whether AI or rule), and `parameters` (name, kind, type, description, min/max/choices) | S3, S4, S5, S8 | Group values by kind, describe them in plain words, label people, say "week"/"night", and know which conditions S8 may change and their ranges | The UI hard-codes attendance words and ranges, which breaks the curfew template and the general-feature rule |
-| 2 | `GET /api/blueprints/{id}` (the stored record) | S3 after a reload, S5 people strip, S8 current values | The run GET gives only `blueprint_id`; profiles, conditions and current values live in the blueprint | Profiles and current values can't be shown on a run opened by ID (the demo path) |
-| 3 | `GET /api/blueprints/{id}/variants` | S4 after a reload | The POST returns the variants once | Variants vanish on reload |
-| 4 | `GET /api/runs?limit=20` (id, template, status, blueprint, started) | S1 | A list of recent runs instead of typing an ID | Open by ID only (meets must-have 9) |
+- **`GET /api/templates/{id}`** (S2–S9): `{id, version, ref, title, scope, terms, calendar: {periods, steps_per_period, period_label, step_label}, example_input, roles: [{id, label, llm, rules}], people: [{id, role, label}], attributes: [{id, label, role, min, max}], parameters: [{name, kind, type, min, max, choices, attribute, max_length, description}], disruption_kinds: [{id, label, kind}], checks: [{id, label, comparison, ladder}], counterfactual_parameters: [names]}`.
+  - Use `parameters[].kind` to group S3's sections and `description` as each value's plain words.
+  - Use `people[].label` and `roles[].llm` / `rules` for the people cards and the "Run by rules, not AI" row.
+  - Use `calendar.period_label` and `step_label` for "week 5 · session 9".
+  - Use `terms` for the outcome words.
+  - Use `counterfactual_parameters` with each one's `min`/`max`/`choices` for S8's form.
+  - Only shipped template IDs (`attendance`, `hostel_curfew`) answer; anything else is 404.
+- **`GET /api/blueprints/{id}`** (S3 after a reload, S5's people strip, S8's current values): the stored record, exactly as `POST /api/blueprints` returned it, with `approved` as it is now. 404 if missing. To get there from a run, use the run's `blueprint_id`.
 
-Recommendation: build 1 and 2 as one small slice before /ui (about 30 minutes plus tests); 3 and 4 only if time allows.
+Still not built, and not needed for the demo path:
+
+| Route | Needed by | Without it |
+|---|---|---|
+| `GET /api/blueprints/{id}/variants` | S4 after a reload | Variants show only right after the POST |
+| `GET /api/runs?limit=20` | S1, a list of recent runs | Open by ID only (meets must-have 9) |
 
 ## Demo script hooks (for /ship 2)
 - **Open with:** S1 → **Open the demo run**, then S5 already finished (170 events), then S6 → `demo-F1` → S7. The hero lands at about 1 minute.

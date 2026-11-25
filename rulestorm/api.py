@@ -83,6 +83,28 @@ def get_templates() -> list[dict]:
     ]
 
 
+@app.get("/api/templates/{template_id}")
+def get_template(template_id: str) -> dict:
+    """One template's display words, calendar labels, people, roles and parameter specs (slice U0),
+    so every screen reads in that template's own terms."""
+    from rulestorm.catalog import TemplateNotFound, template_info
+
+    try:
+        return template_info(template_id)
+    except TemplateNotFound:
+        raise HTTPException(status_code=404, detail="template not found")
+
+
+@app.get("/api/blueprints/{blueprint_id}", response_model=BlueprintRecord)
+def get_blueprint(blueprint_id: str, store: Store = Depends(get_store)) -> BlueprintRecord:
+    """A stored blueprint record (slice U0): to reopen the review screen, or show a run's people
+    and conditions (a run gives only its `blueprint_id`)."""
+    record = store.get_blueprint(blueprint_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    return record
+
+
 @app.post("/api/policies", response_model=Policy)
 def create_policy(body: PolicyInput, store: Store = Depends(get_store)) -> Policy:
     return store.save_policy(body)

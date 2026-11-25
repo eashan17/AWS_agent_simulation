@@ -12,12 +12,14 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
       └─> CloudFront (HTTPS; /api/* all methods, no cache, 60 s origin timeout)
             └─> EC2 :80  FastAPI, one uvicorn worker (systemd)
             ├─ GET  /api/templates ─> each template's id, title, scope line, example input
+            ├─ GET  /api/templates/{id} ─> its terms, calendar labels, people, roles, parameter specs (U0)
             ├─ POST /api/policies ─> store (each text ≤ 2,000 chars)
             ├─ POST /api/blueprints ─> blueprint cap (atomic, else 429) ─> blueprint.interpret
             │     call 1, pick: policy texts + every template's scope line ─> {template_id | "none", reason}
             │     call 2, fill: that template's values model (built from its parameter specs)
             │     (both share one 55 s wall-clock budget) ─> check values against the template
             │     ─> status valid | invalid | out_of_scope ─> store
+            ├─ GET  /api/blueprints/{id} ─> the stored record (U0)
             ├─ POST /api/blueprints/{id}/approve ─> store (frozen by DB trigger)
             ├─ POST /api/blueprints/{id}/variants ─> blueprint cap ─> explore (environment parameters only)
             ├─ POST /api/runs ─> one active run (409) ─> daily run cap (429) ─> runner thread
@@ -53,6 +55,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `catalog.py` | A template's display words, labels and parameter specs for the screens (slice U0); only shipped template IDs can be named |
 | `fixture.py` | Export a finished run and restore it as run `demo` (slice 10) |
 | `store.py`, `runner.py`, `api.py`, `cli.py` | Storage (SQLite), background runs, routes, terminal commands |
 | `fixtures/demo_run.json` | The seeded demo run on the new format, with a schema version |
