@@ -13,6 +13,7 @@ Billing and Cost Management → Budgets → **Create budget**.
 - Use a template → **Monthly cost budget**. Name: `rulestorm-monthly`.
 - Budgeted amount: **USD 30**. Email: the team inbox, or the account owner's email.
 - After creating it, edit it and add alerts at **50% and 80% of actual** spend, and **100% of forecasted** spend.
+- Ours (25 Nov): alerts at 85% and 100% of actual and 100% of forecasted.
 - Under the budget's advanced options, leave **Credits** unticked. The budget then counts what we use before credits are taken off, which is what runs the credits down.
 
 Check from the laptop: `aws budgets describe-budgets --account-id <id> --profile rulestorm-dev` lists `rulestorm-monthly`.
@@ -69,6 +70,7 @@ Our address: **15.134.48.1**.
 
 ### 6. The code
 - **Public repo:** nothing to do.
+- Ours is **public** since 25 Nov.
 - **Private repo:** make a GitHub fine-grained token with read-only **Contents** access to this one repo and a short expiry. When git asks during a deploy, type your GitHub username and paste the token as the password. Nothing on the server saves it.
 
 ## Deploy (every time)
@@ -114,6 +116,8 @@ curl -s http://<elastic-ip>/api/health
 curl -s http://<elastic-ip>/api/runs/demo
 ```
 
+**Deploy from the laptop without opening a shell:** AWS Systems Manager → Run Command → `AWS-RunShellScript` on instance `rulestorm`, with the later-deploy line above as the command (it runs as root; first deploy on 25 Nov ran this way).
+
 ## On the server
 
 | What | Where |
@@ -128,12 +132,12 @@ The live caps are lower than the code's defaults: 10 runs and 1,000 model calls 
 
 ## Checklist
 
-- [ ] 1 Budgets alert `rulestorm-monthly` listed
-- [ ] 2 Role `rulestorm-ec2` with SSM and `rulestorm-bedrock`
-- [ ] 3 Security group `rulestorm-web` (port 80 only)
-- [ ] 4 Instance `rulestorm`, t3.small, Standard credits, no key pair
-- [ ] 5 Elastic IP associated and written above
-- [ ] 6 Code access (public repo, or a read-only token)
-- [ ] First deploy prints `active (running) as user rulestorm`
-- [ ] `llm smoke` on the server prints `auth: instance-role` and `ok: true`
-- [ ] `curl http://<elastic-ip>/api/runs/demo` from the laptop shows `completed`
+- [x] 1 Budgets alert `rulestorm-monthly` listed
+- [x] 2 Role `rulestorm-ec2` with SSM and `rulestorm-bedrock`
+- [x] 3 Security group `rulestorm-web` (port 80 only)
+- [x] 4 Instance `rulestorm`, t3.small, Standard credits, no key pair
+- [x] 5 Elastic IP associated and written above
+- [x] 6 Code access (public repo, or a read-only token)
+- [x] First deploy prints `active (running) as user rulestorm`
+- [x] `llm smoke` on the server prints `auth: instance-role` and `ok: true`
+- [x] `curl http://<elastic-ip>/api/runs/demo` from the laptop shows `completed`
