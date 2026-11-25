@@ -183,3 +183,4 @@ The live caps are lower than the code's defaults: 10 runs and 1,000 model calls 
 - [x] 7 CloudFront link answers `/api/health` with 200
 - [x] 8 Alarm email confirmed (SNS subscription not `pending confirmation`)
 - [x] `curl http://<elastic-ip>/api/runs/demo` from the laptop shows `completed`
+- [x] 9 After a run, `aws cloudwatch list-metrics --namespace RuleStorm` lists `LLMCalls`, `Tokens`, `RunDurationSeconds` (25 Nov, run L-2237d170)

@@ -55,6 +55,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `telemetry.py` | One CloudWatch embedded-metric log line per finished run: `LLMCalls`, `Tokens`, `RunDurationSeconds` (slice 14) |
 | `catalog.py` | A template's display words, labels and parameter specs for the screens (slice U0); only shipped template IDs can be named |
 | `fixture.py` | Export a finished run and restore it as run `demo` (slice 10) |
 | `store.py`, `runner.py`, `api.py`, `cli.py` | Storage (SQLite), background runs, routes, terminal commands |
