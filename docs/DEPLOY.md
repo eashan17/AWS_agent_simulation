@@ -46,7 +46,7 @@ IAM → Roles → **Create role** → Trusted entity: AWS service → Use case: 
 
 ### 3. Firewall (security group)
 EC2 → Security Groups → **Create security group**. Name: `rulestorm-web`, in the default VPC.
-- Inbound: **HTTP, port 80, from Anywhere-IPv4** (slice 12 narrows this to CloudFront only).
+- Inbound: **HTTP, port 80, from Anywhere-IPv4** (kept open so `http://15.134.48.1` stays as the backup link).
 - No SSH rule: we use Session Manager, so port 22 stays closed.
 
 ### 4. The server
@@ -72,6 +72,32 @@ Our address: **15.134.48.1**.
 - **Public repo:** nothing to do.
 - Ours is **public** since 25 Nov.
 - **Private repo:** make a GitHub fine-grained token with read-only **Contents** access to this one repo and a short expiry. When git asks during a deploy, type your GitHub username and paste the token as the password. Nothing on the server saves it.
+
+### 7. The HTTPS link (CloudFront)
+Created 25 Nov (slice 12): distribution **E1IG4DB09R82EC**, link **https://d2emiyaz9dq4bi.cloudfront.net**. This is the link we submit.
+
+| Setting | Value |
+|---|---|
+| Origin | `ec2-15-134-48-1.ap-southeast-2.compute.amazonaws.com` (the Elastic IP's AWS name; CloudFront needs a name, not an IP), **HTTP only**, port 80 |
+| Origin response timeout | **60 s** (a blueprint takes up to 55 s); keep-alive 5 s |
+| Behaviours | `/api/*` and the default: viewer **Redirect HTTP to HTTPS**; allowed methods **GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE** |
+| Cache policy | **Managed-CachingDisabled** (nothing is cached, so every answer is live) |
+| Origin request policy | **Managed-AllViewer** (headers, query strings and cookies go through to the server) |
+| Compression | on |
+| Price class | **North America, Europe, Asia, Middle East and Africa** (PriceClass_200, includes India) |
+| HTTP versions | HTTP/2 and HTTP/3; IPv6 on |
+
+Cost: inside CloudFront's always-free allowance (1 TB and 10 million requests a month).
+
+### 8. Alarm if the server dies (CloudWatch + SNS)
+- SNS topic **rulestorm-alerts** (Sydney), email subscription to the budget alert's address. The subscription only works after someone clicks **Confirm subscription** in AWS's email.
+- CloudWatch alarm **rulestorm-status-check**:
+  - metric `AWS/EC2 StatusCheckFailed` for the instance, Maximum over 1 minute;
+  - goes off when it is ≥ 1 for 3 minutes in a row;
+  - **missing data counts as failing**, so a stopped server also sets it off;
+  - emails the topic when it goes off and again when the server is OK.
+- Cost: inside the always-free allowances (10 alarms; 1,000 emails a month).
+- This alarm only sees the server. If the app stops while the server is fine, it stays quiet; for that, check `/api/health`.
 
 ## Deploy (every time)
 
@@ -140,4 +166,6 @@ The live caps are lower than the code's defaults: 10 runs and 1,000 model calls 
 - [x] 6 Code access (public repo, or a read-only token)
 - [x] First deploy prints `active (running) as user rulestorm`
 - [x] `llm smoke` on the server prints `auth: instance-role` and `ok: true`
+- [x] 7 CloudFront link answers `/api/health` with 200
+- [x] 8 Alarm email confirmed (SNS subscription not `pending confirmation`)
 - [x] `curl http://<elastic-ip>/api/runs/demo` from the laptop shows `completed`
