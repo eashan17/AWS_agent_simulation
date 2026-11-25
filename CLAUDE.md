@@ -57,4 +57,4 @@ test: `python -m pytest`
 cli: `python -m rulestorm.cli <command>`
 reset-demo: `python -m rulestorm.cli reset-demo` (restores the seeded real run as run `demo`; no Bedrock)
 demo: (added by /ship 2)
-deploy: in a Session Manager shell on the instance, `cd ~/rulestorm && git fetch --tags && git checkout <tag> && bash deploy/deploy.sh <tag>` (one-time console setup and first deploy: docs/DEPLOY.md)
+deploy: in a Session Manager shell on the instance, `sudo git -C /opt/rulestorm/src fetch --tags && sudo git -C /opt/rulestorm/src checkout <tag> && bash /opt/rulestorm/src/deploy/deploy.sh <tag>` (one-time console setup and first deploy: docs/DEPLOY.md)

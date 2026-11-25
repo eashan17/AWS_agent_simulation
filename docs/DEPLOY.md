@@ -50,8 +50,8 @@ EC2 → Security Groups → **Create security group**. Name: `rulestorm-web`, in
 
 ### 4. The server
 EC2 → **Launch instance**.
-- Name: `rulestorm`.
-- Image: **Ubuntu Server 24.04 LTS**, 64-bit (x86).
+- Name: `rulestorm`. Instance `i-08888d059fbc81572`.
+- Image: **Ubuntu Server LTS**, 64-bit (x86). Ours runs 26.04 (Python 3.14); the script needs Python 3.12 or newer.
 - Instance type: **t3.small**.
 - Key pair: **Proceed without a key pair**.
 - Network: default VPC, auto-assign public IP **on**, security group **rulestorm-web**.
@@ -65,7 +65,7 @@ Cost from our credits: about USD 0.03 an hour for the server, plus USD 0.005 an 
 
 ### 5. A fixed address (Elastic IP)
 EC2 → Elastic IPs → **Allocate Elastic IP address** → Allocate. Then Actions → **Associate** → instance `rulestorm`.
-Write the address here: `[MISSING: elastic IP]`.
+Our address: **15.134.48.1**.
 
 ### 6. The code
 - **Public repo:** nothing to do.
@@ -80,14 +80,16 @@ git push origin <tag>
 ```
 In EC2 → the instance → **Connect** → **Session Manager** → Connect. The shell starts in `sh`, so type `bash` first.
 
+The server keeps one checkout in `/opt/rulestorm/src`, owned by root, so the same commands work from Session Manager and from Run Command.
+
 **First time:**
 ```
-cd ~ && git clone https://github.com/eashan17/AWS_agent_simulation.git rulestorm && cd rulestorm && git checkout <tag> && bash deploy/deploy.sh <tag>
+sudo git clone https://github.com/eashan17/AWS_agent_simulation.git /opt/rulestorm/src && sudo git -C /opt/rulestorm/src checkout <tag> && bash /opt/rulestorm/src/deploy/deploy.sh <tag>
 ```
 
 **Later deploys:**
 ```
-cd ~/rulestorm && git fetch --tags && git checkout <tag> && bash deploy/deploy.sh <tag>
+sudo git -C /opt/rulestorm/src fetch --tags && sudo git -C /opt/rulestorm/src checkout <tag> && bash /opt/rulestorm/src/deploy/deploy.sh <tag>
 ```
 
 The script ends with these lines:

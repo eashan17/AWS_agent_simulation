@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploys one tagged version of RuleStorm on the EC2 instance (slice 11).
 #
-# In a Session Manager shell, from the repo checkout at that tag:
+# In a Session Manager shell, from the server's checkout (/opt/rulestorm/src) at that tag:
 #     bash deploy/deploy.sh <tag>
 # It installs the tag in /opt/rulestorm/releases/<tag>, writes /etc/rulestorm.env only if it is
 # missing (settings only), restores the seeded demo run (`reset-demo`, no Bedrock) and restarts
@@ -16,7 +16,7 @@ if ! [[ "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then echo "not a tag name: $TAG" >&2; ex
 if [ "$(id -u)" -ne 0 ]; then exec sudo bash "$0" "$@"; fi
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OWNER="${SUDO_USER:-root}"   # who owns the checkout; git runs as them, never as root
+OWNER="$(stat -c %U "$SRC")"   # git runs as the checkout's owner, so it never trips over file ownership
 APP=/opt/rulestorm
 DATA=/var/lib/rulestorm
 ENV_FILE=/etc/rulestorm.env
@@ -38,19 +38,24 @@ say "deploying tag $TAG (commit $COMMIT)"
 need=()
 command -v git >/dev/null || need+=(git)
 command -v curl >/dev/null || need+=(curl)
-dpkg -s python3.12-venv >/dev/null 2>&1 || need+=(python3.12-venv)
+dpkg -s python3-venv >/dev/null 2>&1 || need+=(python3-venv)
 if [ "${#need[@]}" -gt 0 ]; then
   say "installing ${need[*]}"
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${need[@]}" >/dev/null
 fi
 
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
+  echo "RuleStorm needs Python 3.12 or newer; this server has $(python3 --version 2>&1)" >&2; exit 1
+fi
+say "using $(python3 --version)"
+
 REL="$APP/releases/$TAG"
 NEW="$REL.new"
 rm -rf "$NEW"
 mkdir -p "$NEW"
 git_src archive "refs/tags/$TAG" | tar -x -C "$NEW"
-python3.12 -m venv "$NEW/.venv"
+python3 -m venv "$NEW/.venv"
 "$NEW/.venv/bin/python" -m pip install --quiet --disable-pip-version-check "$NEW"
 rm -rf "$REL"
 mv "$NEW" "$REL"
