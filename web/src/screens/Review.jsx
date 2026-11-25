@@ -13,7 +13,7 @@ import { api } from '../lib/api.js'
 import { useBlueprint, useElapsed, useTemplate, useTemplates } from '../lib/hooks.js'
 import { navigate } from '../lib/router.js'
 import { rememberRun, setSession } from '../lib/session.js'
-import { makeWords, humanize, cap, formatValue } from '../lib/words.js'
+import { makeWords, humanize, cap, checkpointValue, formatValue } from '../lib/words.js'
 
 const SECTIONS = [
   { kind: 'policy', title: 'Policy rules', sub: 'What the rule says.' },
@@ -22,10 +22,7 @@ const SECTIONS = [
 ]
 const variantsCache = new Map()
 
-function checkpointOf(values, words) {
-  const p = (words.template.parameters || []).find((x) => x.kind === 'environment' && x.type === 'int' && /checkpoint|_week$|check/.test(x.name))
-  return p ? values[p.name] : null
-}
+const checkpointOf = (values, words) => checkpointValue(values, words)
 
 function useStartRun() {
   const [busy, setBusy] = useState(false)

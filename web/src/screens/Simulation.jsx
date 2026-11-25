@@ -16,16 +16,13 @@ import { api } from '../lib/api.js'
 import { templateIdOf, useBlueprint, useRun, useTemplate } from '../lib/hooks.js'
 import { navigate } from '../lib/router.js'
 import { rememberRun } from '../lib/session.js'
-import { cap, duration, makeWords } from '../lib/words.js'
+import { cap, checkpointValue, duration, makeWords } from '../lib/words.js'
 
+/** The check's period: where the run recorded it, else the blueprint's checkpoint value (a live run before its check). */
 export function checkpointFrom(bp, words, events) {
-  const values = bp?.blueprint?.values
-  if (values) {
-    const p = (words.template.parameters || []).find((x) => x.kind === 'environment' && x.type === 'int' && /checkpoint|_week$/.test(x.name))
-    if (p) return values[p.name]
-  }
   const c = events.find((e) => e.type === 'check_evaluated')
-  return c ? c.period : null
+  if (c) return c.period
+  return checkpointValue(bp?.blueprint?.values, words)
 }
 
 /** Stage + term track + playback, reusable by any screen that shows a run. */

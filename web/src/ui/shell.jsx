@@ -103,7 +103,7 @@ export function Stepper({ current, recorded, className }) {
               </span>
               <span className={cx('text-[13px]', now ? 'font-semibold text-ink' : done ? 'hidden sm:inline text-ink-2' : 'hidden sm:inline text-ink-3')}>{s.label}</span>
               {now && <span className="hidden md:inline text-[12px] text-ink-3">· {s.sub}</span>}
-              {done && recorded && s.n < 3 && <span className="hidden md:inline text-[11.5px] text-ink-3">(recorded run)</span>}
+              {done && recorded && s.n < 3 && <span className="hidden md:inline text-[11.5px] text-ink-3">(done for this run)</span>}
             </span>
             {i < JOURNEY.length - 1 && <span className={cx('h-px w-4 sm:w-10', done ? 'bg-blue-600' : 'bg-ink-4/50')} aria-hidden />}
           </li>

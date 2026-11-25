@@ -78,6 +78,17 @@ export function makeWords(template) {
   }
 }
 
+/**
+ * The period a blueprint's check runs at: the environment value named for the checkpoint
+ * (attendance: checkpoint_week). Not any `_week` name: office_capacity_per_week is a capacity.
+ * A template without one (curfew) has no fixed check period, so nothing is marked.
+ */
+export function checkpointValue(values, words) {
+  if (!values || !words) return null
+  const p = (words.template.parameters || []).find((x) => x.kind === 'environment' && x.type === 'int' && x.name.includes('checkpoint'))
+  return p ? values[p.name] ?? null : null
+}
+
 export function formatValue(v, param) {
   if (v === true) return 'yes'
   if (v === false) return 'no'
