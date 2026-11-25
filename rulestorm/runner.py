@@ -165,5 +165,7 @@ def recover_interrupted(store) -> list[str]:
         log.warning("run %s was still running at startup: marked failed (interrupted)", run_id)
     for comparison_id in store.fail_running_comparisons(INTERRUPTED):  # slice 15
         log.warning("comparison %s was still running at startup: marked failed (interrupted)", comparison_id)
+    for search_id in store.fail_running_searches(INTERRUPTED):  # slice 16
+        log.warning("search %s was still running at startup: marked failed (interrupted)", search_id)
     return ids
 

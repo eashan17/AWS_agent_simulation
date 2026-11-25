@@ -63,6 +63,10 @@ class RunRequest(BaseModel):
     blueprint_id: str = Field(min_length=1, max_length=64)
 
 
+class SearchRequest(BaseModel):
+    max_runs: int = Field(6, ge=3, le=9, description="runs the search may use, confirming reruns included")
+
+
 class ComparisonRequest(BaseModel):
     blueprint_id: str = Field(min_length=1, max_length=64)
 
@@ -268,6 +272,51 @@ def get_comparison_route(comparison_id: str, store: Store = Depends(get_store)) 
         return get_comparison(store, comparison_id)
     except ComparisonNotFound:
         raise HTTPException(status_code=404, detail="comparison not found")
+
+
+@app.post("/api/blueprints/{blueprint_id}/search")
+def post_search(blueprint_id: str, body: SearchRequest | None = None, store: Store = Depends(get_store),
+                model: llm.Model = Depends(get_blueprint_model),
+                agent_model: llm.Model | None = Depends(get_agent_model),
+                runs_dir: str = Depends(get_runs_dir)) -> dict:
+    """A guided search for the conditions that break an approved policy (slice 16): rounds of 2
+    AI-targeted and 1 random scenario, each round told how close the last runs came, stopping at a
+    break a rerun repeats. Answers at once; follow it with GET /api/searches/{id}."""
+    from rulestorm.comparison import ComparisonActive
+    from rulestorm.runner import RunActive
+    from rulestorm.search import SearchActive, start_search
+
+    try:
+        return start_search(store, blueprint_id, max_runs=(body or SearchRequest()).max_runs, model=model,
+                            agent_model=agent_model, out_dir=runs_dir)
+    except BlueprintNotFound:
+        raise HTTPException(status_code=404, detail="blueprint not found")
+    except BlueprintNotApproved:
+        raise HTTPException(status_code=409, detail="blueprint not approved")
+    except SearchActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a search is already running",
+                                                      "search_id": exc.search_id})
+    except ComparisonActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a comparison is already running",
+                                                      "comparison_id": exc.comparison_id})
+    except RunActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a run is already running", "run_id": exc.run_id})
+    except DailyCapReached as exc:
+        raise HTTPException(status_code=429, detail=f"daily limit reached ({exc}), try again tomorrow")
+    except ValueError as exc:  # the template changed since the blueprint was made
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.get("/api/searches/{search_id}")
+def get_search_route(search_id: str, store: Store = Depends(get_store)) -> dict:
+    """A search as it stands: its rounds, each scenario's changes, runs and closeness, and the
+    result once it ends (slice 16). Labelled within-model evidence."""
+    from rulestorm.search import SearchNotFound, get_search
+
+    try:
+        return get_search(store, search_id)
+    except SearchNotFound:
+        raise HTTPException(status_code=404, detail="search not found")
 
 
 @app.get("/api/runs/{run_id}/findings")

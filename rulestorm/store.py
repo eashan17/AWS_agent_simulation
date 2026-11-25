@@ -91,6 +91,15 @@ CREATE TABLE IF NOT EXISTS comparisons (
     record TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- Guided scenario searches (slice 16): rounds of targeted and random scenarios, their runs and
+-- closeness, and the result. Same shape as comparisons.
+CREATE TABLE IF NOT EXISTS searches (
+    id TEXT PRIMARY KEY,
+    blueprint_id TEXT NOT NULL REFERENCES blueprints(id),
+    status TEXT NOT NULL,
+    record TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 USAGE_COUNTERS = ("runs", "llm_calls", "blueprint_calls")
@@ -334,36 +343,68 @@ class Store:
                              [(f["finding_id"], run["id"], f["kind"], json.dumps(f, ensure_ascii=False))
                               for f in findings])
 
-    def save_comparison(self, record: dict) -> None:
+    # Comparisons (slice 15) and searches (slice 16) are stored the same way: one JSON record each.
+    def _save_job(self, table: str, record: dict) -> None:
         conn = self._conn()
         with conn:
-            conn.execute("INSERT INTO comparisons (id, blueprint_id, status, record, created_at) VALUES (?, ?, ?, ?, ?)",
+            conn.execute(f"INSERT INTO {table} (id, blueprint_id, status, record, created_at) VALUES (?, ?, ?, ?, ?)",
                          (record["id"], record["blueprint_id"], record["status"],
                           json.dumps(record, ensure_ascii=False), record["created_at"]))
 
-    def update_comparison(self, record: dict) -> None:
+    def _update_job(self, table: str, record: dict) -> None:
         conn = self._conn()
         with conn:
-            conn.execute("UPDATE comparisons SET status = ?, record = ? WHERE id = ?",
+            conn.execute(f"UPDATE {table} SET status = ?, record = ? WHERE id = ?",
                          (record["status"], json.dumps(record, ensure_ascii=False), record["id"]))
 
-    def get_comparison(self, comparison_id: str) -> dict | None:
-        row = self._conn().execute("SELECT record FROM comparisons WHERE id = ?", (comparison_id,)).fetchone()
+    def _get_job(self, table: str, job_id: str) -> dict | None:
+        row = self._conn().execute(f"SELECT record FROM {table} WHERE id = ?", (job_id,)).fetchone()
         return json.loads(row["record"]) if row else None
 
-    def running_comparison(self) -> str | None:
-        row = self._conn().execute("SELECT id FROM comparisons WHERE status = 'running' LIMIT 1").fetchone()
+    def _running_job(self, table: str) -> str | None:
+        row = self._conn().execute(f"SELECT id FROM {table} WHERE status = 'running' LIMIT 1").fetchone()
         return row["id"] if row else None
+
+    def _fail_running_jobs(self, table: str, error: str) -> list[str]:
+        out = []
+        for row in self._conn().execute(f"SELECT record FROM {table} WHERE status = 'running'").fetchall():
+            record = json.loads(row["record"])
+            record.update(status="failed", error=error, finished_at=_now())
+            self._update_job(table, record)
+            out.append(record["id"])
+        return out
+
+    def save_comparison(self, record: dict) -> None:
+        self._save_job("comparisons", record)
+
+    def update_comparison(self, record: dict) -> None:
+        self._update_job("comparisons", record)
+
+    def get_comparison(self, comparison_id: str) -> dict | None:
+        return self._get_job("comparisons", comparison_id)
+
+    def running_comparison(self) -> str | None:
+        return self._running_job("comparisons")
 
     def fail_running_comparisons(self, error: str) -> list[str]:
         """Every comparison still marked running becomes failed with `error`; returns their IDs."""
-        out = []
-        for row in self._conn().execute("SELECT record FROM comparisons WHERE status = 'running'").fetchall():
-            record = json.loads(row["record"])
-            record.update(status="failed", error=error, finished_at=_now())
-            self.update_comparison(record)
-            out.append(record["id"])
-        return out
+        return self._fail_running_jobs("comparisons", error)
+
+    def save_search(self, record: dict) -> None:
+        self._save_job("searches", record)
+
+    def update_search(self, record: dict) -> None:
+        self._update_job("searches", record)
+
+    def get_search(self, search_id: str) -> dict | None:
+        return self._get_job("searches", search_id)
+
+    def running_search(self) -> str | None:
+        return self._running_job("searches")
+
+    def fail_running_searches(self, error: str) -> list[str]:
+        """Every search still marked running becomes failed with `error`; returns their IDs."""
+        return self._fail_running_jobs("searches", error)
 
     def update_blueprint(self, blueprint_id: str, blueprint: TemplateBlueprint) -> BlueprintRecord:
         """Edit a blueprint before approval (e.g. corrected assumptions). Refused once approved."""

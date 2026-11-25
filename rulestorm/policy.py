@@ -76,6 +76,9 @@ class BlueprintDraft(BaseModel):
     # Policy comparisons (slice 15): the approved blueprint this one rewrites as a strict, flexible
     # or progressive version (`variant` holds which); environment and people are its own.
     comparison_of: str | None = None
+    # Guided searches (slice 16): the search this scenario belongs to (its parent is the search's
+    # blueprint). Kept apart from parent_id so search scenarios never show up as stress variants.
+    search_of: str | None = None
 
 
 class BlueprintRecord(BlueprintDraft):

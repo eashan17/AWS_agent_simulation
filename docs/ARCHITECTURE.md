@@ -40,6 +40,9 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
             ├─ POST /api/comparisons {blueprint_id} ─> Bedrock (strict / flexible / progressive policy values)
             │      ─> 3 approved blueprints, run one after another in the background (slice 15)
             ├─ GET /api/comparisons/{id} ─> progress, then a trade-off table per version (no score)
+            ├─ POST /api/blueprints/{id}/search {max_runs} ─> rounds of 2 Bedrock-targeted + 1 random scenario,
+            │      each round told how close the last runs came; a break must repeat on a rerun (slice 16)
+            ├─ GET /api/searches/{id} ─> rounds, closeness per run, result (broken / not_broken + closest)
             └─ GET /api/findings/{id}/evidence ─> ordered steps, labels in the template's own terms
     CLI: python -m rulestorm.cli <command> calls the same core functions as each route.
     On startup: any run still marked running → failed (interrupted).
@@ -58,6 +61,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `search.py` | Guided scenario search: closeness from each run's records, random scenarios within the template's ranges, rounds that push the closest weak point, a confirming rerun (slice 16) |
 | `comparison.py` | Strict, flexible and progressive policy versions under the same environment and people, run in turn, compared as a trade-off table (slice 15) |
 | `telemetry.py` | One CloudWatch embedded-metric log line per finished run: `LLMCalls`, `Tokens`, `RunDurationSeconds` (slice 14) |
 | `catalog.py` | A template's display words, labels and parameter specs for the screens (slice U0); only shipped template IDs can be named |
@@ -197,7 +201,8 @@ SQLite, WAL mode, one connection per thread:
 | Table | Fields |
 |---|---|
 | policies | the stored policy texts |
-| blueprints | template id + version, values, facts, assumptions, status, approved, parent_id (stress variants), counterfactual_of (slice 13 reruns, kept apart so they never count as variants), comparison_of (slice 15 policy versions; `variant` names which) |
+| blueprints | template id + version, values, facts, assumptions, status, approved, parent_id (stress variants), counterfactual_of (slice 13 reruns, kept apart so they never count as variants), comparison_of (slice 15 policy versions; `variant` names which), search_of (slice 16 search scenarios) |
+| searches | blueprint id, status, record (rounds, scenarios, runs with closeness, result) (slice 16) |
 | comparisons | blueprint id, status, record (versions with their blueprint and run, kept values, progress) (slice 15) |
 | runs | status (running / completed / degraded / failed), period and periods, template, model ID, blueprint ID, summary (decisions, calls, llm_errors, cap_hits, tokens), error, started and finished times. A new run is inserted only if none is running, in one statement (built in 7a) |
 | events | run_id, seq, and the whole event (event_id, period, step, type, actor, payload, state_change, caused_by), saved after each period so the timeline can be followed live |
