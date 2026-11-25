@@ -70,6 +70,9 @@ class BlueprintDraft(BaseModel):
     parent_id: str | None = None
     variant: str | None = None
     weak_point: str | None = None
+    # Counterfactual reruns (slice 13): the blueprint this one copies with one environment value
+    # changed. Kept apart from parent_id so a counterfactual never shows up as a stress variant.
+    counterfactual_of: str | None = None
 
 
 class BlueprintRecord(BlueprintDraft):

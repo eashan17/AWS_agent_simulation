@@ -63,6 +63,11 @@ class RunRequest(BaseModel):
     blueprint_id: str = Field(min_length=1, max_length=64)
 
 
+class CounterfactualRequest(BaseModel):
+    parameter: str = Field(min_length=1, max_length=64)
+    value: bool | int | str = Field(description="the new value; checked against the template's range or choices")
+
+
 @app.get("/api/health")
 def health() -> dict[str, bool]:
     return {"ok": True}
@@ -159,6 +164,44 @@ def get_run(run_id: str, after: int = Query(0, ge=0, description="only timeline 
         raise HTTPException(status_code=404, detail="run not found")
     run["run_id"] = run.pop("id")  # the same name the POST answers with
     return {**run, "timeline": store.run_events(run_id, after_seq=after)}
+
+
+@app.post("/api/runs/{run_id}/counterfactual")
+def post_counterfactual(run_id: str, body: CounterfactualRequest, store: Store = Depends(get_store),
+                        model: llm.Model | None = Depends(get_agent_model), runs_dir: str = Depends(get_runs_dir)):
+    """Reruns the run's term with one environment condition changed, everything else matched
+    (slice 13). Answers at once with the new run's ID, like POST /api/runs."""
+    from rulestorm.counterfactual import CounterfactualRefused, RunNotFound, start_counterfactual
+    from rulestorm.runner import RunActive
+
+    try:
+        return start_counterfactual(store, run_id, body.parameter, body.value, model=model, out_dir=runs_dir)
+    except RunNotFound:
+        raise HTTPException(status_code=404, detail="run not found")
+    except CounterfactualRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RunActive as exc:
+        return JSONResponse(status_code=409, content={"detail": "a run is already running", "run_id": exc.run_id})
+    except DailyCapReached:
+        raise HTTPException(status_code=429, detail="daily run limit reached, try again tomorrow")
+    except ValueError as exc:  # the template changed since the blueprint was made
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.get("/api/runs/{run_id}/compare/{other_run_id}")
+def get_compare(run_id: str, other_run_id: str, store: Store = Depends(get_store)) -> dict:
+    """Two finished runs side by side: queue length, waiting time and check results, and every
+    value their blueprints differ in (slice 13). Labelled within-model evidence."""
+    from rulestorm.counterfactual import CounterfactualRefused, RunNotFinished, RunNotFound, compare
+
+    try:
+        return compare(store, run_id, other_run_id)
+    except RunNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"run not found: {exc}")
+    except RunNotFinished as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except CounterfactualRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.get("/api/runs/{run_id}/findings")
