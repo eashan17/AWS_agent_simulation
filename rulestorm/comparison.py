@@ -86,8 +86,17 @@ def kept(template: Template, parent: TemplateBlueprint) -> list[Parameter]:
 
 
 def changeable(template: Template, parent: TemplateBlueprint) -> list[Parameter]:
+    """The policy values a version may set. A choice value the template allows only when the
+    policy states it (stated_only) is left out, unless the approved policy already holds it."""
     fixed = {p.name for p in kept(template, parent)}
-    return [p for p in policy_params(template) if p.name not in fixed]
+    out = []
+    for p in policy_params(template):
+        if p.name in fixed:
+            continue
+        if p.stated_only and parent.values.get(p.name) not in p.stated_only:
+            p = p.model_copy(update={"choices": [c for c in p.choices if c not in p.stated_only], "stated_only": []})
+        out.append(p)
+    return out
 
 
 # --- the proposal -------------------------------------------------------------------------------
@@ -292,19 +301,26 @@ def _column(store, template: Template, run_id: str) -> dict[str, Any]:
     m = measures(events)
     traveller = _traveller_role(template)
     staff = {x.id for x in template.people if x.role != traveller}
-    decisions = [e for e in events if e["type"] == "decision"]
+    known = {a.id for a in template.actions}  # an action the model made up is a mistyped reply
     return {
         "run": m,
         "check_failed": m["check_failed"],
         "pending_at_check": m["pending_at_check"],
         "requests_filed": m["requests_filed"],
-        "refused_actions": sum(e["type"] == "action_rejected" for e in events),
+        # Only refusals by a rule (permission, a precondition), not a reply the model mistyped.
+        "refused_actions": sum(e["type"] == "action_rejected"
+                               and not str(e["payload"].get("reason", "")).startswith("bad parameters")
+                               and e["payload"].get("action") in known
+                               for e in events),
         "queue_longest": m["queue_length"]["longest"],
         "periods_over_capacity": m["queue_length"]["periods_over_capacity"],
         "wait_mean": m["waiting_time"]["mean"],
         "never_decided": m["waiting_time"]["never_decided"],
-        "staff_decisions": sum(e["actor"] in staff for e in decisions),
-        "messages": sum(e["type"] in ("message_sent", "response_given") for e in events),
+        # The office's workload: requests it decided (by rule or by a person), not every staff turn.
+        "requests_decided": sum(e["type"] == "request_decided" for e in events),
+        "requests_rejected": sum(e["type"] == "request_decided" and e["payload"].get("decision") == "rejected"
+                                 for e in events),
+        "messages": sum(e["type"] in ("message_sent", "response_given") and e["actor"] in staff for e in events),
         "llm_calls": (run.get("summary") or {}).get("llm_calls"),
     }
 
@@ -318,7 +334,8 @@ ROWS = [
     ("periods_over_capacity", "periods the queue was over capacity"),
     ("wait_mean", "average wait for a decision (periods)"),
     ("never_decided", "requests never decided"),
-    ("staff_decisions", "decisions by staff (workload)"),
+    ("requests_decided", "requests decided (the office's workload)"),
+    ("requests_rejected", "requests rejected"),
     ("messages", "messages from staff to people"),
     ("llm_calls", "model calls"),
 ]

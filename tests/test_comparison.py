@@ -29,8 +29,8 @@ VERSIONS = json.dumps({
     "flexible": version("provisions for disruptions", partial_at_submit=True, partial_at_decide=True,
                         exception_rule="disruptions outside a student's control are excused once verified"),
     # tries to change the environment too; the reply has no such field, so it can't
-    "progressive": version("early warnings and advisor support", decision_rule="approve_all",
-                           office_capacity_per_week=40, checkpoint_week=2),
+    "progressive": version("early warnings and advisor support", decision_rule="approve_if_covered_missed",
+                           partial_at_submit=True, office_capacity_per_week=40, checkpoint_week=2),
 })
 
 
@@ -81,7 +81,8 @@ def test_three_versions_differ_only_in_policy_and_give_a_table_with_no_score(htt
     table = done["table"]
     assert table["columns"] == ["strict", "flexible", "progressive"]
     measures = {row["measure"] for row in table["rows"]}
-    assert {"check_failed", "requests_filed", "refused_actions", "queue_longest", "staff_decisions"} <= measures
+    assert {"check_failed", "requests_filed", "refused_actions", "queue_longest", "requests_decided",
+            "requests_rejected"} <= measures
     assert all(set(row) >= {"strict", "flexible", "progressive"} for row in table["rows"])
     assert table["checks"] and all({"strict", "flexible", "progressive"} <= set(row) for row in table["checks"])
     assert "score" not in json.dumps(table).lower() and done["no_overall_score"]
@@ -138,3 +139,7 @@ def test_the_prompt_names_all_three_versions_and_only_policy_values(store, appro
     assert "- threshold_pct:" not in prompt and "as the policymaker stated them: threshold_pct 80" in prompt
     schema = comparison.comparison_schema(template, approved.blueprint)
     assert set(schema.model_fields) == {"strict", "flexible", "progressive"}
+    # "Approve every request" needs the policy's own words, so a version can't invent it (26 Nov).
+    assert "approve_all" not in prompt
+    with pytest.raises(Exception):
+        schema.model_validate(json.loads(VERSIONS.replace('"approve_if_covered_missed"', '"approve_all"')))

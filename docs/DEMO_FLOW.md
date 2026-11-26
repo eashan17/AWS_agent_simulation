@@ -7,8 +7,10 @@ Link: https://d2emiyaz9dq4bi.cloudfront.net (every screen has a `#/...` address,
 ## The idea in one line
 The replay is the hook; the stress-test results are the product. One recorded term shows *how* a rule hurts one student. Then several pre-run scenarios show *where, how often and for whom* the same rule breaks, and what each fix changes, so the policymaker can decide.
 
-**What the audience should leave with (numbers from the live recordings):**
-> "Your 80% attendance rule holds in a normal term. Two searches found no confirmed break, but it came close: with **three weeks of transport trouble, a short-staffed office and the check at week 7**, the commuter reached "not eligible" in one run (the rerun had 2 absences to spare). The people it hurts are the **working** and **resident** students, because **the eligibility check comes before they can get an exception in**. It isn't one unlucky run: the working student failed in **2 of 3** runs of the same conditions. In the what-if that moved the check to week 8, **nobody failed (working 72.7% → 92.3%)**. Under the strict, flexible and progressive versions nobody failed in their run; **flexible drew 7 requests (strict 2), 3 refused actions and 6 staff decisions (strict 4), while progressive had no refused actions at the same 4 staff decisions**. RuleStorm doesn't pick a winner. You decide."
+**What the audience should leave with: to be rewritten from the re-recorded runs (every ID below was recorded before the 26 Nov engine changes; see "Rough spots").** Build it from these, and only from real numbers:
+> "Your 80% rule holds in a normal term. **[Under which conditions it breaks, from the search, confirmed by a rerun.]** The people it hurts are **[who, from the repeat: N of M runs]**, because **[why, from the evidence: for example, a valid absence in the check week can't be excused before the check]**. **[What a what-if changes, said as one run unless repeated.]** The strict, flexible and progressive versions **[who fails under each, requests decided and rejected]**. RuleStorm doesn't pick a winner. You decide."
+
+Say the check week as what it is: the policy only says "checked at a set point in the term"; **week 6 is the stress test's harsher assumption** (B-da347452 lists it under assumptions), not the policy as written.
 
 ## Part 1: the scenario set (record before the demo)
 Everything new since 25 Nov (searches, policy comparisons, repeated runs) was recorded on a laptop only. On the live server `S-2d62ad10`, `S-187da29f`, `C-f379c698`, `C-108c10ba` and `R-b97baf8d` all answer 404. So each scenario below has to be run once on the live link. Every one is a real run, and none is hand-made.
@@ -76,8 +78,8 @@ The "what-ifs from this run" list is kept per browser, so on a different laptop 
 
 ### B. Stress-test results: where, how often, what fixes it (1:05–2:40)
 **4. Search for breaks, `#/blueprint/B-da347452/search/S-b4501248` (1:05–1:35)**
-- **Say:** "This is the same 80% policy as the AI first read it. In a normal term everyone is eligible. So we let RuleStorm hunt: each round the AI aims at the weak point the last runs came closest to breaking, and random scenarios look where it wouldn't."
-- **Point at:** round 1's cards (targeted / random, what changed, the closeness bars), round 2 naming the weak point it pushes, then the result: **"The policy breaks under …"** with who reached "not eligible", and the confirming rerun. A break counts only once a rerun repeats it.
+- **Say:** "In a normal term everyone is eligible. So we let RuleStorm hunt, here on the harsher version the stress test proposed (B-da347452; for the policy as first read, use the B-a49b586e search): each round the AI aims at the weak point the last runs came closest to breaking, and random scenarios look where it wouldn't."
+- **Point at:** round 1's cards (targeted / random, what changed, the closeness bars), then round 2 naming the weak point it pushes if the search reached one (S-b4501248 had round 1 only), then the result: **"The policy breaks under …"** with who reached "not eligible", and the confirming rerun. A break counts only once a rerun repeats it.
 - If the search held: point at "The policy held: not broken in N runs" and the closest call ("working: 2 absences to spare"). That is the insight: the working student is always the first to go. Then bookmark #7 if it was recorded.
 
 **5. Repeat runs, `#/blueprint/B-da347452/repeat/R-f9db0944` (1:35–1:55)**
@@ -90,7 +92,7 @@ The "what-ifs from this run" list is kept per browser, so on a different laptop 
 
 **7. Compare policies, `#/blueprint/B-da347452/compare/C-61168412` (2:15–2:40)**
 - **Say:** "Or change the rule itself. RuleStorm writes a strict, a flexible and a progressive version, keeping what you stated (80%, per course), and runs each under the same conditions."
-- **Point at:** "Kept the same in every version", the three version cards (what each changed), then the trade-off rows: **who failed a check** under each version, requests filed, refused actions and staff decisions. "Flexible helps students but costs the office more work" (read it off the real table).
+- **Point at:** "Kept the same in every version", the three version cards (what each changed), then the trade-off rows: **who failed a check** under each version, requests filed, **requests decided** (the office's workload) and **requests rejected**. Read the trade-off off the real table; don't say "costs the office more work" unless the "requests decided" row shows it.
 
 ### C. Insight and decision (2:40–3:00)
 - On the comparison's **You decide** panel, say the insight line from the top of this file with the recorded numbers filled in (15 s).
@@ -115,6 +117,7 @@ The "what-ifs from this run" list is kept per browser, so on a different laptop 
 - **If a judge starts a run while one is going:** "Another simulation is running right now" is expected; there's one run at a time for everyone.
 
 ## Rough spots to know before you're on stage
+- **26 Nov, second engine change (tag `live-20261126c`): re-record everything before using it.** After a critique: only an absence a non-routine disruption caused is excused (a skip by choice, a delay within your buffer, a work shift clash are rejected); faculty can't fake or empty-correct marks; a buffer change applies from the next session; personal clashes come from each profile; advice arrives in the same session; the reply gives its reason before its actions. The comparison's "decisions by staff" row is now "requests decided" and "requests rejected". So the old recordings show behaviour the engine no longer allows (C-61168412's strict version passed only because faculty marked absent students present).
 - **26 Nov, after the recordings: the people's prompt changed (tag `live-20261126b`).** The AI students had been told only "eligibility is checked in week 6", not that it runs once at the end of the week, is final and counts waiting requests as absences. Every person now gets the full rule, generated from the template. **All the IDs above (`demo`, R-f9db0944, L-01465ef0, L-df9ce433, C-61168412, S-b4501248, S-261e90f7) were recorded with the old prompt; re-record them before using them.** On the laptop (L-4d797840) the working student, now knowing the rule, tried to file in week 6, was refused whole on the "already recorded" rule, and still failed at 72.7%.
 - **The demo failure happened in 1 of 3 runs on the laptop** (R-b97baf8d). Say "in this run", and let scenario #3 answer "how often" with the live numbers.
 - **One what-if flip is not proof.** #5 (fewer staff) flipped the working student to eligible too, which the change can't have caused. So #4's week-8 flip is one run as well: say "in this what-if run, nobody failed", and let the repeat (2 of 3) carry "how often".

@@ -66,11 +66,14 @@ def shorten(limit: int):
 class AgentDecision(BaseModel):
     """What one LLM person returns for one phase. An empty `actions` list means "no action"."""
 
-    actions: list[Proposal] = Field(default_factory=list, max_length=MIN_ACTIONS)
+    # Reason and strategy come first, so the model decides in words and then writes the actions
+    # that carry them out (26 Nov: with actions first, replies said "I must act now" and listed none).
     reason: Annotated[str, shorten(REASON_CHARS)] = Field(min_length=1, max_length=REASON_CHARS,
                                                           description="why, in your own words")
     strategy: Annotated[str, shorten(STRATEGY_CHARS)] = Field("", max_length=STRATEGY_CHARS,
                                                               description="your current strategy, one short sentence")
+    actions: list[Proposal] = Field(default_factory=list, max_length=MIN_ACTIONS,
+                                    description="the actions that carry out your reason; empty means you do nothing")
 
 
 @lru_cache(maxsize=None)
@@ -79,7 +82,9 @@ def decision_schema(limit: int) -> type[AgentDecision]:
     if limit <= MIN_ACTIONS:
         return AgentDecision
     return create_model(f"AgentDecision{limit}", __base__=AgentDecision,
-                        actions=(list[Proposal], Field(default_factory=list, max_length=limit)))
+                        actions=(list[Proposal], Field(default_factory=list, max_length=limit,
+                                                       description="the actions that carry out your reason; "
+                                                                   "empty means you do nothing")))
 
 
 class CallCapReached(Exception):

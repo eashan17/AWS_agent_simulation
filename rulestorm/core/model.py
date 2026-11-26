@@ -45,7 +45,10 @@ TriggerKind = Literal[
     "escalation_outcome",      # an escalation outcome reaches its listed roles
     "message_received",        # a message or response reaches the person it is for (once a period)
 ]
-DisruptionKindName = Literal["obstacle", "capacity", "cancellation"]
+# obstacle: a delay that makes a person miss the duty if it is longer than their attribute;
+# conflict: a personal clash (a shift, an emergency) that the person may miss the duty for, or
+# meet it anyway; capacity: a queue's capacity for one period; cancellation: the step is off.
+DisruptionKindName = Literal["obstacle", "conflict", "capacity", "cancellation"]
 CountExclusion = Literal["approved_request", "cancelled"]
 ParameterKind = Literal["policy", "environment", "people"]
 ParameterType = Literal["int", "bool", "choice", "text", "attribute", "profiles", "disruptions"]
@@ -192,8 +195,12 @@ class DisruptionKind(Block):
     id: str = Field(min_length=1)
     label: str = Field(min_length=1)
     kind: DisruptionKindName
-    duty: str | None = Field(None, description="obstacle and cancellation: the duty it hits")
+    duty: str | None = Field(None, description="obstacle, conflict and cancellation: the duty it hits")
     request_type: str | None = Field(None, description="capacity: the queue it changes")
+    # Obstacle and conflict (required, 26 Nov): is a miss it causes something a person could
+    # plan around (a regular shift: routine) or outside their control (a strike, an emergency)?
+    # A rule-decided queue excuses only misses a non-routine disruption caused.
+    routine: bool | None = Field(None, description="obstacle/conflict: true if a person could plan around it")
 
 
 class Trigger(Block):
@@ -218,6 +225,9 @@ class Parameter(Block):
     sentence: str | None = Field(None, description="how the value reads in a prompt: {value} is replaced, "
                                                    "and {name} by another parameter's value")
     sentences: dict[str, str] | None = Field(None, description="choice/bool: one sentence per value")
+    stated_only: list[str] = Field(default_factory=list,
+                                   description="choice: values a blueprint may hold only as a fact from the "
+                                               "user's text, never as the AI's assumption")
 
 
 class ExampleInput(Block):
@@ -471,8 +481,11 @@ def _reference_errors(t: Template) -> list[str]:
         owner = f"disruption '{d.id}'"
         ref(owner, "duty", d.duty, duties)
         ref(owner, "request type", d.request_type, request_types)
-        if d.kind in ("obstacle", "cancellation") and d.duty is None:
+        if d.kind in ("obstacle", "conflict", "cancellation") and d.duty is None:
             errors.append(f"{owner}: a {d.kind} needs 'duty'")
+        if d.kind in ("obstacle", "conflict") and d.routine is None:
+            errors.append(f"{owner}: {'an' if d.kind == 'obstacle' else 'a'} {d.kind} needs 'routine' "
+                          f"(true if a person could plan around it)")
         if d.kind == "capacity" and d.request_type is None:
             errors.append(f"{owner}: a capacity disruption needs 'request_type'")
 
@@ -486,6 +499,8 @@ def _reference_errors(t: Template) -> list[str]:
             errors.append(f"{owner} is an int, so it needs min <= max")
         if p.type == "choice" and not p.choices:
             errors.append(f"{owner} is a choice, so it needs choices")
+        if p.stated_only and (p.type != "choice" or not set(p.stated_only) <= set(p.choices or [])):
+            errors.append(f"{owner}: stated_only must list some of its choices")
         if p.type == "attribute":
             if p.attribute is None:
                 errors.append(f"{owner} is an attribute, so it needs 'attribute'")

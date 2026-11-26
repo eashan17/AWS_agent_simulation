@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from rulestorm.core.engine import Engine
+from rulestorm.core.engine import Engine, Obstacle
 from rulestorm.core.model import Template, check_template, load_template
 from rulestorm.core.term import DecisionContext, PhaseDecision, Proposal, Term
 from test_core_term import VALUES
@@ -61,9 +61,12 @@ def ladder() -> Template:
 
 
 def miss(engine: Engine, person: str, step: int) -> None:
+    """A miss something outside the person's control caused, so a request for it is valid."""
     engine.current_step = step
     engine.propose(person, "skip", engine.period_of(step), session=step)
-    engine.record_step(step)
+    delay = engine.emit("obstacle", "environment", engine.period_of(step), step, payload={"delay": 999})
+    duty = engine.t.duties[0].id
+    engine.record_step(step, [Obstacle(event_id=delay.event_id, duty=duty, people=[person], delay=999)])
     engine.current_step = None
 
 

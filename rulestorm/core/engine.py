@@ -14,6 +14,7 @@ Recording is not an action: the recorder rule (`record_step`) records met or mis
 person who owes a duty, applying each person's plan and any obstacle.
 """
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -69,12 +70,15 @@ class DisruptionValue(BaseModel):
 
 
 class Obstacle(BaseModel):
-    """An obstacle disruption that hits one step: its event, who it hits, and the delay."""
+    """An obstacle or conflict disruption that hits one step: its event, who it hits, and the delay
+    (a conflict has none: the person decides whether to miss the duty for it)."""
 
     event_id: str
     duty: str
     people: list[str]
     delay: int
+    kind: str = ""
+    conflict: bool = False
 
 
 class CountResult(BaseModel):
@@ -138,6 +142,14 @@ class Engine:
 
         self.events: list[Event] = []
         self.records: dict[tuple[str, str, int], Outcome] = {}  # (duty, person, step) -> outcome
+        # What actually happened at each recorded step (the recorder's mark); a correction must match it.
+        self.truth: dict[tuple[str, str, int], Outcome] = {}
+        # A missed record's cause: the disruption event behind it (None: the person's own choice),
+        # and whether that cause excuses it (a non-routine disruption).
+        self.record_cause: dict[tuple[str, str, int], tuple[str | None, bool]] = {}
+        # Attribute changes made during a step apply from the next step: a person can't beat the
+        # delay they have just been told about by "having left earlier".
+        self.pending_attributes: dict[tuple[str, str], int] = {}
         self.record_event: dict[tuple[str, str, int], str] = {}
         self.recorded_steps: dict[str, set[int]] = {d: set() for d in self.duties}
         self.cancelled: dict[str, set[int]] = {d: set() for d in self.duties}
@@ -175,7 +187,9 @@ class Engine:
                 raise ValueError(f"disruption '{d.kind}' names unknown people: {', '.join(unknown)}")
             if kind.kind == "obstacle" and (not d.steps or not d.people or d.delay <= 0):
                 raise ValueError(f"obstacle '{d.kind}' needs steps, people and a delay above 0")
-            if kind.kind == "obstacle":
+            if kind.kind == "conflict" and (not d.steps or not d.people):
+                raise ValueError(f"conflict '{d.kind}' needs steps and people")
+            if kind.kind in ("obstacle", "conflict"):
                 duty = self.duties[kind.duty]
                 free = [p for p in d.people if not self.owes(p, duty)]
                 if free:
@@ -233,6 +247,7 @@ class Engine:
             return self._refuse(actor, role, action_id, period, caused_by, params, "permission",
                                 f"a {self.roles[role].label} is not allowed to {what}")
         action = self.actions[action_id]
+        params = self._normalise_steps(action, params)
         try:
             self._check_params(action, params)
             return self._commit(actor, action, period, caused_by, params)
@@ -244,6 +259,27 @@ class Engine:
                          payload={"role": role, "action": action, "params": params, "reason": reason,
                                   "detail": detail or reason},
                          caused_by=caused_by)
+
+    def _normalise_steps(self, action: Action, params: dict[str, Any]) -> dict[str, Any]:
+        """A step written as text ("<period> 5 <step> 9", "9") becomes its number: the
+        number after the step's own label, else a lone number. Anything else is left to be refused."""
+        label = re.escape(self.step_label)
+
+        def number(v: Any) -> Any:
+            if not isinstance(v, str):
+                return v
+            found = re.findall(rf"{label}\s*#?\s*(\d+)", v, re.IGNORECASE)
+            if found:
+                return int(found[-1])
+            return int(v.strip()) if v.strip().isdigit() else v
+
+        out = dict(params)
+        for spec in action.params:
+            if spec.name in out and spec.type == "step":
+                out[spec.name] = number(out[spec.name])
+            elif spec.name in out and spec.type == "step_list" and isinstance(out[spec.name], list):
+                out[spec.name] = [number(v) for v in out[spec.name]]
+        return out
 
     def _check_params(self, action: Action, params: dict[str, Any]) -> None:
         specs = {p.name: p for p in action.params}
@@ -315,6 +351,16 @@ class Engine:
                                   f"{word} {request.request_id} is not waiting for consent")
             if effect.kind == "decide_request":
                 self._check_decision(action, effect.request_type, params, steps)
+            if effect.kind == "correct_record":
+                key = (effect.duty, target, steps[0])
+                after = "met" if self._param_of_type(action, params, "bool") else "missed"
+                word = self.t.terms.get("duty_met" if after == "met" else "duty_missed", after)
+                if self.records.get(key) == after:
+                    raise Refused("precondition: record_differs",
+                                  f"{self.step_label} {steps[0]} is already recorded {word}")
+                if self.truth.get(key) != after:
+                    raise Refused("precondition: matches_what_happened",
+                                  f"{self.step_label} {steps[0]} was not {word}: a correction must match what happened")
 
         events = [self._apply(effect, actor, target, action, period, steps, params, caused_by, dropped)
                   for effect in action.effects]
@@ -394,11 +440,16 @@ class Engine:
             if new is None:
                 return None
             key = (actor, effect.attribute)
+            later = self.current_step is not None
             event = self.emit("attribute_set", actor, period, self.current_step,
-                              payload={"action": action.id, "attribute": effect.attribute},
+                              payload={"action": action.id, "attribute": effect.attribute,
+                                       **({"from_step": self.current_step + 1} if later else {})},
                               state_change={f"{effect.attribute}.{actor}": {"from": self.attributes.get(key), "to": new}},
                               caused_by=caused_by)
-            self.attributes[key] = new
+            if later:
+                self.pending_attributes[key] = new
+            else:
+                self.attributes[key] = new
             return event
         if kind == "file_request":
             return self._file_request(actor, effect.request_type, action, period, steps, params, caused_by, dropped)
@@ -572,6 +623,11 @@ class Engine:
             causes = [crunch]
         pending = [r for r in self.requests.values() if r.request_type == request_type and r.status == "pending"
                    and r.endorsement in (None, "given")]  # a request awaiting consent isn't queued yet
+        if self.request_types[request_type].decided_by == "rule":
+            # A rule decides on the records, so a request waits until every step it covers has happened.
+            duty = self.request_types[request_type].covers
+            pending = [r for r in pending if all(s in self.recorded_steps[duty] or s in self.cancelled[duty]
+                                                 for s in r.steps)]
         return capacity, causes, pending[:capacity], pending[capacity:]
 
     def open_decisions(self, request_type: str, period: int, step: int | None = None) -> Event:
@@ -619,10 +675,14 @@ class Engine:
 
     def _qualifies(self, rule: str, request: Request, step: int) -> bool:
         duty = self.request_types[request.request_type].covers
+        key = (duty, request.person, step)
+        # A valid exception: a recorded miss that a non-routine disruption caused. Skipping when
+        # nothing stopped you, or for something you could plan around, is not excused.
+        valid = self.records.get(key) == "missed" and self.record_cause.get(key, (None, False))[1]
         if rule == "approve_if_covered_missed":
-            return self.records.get((duty, request.person, step)) == "missed"
+            return valid
         if rule == "approve_if_filed_before_occurrence":
-            return step not in request.recorded_at_filing
+            return step not in request.recorded_at_filing and valid
         if rule == "approve_all":
             return True
         raise ValueError(f"unknown decision rule '{rule}'")
@@ -666,12 +726,15 @@ class Engine:
             kind = self.disruption_kinds[d.kind]
             if d.period != period or position not in d.steps:
                 continue
-            if kind.kind == "obstacle":
+            if kind.kind in ("obstacle", "conflict"):
+                conflict = kind.kind == "conflict"
                 event = self.emit("obstacle", "environment", period, step,
                                   payload={"disruption": d.kind, "description": d.description, "duty": kind.duty,
-                                           "delay": d.delay, "people": d.people})
+                                           "delay": 0 if conflict else d.delay, "people": d.people,
+                                           "conflict": conflict, "routine": bool(kind.routine)})
                 self.obstacles_by_step.setdefault(step, []).append(
-                    Obstacle(event_id=event.event_id, duty=kind.duty, people=d.people, delay=d.delay))
+                    Obstacle(event_id=event.event_id, duty=kind.duty, people=d.people,
+                             delay=0 if conflict else d.delay, kind=d.kind, conflict=conflict))
                 events.append(event)
             elif kind.kind == "cancellation" and step not in self.recorded_steps[kind.duty] | self.cancelled[kind.duty]:
                 self.cancelled[kind.duty].add(step)
@@ -771,27 +834,74 @@ class Engine:
                 plan, plan_event = self.plans.get((duty.id, person, step), (NO_PLAN, None))
                 causes = [plan_event] if plan_event else []
                 outcome: Outcome = "met" if plan == "meet" else "missed"
-                hit_by = None
-                if outcome == "met" and duty.obstacle_attribute:
-                    for o in obstacles:
-                        if o.duty == duty.id and person in o.people:
-                            slack = self.attributes.get((person, duty.obstacle_attribute))
-                            if slack is None:
-                                raise KeyError(f"missing value '{duty.obstacle_attribute}' for {person}")
-                            if o.delay > slack:
-                                outcome, hit_by = "missed", o
-                                causes = [o.event_id, *causes]
-                                break
+                hit_by = None  # an obstacle that made a person who meant to come miss it
+                # Whatever kept them away: that obstacle, one they would have missed for anyway
+                # (a delay over their slack), or a conflict they chose to miss the duty for.
+                stopping = None
+                for o in obstacles:
+                    if o.duty != duty.id or person not in o.people:
+                        continue
+                    if o.conflict:
+                        stopping = stopping or o
+                        continue
+                    if not duty.obstacle_attribute:
+                        continue  # a duty with no slack attribute isn't delayed by obstacles
+                    slack = self.attributes.get((person, duty.obstacle_attribute))
+                    if slack is None:
+                        raise KeyError(f"missing value '{duty.obstacle_attribute}' for {person}")
+                    if o.delay > slack:
+                        stopping = o
+                        if outcome == "met":
+                            outcome, hit_by = "missed", o
+                        break
                 key = (duty.id, person, step)
-                self.records[key] = outcome
+                self.records[key] = self.truth[key] = outcome
+                cause, excusable = None, False
+                if outcome == "missed" and stopping is not None:
+                    cause = stopping.event_id
+                    kind = self.disruption_kinds.get(stopping.kind)
+                    excusable = not (kind is not None and kind.routine)
+                    if cause not in causes:
+                        causes = [cause, *causes]
+                if outcome == "missed":
+                    self.record_cause[key] = (cause, excusable)
                 event = self.emit("duty_recorded", recorder, period, step,
                                   payload={"duty": duty.id, "person": person, "outcome": outcome,
-                                           "plan": plan, "obstacle": hit_by.event_id if hit_by else None},
+                                           "plan": plan, "obstacle": hit_by.event_id if hit_by else None,
+                                           **({"cause": cause, "excusable": excusable} if outcome == "missed" else {})},
                                   state_change={f"record.{duty.id}.{person}.{step}": {"from": None, "to": outcome}},
                                   caused_by=causes)
                 self.record_event[key] = event.event_id
                 recorded.append(event)
+        for key, value in self.pending_attributes.items():
+            self.attributes[key] = value
+        self.pending_attributes.clear()
         return recorded
+
+    def has_wrong_record(self, duty_id: str) -> bool:
+        """Is any recorded mark of this duty different from what happened? Only then can a
+        correction be accepted, so only then is a correcting action worth offering."""
+        return any(self.records[k] != v for k, v in self.truth.items() if k[0] == duty_id)
+
+    def cause_text(self, duty_id: str, person: str, step: int) -> str:
+        """What a decider would know about one covered step: not yet happened, met, or missed and why."""
+        key = (duty_id, person, step)
+        met, missed = self.t.terms.get("duty_met", "met"), self.t.terms.get("duty_missed", "missed")
+        if step in self.cancelled[duty_id]:
+            return "cancelled"
+        if key not in self.records:
+            return "not yet happened"
+        if self.records[key] == "met":
+            return f"recorded {met}"
+        cause, _ = self.record_cause.get(key, (None, False))
+        if cause is None:
+            return f"recorded {missed}; no disruption stopped them (their own choice)"
+        e = self.event(cause)
+        kind = self.disruption_kinds.get(e.payload.get("disruption", ""))
+        routine = kind is not None and kind.routine
+        what = e.payload.get("description") or (kind.label if kind else "a disruption")
+        return (f"recorded {missed}; caused by {what} ({cause}, "
+                f"{'routine, could be planned around' if routine else 'outside their control'})")
 
     # --- counts -----------------------------------------------------------------------------
 

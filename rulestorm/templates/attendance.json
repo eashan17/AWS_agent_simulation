@@ -350,7 +350,22 @@
       "id": "transport",
       "label": "transport disruption",
       "kind": "obstacle",
-      "duty": "attend_class"
+      "duty": "attend_class",
+      "routine": false
+    },
+    {
+      "id": "work_shift_clash",
+      "label": "work shift clash",
+      "kind": "conflict",
+      "duty": "attend_class",
+      "routine": true
+    },
+    {
+      "id": "family_emergency",
+      "label": "family emergency",
+      "kind": "conflict",
+      "duty": "attend_class",
+      "routine": false
     },
     {
       "id": "admin_capacity",
@@ -474,10 +489,11 @@
         "approve_if_filed_before_occurrence",
         "approve_all"
       ],
+      "stated_only": ["approve_all"],
       "prompt_section": "request_rules",
       "sentences": {
-        "approve_if_covered_missed": "The attendance office approves a request only if every class it covers is a recorded absence.",
-        "approve_if_filed_before_occurrence": "The attendance office approves a request only for classes it was filed before.",
+        "approve_if_covered_missed": "The attendance office approves a request only if every class it covers is a recorded absence with a valid reason.",
+        "approve_if_filed_before_occurrence": "The attendance office approves a request only for classes it was filed before, and only absences with a valid reason.",
         "approve_all": "The attendance office approves every request it processes."
       }
     },
@@ -516,9 +532,9 @@
       "name": "slack_min",
       "kind": "people",
       "type": "attribute",
-      "description": "each student's minutes of slack before class; a longer transport delay makes them late",
+      "description": "each student's minutes of slack before class; a longer transport delay makes them miss it",
       "attribute": "travel_buffer_min",
-      "sentence": "travel buffer: {value} min (a longer transport delay makes you late)",
+      "sentence": "travel buffer: {value} min (a longer transport delay makes you miss the class)",
       "prompt_section": "you"
     }
   ]

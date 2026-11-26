@@ -178,23 +178,33 @@ class BedrockModel:
         self.model_id = model_id or config.model_id()
         self.max_attempts = max_attempts
         self.session = boto3.Session(region_name=config.region())
+        # Resolve the credentials once, here, rather than in each first call: on a laptop signed in
+        # with `aws login`, several people's first calls resolving them at once in parallel threads
+        # timed out the first phases of every run (26 Nov: 25 of 34 timeouts in 5 runs). A boto3
+        # session isn't thread-safe, so clients are also made one at a time.
+        credentials = self.session.get_credentials()
+        if credentials is not None:
+            credentials.get_frozen_credentials()
         self._clients: dict[int, object] = {}
+        self._lock = threading.Lock()
         self._config = Config
         self.client = self._client(config.read_timeout_s())
 
     def _client(self, read_timeout_s: float):
-        """One client per whole-second read timeout (boto fixes the timeout per client)."""
-        key = max(1, int(read_timeout_s))
-        if key not in self._clients:
-            self._clients[key] = self.session.client(
-                "bedrock-runtime",
-                config=self._config(
-                    connect_timeout=5,
-                    read_timeout=key,
-                    retries={"mode": "adaptive", "max_attempts": self.max_attempts},
-                ),
-            )
-        return self._clients[key]
+        """One client per read timeout, rounded up to 10 s steps so a run makes only a few (boto
+        fixes the timeout per client; the wall-clock limit is _complete_by's)."""
+        key = max(10, -(-int(read_timeout_s) // 10) * 10)
+        with self._lock:
+            if key not in self._clients:
+                self._clients[key] = self.session.client(
+                    "bedrock-runtime",
+                    config=self._config(
+                        connect_timeout=5,
+                        read_timeout=key,
+                        retries={"mode": "adaptive", "max_attempts": self.max_attempts},
+                    ),
+                )
+            return self._clients[key]
 
     def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> Reply:
         client = self.client if timeout_s is None else self._client(timeout_s)

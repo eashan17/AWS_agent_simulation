@@ -93,6 +93,11 @@ def disruption_lines(template: Template) -> list[str]:
                              f"shorter than its delay misses that {step} even if they planned to {duty.label}.")
             else:
                 lines.append(f"- {kind.label} hits the {step}s it lists: the people it names miss them.")
+        elif kind.kind == "conflict":
+            duty = next(d for d in t.duties if d.id == kind.duty)
+            lines.append(f"- {kind.label} ({'routine' if kind.routine else 'not routine'}) keeps the people it names "
+                         f"from the {step}s it lists unless they choose to {duty.label} anyway; it should fit "
+                         f"their profile.")
         elif kind.kind == "capacity":
             rt = next(r for r in t.request_types if r.id == kind.request_type)
             lines.append(f"- {kind.label} sets how many {rt.label}s can be decided in its {t.calendar.period_label}.")

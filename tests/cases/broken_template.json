@@ -348,7 +348,8 @@
       "id": "transport",
       "label": "transport disruption",
       "kind": "obstacle",
-      "duty": "attend_class"
+      "duty": "attend_class",
+      "routine": false
     },
     {
       "id": "admin_capacity",

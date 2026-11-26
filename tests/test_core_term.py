@@ -69,7 +69,12 @@ def of_type(engine, type_):
 
 
 def decisions_at(engine, step):
-    return {e.actor: e for e in of_type(engine, "decision") if e.step == step}
+    """Each person's first decision at the step (a reply round may add a later one)."""
+    out = {}
+    for e in of_type(engine, "decision"):
+        if e.step == step:
+            out.setdefault(e.actor, e)
+    return out
 
 
 # (a) disruptions happen at the blueprint's periods
@@ -165,9 +170,20 @@ def test_skip_chain_reaches_the_disruption_through_the_decision(engine) -> None:
     obstacle = of_type(engine, "obstacle")[0]
     check = check_of(engine, "working")
     chain = path(engine, check.event_id, obstacle.event_id, "working")
-    assert [engine.event(i).type for i in chain] == [
-        "check_evaluated", "request_filed", "duty_recorded", "duty_planned", "decision", "obstacle"]
+    # The absence names the disruption that kept them away as its cause (26 Nov), and still
+    # records the decision behind the skip.
+    assert [engine.event(i).type for i in chain] == ["check_evaluated", "request_filed", "duty_recorded", "obstacle"]
+    record = engine.event(chain[2])
+    assert record.payload["cause"] == obstacle.event_id and record.payload["excusable"] is True
+    assert any(engine.event(i).type == "duty_planned" for i in record.caused_by)
     assert len(check.payload["pending_requests"]) == 1  # still waiting at the checkpoint
+
+
+def test_advice_reaches_the_student_in_the_same_step(engine) -> None:
+    for advice in of_type(engine, "response_given"):
+        student = advice.payload["to"]
+        read = [e for e in of_type(engine, "decision") if e.actor == student and advice.event_id in e.caused_by]
+        assert read and read[0].step == advice.step, advice.event_id
 
 
 def test_check_links_to_the_queue_event_that_held_the_request(engine) -> None:

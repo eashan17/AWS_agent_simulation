@@ -5,7 +5,11 @@ block.
 Narrowed in slice L7 (docs/SLICES.md, general-feature rule): an exact match only for the lines
 that carry the 6b fixes (the missed occurrences no request covers, what happened to the last
 decision's actions, the slack line, the allowed-actions list); every other frozen line only has
-to keep its facts (IDs, numbers, names and values), not its wording."""
+to keep its facts (IDs, numbers, names and values), not its wording.
+
+Updated on purpose on 26 Nov (demo fix), in the frozen files too: the slack line says a longer
+delay makes you miss the class (not "late": late is recorded absent), an optional parameter says
+leaving it out keeps it, and the reply asks for the reason before the actions."""
 
 import json
 import re
@@ -32,7 +36,7 @@ REQUEST_RULES = [
     "- Requests can cover only classes already recorded as missed.",
     "- A request that lists any class it can't cover is refused whole.",
     "- The attendance office approves or rejects each request whole.",
-    "- The attendance office approves a request only if every class it covers is a recorded absence.",
+    "- The attendance office approves a request only if every class it covers is a recorded absence with a valid reason.",
 ]
 
 

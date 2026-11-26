@@ -66,6 +66,7 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `explore.py` | Stress variants on the template's `environment` parameters, with the counting and queue maths in the prompt; `hunt` (slice H) runs the approved variants, then the parent, until a run has a finding |
 | `detect.py`, `evidence.py` | General detectors and the evidence view (slices 8–9) |
 | `counterfactual.py` | One-change reruns and the two-run comparison (slice 13) |
+| `rulebook.py` | The "How the rules work" block every person's prompt carries, generated from the template and the blueprint's values: when each check runs and that it is final, how many misses fail it, what doing nothing means, how delays and personal clashes work, which absences are a valid exception, how requests queue, and the last step that can't be excused in time (26 Nov, demo fix) |
 | `repeats.py` | Repeated runs of one blueprint, summarised as how often each person fails, each finding appears and each measure's spread (slice 21) |
 | `adaptation.py` | How the AI people adapted, by rules over a run's records: a real change to their own value and the later records it changed, first actions, stated-strategy shifts (slice 19) |
 | `editing.py` | Corrects single values and per-person values of an unapproved blueprint; each correction becomes a fact (slice 18) |

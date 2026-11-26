@@ -196,7 +196,11 @@ class _Words:
         p, actor, when = e["payload"], e["actor"], self.when(e.get("step"), e["period"])
         kind = e["type"]
         if kind == "obstacle":
-            return (f"{p.get('description') or p['disruption']}: a delay of {p['delay']} on "
+            what = p.get("description") or p["disruption"]
+            if p.get("conflict"):  # a personal clash: no delay, the person chooses
+                return (f"{what}: a {'routine' if p.get('routine') else 'non-routine'} clash with "
+                        f"'{self.duties.get(p['duty'], p['duty'])}' for {', '.join(p['people'])}, {when}")
+            return (f"{what}: a delay of {p['delay']} min on "
                     f"'{self.duties.get(p['duty'], p['duty'])}' for {', '.join(p['people'])}, {when}")
         if kind == "capacity_changed":
             return f"{p.get('description') or p['disruption']}: {self.requests} capacity set to {p['capacity']} this {self.period_word} ({when})"
@@ -214,6 +218,9 @@ class _Words:
                 return f"{actor} corrected {p['person']}'s record to {word}, {when}"
             margin = self.margin.get(p["duty"])
             why = f", as the delay was over their {margin}" if p.get("obstacle") and margin else ""
+            if to != "met" and "excusable" in p:
+                why += (f" (cause {p['cause']}: {'a valid reason' if p['excusable'] else 'not a valid reason'})"
+                        if p.get("cause") else " (their own choice: not a valid reason)")
             return f"{p['person']}: {word}, {when}{why}, recorded by {actor}"
         if kind == "request_filed":
             return f"{p['person']} filed {self.request} {p['request_id']} for {self.steps(p['steps'])} (filed {when})"

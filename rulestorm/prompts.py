@@ -49,6 +49,12 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
     if rules:
         lines += ["", "Request rules:", *(f"- {r}" for r in rules)]
     how = rule_lines(template, values)
+    for rt_id, capacity in c.capacity_now.items():
+        rt = next(r for r in template.request_types if r.id == rt_id)
+        handler = next(r for r in template.roles if r.id == rt.handled_by).label.lower()
+        normal = values.get(rt.capacity_param)
+        how.append(f"- This {cal.period_label} the {handler} can decide at most {capacity} {rt.label}s"
+                   + (f" (normally {normal})." if normal is not None else "."))
     if how:
         lines += ["", "How the rules work (the engine applies these exactly):", *how]
 
@@ -87,12 +93,13 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
 
     role = next(r for r in template.roles if r.id == c.role)
     actions = {a.id: a for a in template.actions}
+    offered_actions = sorted(a for a in role.actions if a not in c.unavailable_actions)
     lines += [
         "",
         f"Actions you may propose (0 to {c.action_limit()}; an empty list means you do nothing):",
-        *(f"- {a}: params {action_params(actions[a])}" for a in sorted(role.actions)),
-        "Each action is {\"action\": <name>, \"params\": {...}}. "
-        "Give a short reason and your current strategy.",
+        *(f"- {a}: params {action_params(actions[a])}" for a in offered_actions),
+        "First give a short reason and your current strategy, then the actions that carry them out. "
+        "Each action is {\"action\": <name>, \"params\": {...}}.",
     ]
     return "\n".join(lines)
 
@@ -130,7 +137,10 @@ def own_request(template: Template, r: dict[str, Any]) -> str:
 
 def request_line(template: Template, r: dict[str, Any]) -> str:
     cal = template.calendar
-    steps = ", ".join(f"{cal.step_label} {s}" for s in r["steps"])
+    facts = r.get("facts") or {}
+    steps = ", ".join(f"{cal.step_label} {s}" + (f" ({facts.get(s) or facts.get(str(s))})"
+                                                  if facts.get(s) or facts.get(str(s)) else "")
+                      for s in r["steps"])
     reason = f'; reason: "{r["reason"]}"' if r["reason"] else ""
     return f"- {r['request_id']} from {r['person']}: {steps} (filed {cal.period_label} {r['filed_period']}){reason}"
 
@@ -148,10 +158,11 @@ def sentence(p: Parameter, value: Any, values: dict[str, Any]) -> str:
 
 
 def action_params(action: Action) -> str:
-    """`{"name": <hint>, ...}`, then `; optional "name": <hint>` for each optional parameter."""
+    """`{"name": <hint>, ...}`, then `; optional "name": <hint>` for each optional parameter, which
+    says that leaving it out keeps things as they are (a model once sent 0 as a placeholder)."""
     required = [p for p in action.params if p.required]
     text = "{" + ", ".join(f'"{p.name}": {p.hint or "<" + p.type + ">"}' for p in required) + "}"
     for p in action.params:
         if not p.required:
-            text += f'; optional "{p.name}": {p.hint or "<" + p.type + ">"}'
+            text += f'; optional "{p.name}": {p.hint or "<" + p.type + ">"} (leave it out to keep yours as it is)'
     return text

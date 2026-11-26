@@ -169,8 +169,10 @@
     }
   ],
   "disruptions": [
-    {"id": "transport_delay", "label": "transport delay", "kind": "obstacle", "duty": "return_by_curfew"},
-    {"id": "lab_overrun", "label": "lab session overrun", "kind": "obstacle", "duty": "return_by_curfew"},
+    {"id": "transport_delay", "label": "transport delay", "kind": "obstacle", "duty": "return_by_curfew", "routine": false},
+    {"id": "lab_overrun", "label": "lab session overrun", "kind": "obstacle", "duty": "return_by_curfew", "routine": false},
+    {"id": "family_emergency", "label": "family emergency", "kind": "conflict", "duty": "return_by_curfew", "routine": false},
+    {"id": "evening_job_shift", "label": "evening job shift", "kind": "conflict", "duty": "return_by_curfew", "routine": true},
     {"id": "warden_away", "label": "warden away", "kind": "capacity", "request_type": "late_entry"}
   ],
   "triggers": [

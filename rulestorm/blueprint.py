@@ -142,6 +142,11 @@ class FillBase(BaseModel):
         missing = [n for n, kind in names.items() if n not in covered and kind not in covered]
         if missing:
             raise ValueError(f"label these in facts or assumptions (or label their section): {', '.join(missing)}")
+        for p in self.template.parameters:
+            value = getattr(self.values, p.name, None)
+            if value in p.stated_only and not any(x.field == p.name for x in self.facts):
+                raise ValueError(f"{p.name} can be '{value}' only if the user's text states it (a fact labelled "
+                                 f"'{p.name}'); otherwise choose another value")
         return self
 
 
@@ -182,7 +187,8 @@ def fill_prompt(template: Template, text: str, purpose: str, environment: str) -
         "propose a plausible one and list it under assumptions. Each label's `field` is a value's "
         f"name, or a whole section ({', '.join(SECTIONS)}) to cover all its values at once; every "
         f"value must be covered. At most {MAX_LABELS} facts and {MAX_LABELS} assumptions, statements "
-        "under 15 words. Make each person distinct.",
+        "under 15 words. Make each person distinct, and let their profile show in the disruptions: a "
+        "personal clash goes to someone whose description or constraints make it likely.",
         "",
         f"Policy:\n{text}\n\nPurpose:\n{purpose}\n\nEnvironment:\n{environment}",
     ]
@@ -201,7 +207,10 @@ def _allowed(t: Template, p: Parameter) -> str:
             return f"true ({p.sentences['true']}) or false ({p.sentences['false']})"
         return "true or false"
     if p.type == "choice":
-        return "one of " + ", ".join(f"{c} ({p.sentences[c]})" if p.sentences else c for c in p.choices)
+        def one(c: str) -> str:
+            text = f"{c} ({p.sentences[c]})" if p.sentences else c
+            return text + (" - only if the text states it" if c in p.stated_only else "")
+        return "one of " + ", ".join(one(c) for c in p.choices)
     if p.type == "text":
         return f"text under {p.max_length} characters"
     if p.type == "attribute":
@@ -222,6 +231,11 @@ def _allowed(t: Template, p: Parameter) -> str:
                 unit = f", in the same unit as {attribute.label}" if attribute else ""
                 kinds.append(f"{d.id} ({d.label}: set period, steps, the people it hits (only people who "
                              f"must {duty.label}) and delay{unit})")
+            elif d.kind == "conflict":
+                duty = next(x for x in t.duties if x.id == d.duty)
+                kinds.append(f"{d.id} ({d.label}, {'routine' if d.routine else 'not routine'}: set period, steps "
+                             f"and the people it keeps from having to {duty.label}; only people whose profile "
+                             f"makes it likely)")
             elif d.kind == "capacity":
                 rt = next(x for x in t.request_types if x.id == d.request_type)
                 kinds.append(f"{d.id} ({d.label}: set period and capacity, the {rt.label}s that can be "

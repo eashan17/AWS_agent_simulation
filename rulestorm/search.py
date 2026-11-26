@@ -186,11 +186,13 @@ def random_scenario(template: Template, base: dict[str, Any], rng: random.Random
                     d = {"kind": kind.id, "period": rng.randint(1, cal.periods), "steps": [], "people": [],
                          "delay": 0, "capacity": None, "description": f"random: {kind.label}"[:200]}
                     steps = list(range(1, cal.steps_per_period + 1))
-                    if kind.kind == "obstacle":
+                    if kind.kind in ("obstacle", "conflict"):
                         owed = [x.id for x in t.people if x.role == duties[kind.duty].owed_by]
                         d["steps"] = sorted(rng.sample(steps, rng.randint(1, len(steps))))
-                        d["people"] = sorted(rng.sample(owed, rng.randint(1, len(owed))))
-                        d["delay"] = rng.choice([15, 30, 45, 60, 90, 120])
+                        # A delay can hit many people at once; a personal clash is one person's.
+                        d["people"] = (sorted(rng.sample(owed, rng.randint(1, len(owed)))) if kind.kind == "obstacle"
+                                       else [rng.choice(owed)])
+                        d["delay"] = rng.choice([15, 30, 45, 60, 90, 120]) if kind.kind == "obstacle" else 0
                     elif kind.kind == "capacity":
                         d["capacity"] = rng.randint(0, max(1, base[request_types[kind.request_type].capacity_param]))
                     else:

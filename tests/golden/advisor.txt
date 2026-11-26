@@ -22,4 +22,4 @@ Your recent decisions:
 
 Actions you may propose (0 to 3; an empty list means you do nothing):
 - advise_student: params {"student": "<archetype>", "advice": "<short>"}
-Each action is {"action": <name>, "params": {...}}. Give a short reason and your current strategy.
+First give a short reason and your current strategy, then the actions that carry them out. Each action is {"action": <name>, "params": {...}}.

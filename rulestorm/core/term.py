@@ -30,6 +30,9 @@ class Proposal(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+REPLY_ROUNDS = 2  # per step: someone asks, someone answers
+
+
 class DecisionContext(BaseModel):
     """What a triggered person sees."""
 
@@ -56,6 +59,11 @@ class DecisionContext(BaseModel):
     # Every request the person filed, with what became of it: so they know which steps each one
     # covered (in a real run, people assumed a request for the last step also covered this one).
     own_requests: list[dict[str, Any]] = Field(default_factory=list)
+    # 26 Nov: actions of the role that can't succeed now (a correction while every mark matches
+    # what happened), left out of the prompt; and each queue's capacity this period where a
+    # disruption changed it, so the people know the queue is short this period.
+    unavailable_actions: list[str] = Field(default_factory=list)
+    capacity_now: dict[str, int] = Field(default_factory=dict)
 
     def action_limit(self) -> int:
         """Everyone may propose 3 actions; someone with more requests waiting for them (to consent
@@ -87,7 +95,10 @@ class Term:
         self.triggers: dict[str, list[str]] = defaultdict(list)
         self.near: set[tuple[str, str]] = set()  # (count, person) currently near the threshold
         self.last_decision: dict[str, str] = {}  # person -> event ID of their latest decision
-        self.messaged: set[tuple[str, int]] = set()  # (person, period) a message has triggered
+        self.messaged: set[tuple[str, int]] = set()  # (person, step) a message has triggered
+        # What each person was shown earlier in the current step: a reply round shows it again, so
+        # a person answering a message still sees the disruption that hit this step (26 Nov).
+        self.seen_this_step: dict[str, list[str]] = defaultdict(list)
         self.of_kind = {tr.kind: tr for tr in template.triggers}
 
     # --- triggers -----------------------------------------------------------------------------
@@ -150,11 +161,21 @@ class Term:
     def run_step(self, period: int, step: int) -> None:
         e = self.engine
         e.current_step = step
+        self.seen_this_step.clear()
         for event in e.start_step(step):
             if event.type == "obstacle":
                 for person in event.payload["people"]:
                     self.notify("obstacle_hit", event, person)
         self.decision_phase(period, step)
+        # Reply rounds (26 Nov): a message or advice sent now reaches its reader in this same step,
+        # before it is recorded, as a real conversation would (before, advice given in the step
+        # before a check arrived after it). Two rounds: a question, then its answer.
+        for _ in range(REPLY_ROUNDS):
+            readers = {p for p, ids in self.triggers.items()
+                       if any(e.event(i).type in ("message_sent", "response_given") for i in ids)}
+            if not readers:
+                break
+            self.decision_phase(period, step, only=readers)
         # Requests filed just now reach their consenting people before this step's queues and its
         # recording, so a request filed in advance can be consented to and decided in time.
         endorsers = {p for p, r in e.role_of.items() if r in {rt.endorsed_by for rt in self.t.request_types}}
@@ -248,6 +269,7 @@ class Term:
             return []
         contexts = [self.context(person, period, step) for person in people]
         for person in people:
+            self.seen_this_step[person] += [t for t in self.triggers[person] if t not in self.seen_this_step[person]]
             del self.triggers[person]
         decided = []
 
@@ -269,8 +291,8 @@ class Term:
         return decided
 
     def message_received(self, event: Event, period: int) -> None:
-        """A message to a role, or a response to a person, triggers who it is for at the next
-        phase, at most once per person per period (so two people can't chat every step)."""
+        """A message to a role, or a response to a person, triggers who it is for: in a reply
+        round of the same step (run_step), at most once per person per step."""
         if "message_received" not in self.of_kind or event.type not in ("message_sent", "response_given"):
             return
         to = event.payload.get("to")
@@ -279,8 +301,9 @@ class Term:
         else:
             recipients = [to] if to in self.engine.role_of else []
         for person in recipients:
-            if person != event.actor and (person, period) not in self.messaged:
-                self.messaged.add((person, period))
+            key = (person, self.engine.current_step if self.engine.current_step is not None else -period)
+            if person != event.actor and key not in self.messaged:
+                self.messaged.add(key)
                 self.notify("message_received", event, person)
 
     def context(self, person: str, period: int, step: int) -> DecisionContext:
@@ -297,9 +320,17 @@ class Term:
         consents = {rt.id for rt in self.t.request_types if rt.endorsed_by == role}
         awaiting = [_request_view(r) for r in e.requests.values()
                     if r.request_type in consents and r.status == "pending" and r.endorsement == "awaiting"]
+        for view in [*offered, *awaiting]:
+            covers = e.request_types[e.requests[view["request_id"]].request_type].covers
+            view["facts"] = {s: e.cause_text(covers, view["person"], s) for s in view["steps"]}
+        unavailable = sorted(a for a in self.t.roles[[r.id for r in self.t.roles].index(role)].actions
+                             if any(f.kind == "correct_record" and not e.has_wrong_record(f.duty)
+                                    for f in e.actions[a].effects))
+        capacity_now = {rt: cap for (rt, p), (cap, _) in e.capacity_override.items() if p == period}
         return DecisionContext(
             person=person, role=role, period=period, step=step,
-            triggers=[e.event(t) for t in self.triggers[person]],
+            triggers=[e.event(t) for t in [*(i for i in self.seen_this_step.get(person, [])
+                                              if i not in self.triggers[person]), *self.triggers[person]]],
             profile=self.profiles.get(person),
             counts=counts,
             attributes={attr: v for (who, attr), v in e.attributes.items() if who == person},
@@ -310,6 +341,7 @@ class Term:
             offered_requests=offered, decision_capacity=capacity, partial_decisions=partial,
             awaiting_consent=awaiting,
             own_requests=[_own_view(r) for r in e.requests.values() if r.person == person],
+            unavailable_actions=unavailable, capacity_now=capacity_now,
         )
 
     def outcomes_of(self, person: str) -> list[str]:
@@ -395,6 +427,11 @@ def _dry_run_disruptions(template: Template) -> list[dict[str, Any]]:
             people = [p.id for p in template.people if p.role == duty.owed_by]
             disruptions.append({"kind": d.id, "period": period, "steps": [1], "people": people,
                                 "delay": attribute.max if attribute else 1, "description": "dry run"})
+        elif d.kind == "conflict":
+            duty = next(x for x in template.duties if x.id == d.duty)
+            people = [p.id for p in template.people if p.role == duty.owed_by]
+            disruptions.append({"kind": d.id, "period": period, "steps": [1], "people": people[:1],
+                                "description": "dry run"})
         elif d.kind == "capacity":
             disruptions.append({"kind": d.id, "period": period, "capacity": 0, "description": "dry run"})
         else:

@@ -15,4 +15,4 @@ What just happened (the events that triggered you):
 Actions you may propose (0 to 3; an empty list means you do nothing):
 - cancel_session: params {"session": <a session that has not taken place>}
 - edit_attendance: params {"student": "<archetype>", "session": <n>, "present": true|false}
-Each action is {"action": <name>, "params": {...}}. Give a short reason and your current strategy.
+First give a short reason and your current strategy, then the actions that carry them out. Each action is {"action": <name>, "params": {...}}.

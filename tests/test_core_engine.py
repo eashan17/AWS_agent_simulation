@@ -56,9 +56,23 @@ def test_permission_comes_from_the_template(engine: Engine, template: Template) 
     raw["roles"][0]["actions"].append("edit_attendance")
     loose = Engine(Template.model_validate(raw), VALUES)
     record_through(loose, 1)
-    allowed = loose.propose("working", "edit_attendance", 1, student="working", session=1, present=False)
-    assert allowed.type == "record_corrected"
-    assert loose.records[("attend_class", "working", 1)] == "missed"
+    allowed = loose.propose("working", "edit_attendance", 1, student="working", session=1, present=True)
+    # Past the permission check now; refused only because session 1 really was attended (26 Nov:
+    # a correction must match what happened).
+    assert allowed.type == "action_rejected" and allowed.payload["reason"] == "precondition: record_differs"
+
+
+def test_a_correction_must_change_a_mark_and_match_what_happened(engine: Engine) -> None:
+    engine.current_step = 1
+    engine.propose("working", "skip", 1, session=1)
+    engine.record_step(1)
+    engine.current_step = None
+    same = engine.propose("faculty", "edit_attendance", 1, student="working", session=1, present=False)
+    assert same.payload["reason"] == "precondition: record_differs"
+    false = engine.propose("faculty", "edit_attendance", 1, student="working", session=1, present=True)
+    assert false.payload["reason"] == "precondition: matches_what_happened"
+    assert engine.records[("attend_class", "working", 1)] == "missed"
+    assert not engine.has_wrong_record("attend_class")
 
 
 def test_attend_and_skip_only_plan_and_the_recorder_records(engine: Engine) -> None:
@@ -91,9 +105,12 @@ def test_plans_only_for_the_current_step_and_slack_change(engine: Engine) -> Non
     ahead = engine.propose("commuter", "attend", 2, session=4)
     assert ahead.payload["reason"] == "precondition: current_step"
     engine.propose("commuter", "attend", 2, session=3, travel_buffer_min=40)
-    assert engine.attributes[("commuter", "travel_buffer_min")] == 40
+    # A change made during a step applies from the next one: it can't beat this step's delay.
+    assert engine.attributes[("commuter", "travel_buffer_min")] == 10
     bad = engine.propose("commuter", "attend", 2, session=3, travel_buffer_min=500)
     assert bad.payload["reason"].startswith("bad parameters")
+    engine.record_step(3)
+    assert engine.attributes[("commuter", "travel_buffer_min")] == 40
 
 
 def test_after_missed_refuses_a_request_for_an_unrecorded_session(engine: Engine) -> None:
@@ -165,13 +182,25 @@ def test_event_ids_are_unique_and_sequential(engine: Engine) -> None:
 # --- slice L3: queues, decision rules, partial acceptance, disruptions, checks ------------------
 
 
+def strikes(template: Template, skips: dict[str, set[int]]) -> list[dict]:
+    """A transport strike (outside the students' control) at each step a student misses."""
+    spp = template.calendar.steps_per_period
+    return [{"kind": "transport", "period": (s - 1) // spp + 1, "steps": [(s - 1) % spp + 1], "people": [person],
+             "delay": 999, "description": "bus strike"} for person, steps in skips.items() for s in sorted(steps)]
+
+
 def skipping(template: Template, values: dict | None = None, skips: dict[str, set[int]] | None = None,
-             last_step: int = 4) -> Engine:
-    """Steps 1..last_step recorded; `skips` maps a student to the steps they skip
-    (default: 'working' misses steps 1 and 3)."""
-    engine = Engine(template, {**VALUES, **(values or {})})
+             last_step: int = 4, excused: bool = True) -> Engine:
+    """Steps 1..last_step recorded; `skips` maps a student to the steps they skip (default:
+    'working' misses steps 1 and 3). With `excused`, a strike kept them away each time, so each
+    absence is a valid exception (26 Nov); without it, they skipped by choice."""
     skips = {"working": {1, 3}} if skips is None else skips
+    values = {**VALUES, **(values or {})}
+    if excused:
+        values["disruptions"] = [*values.get("disruptions", []), *strikes(template, skips)]
+    engine = Engine(template, values)
     for step in range(1, last_step + 1):
+        engine.start_step(step)
         engine.current_step = step
         for person, steps in skips.items():
             if step in steps:
@@ -179,6 +208,50 @@ def skipping(template: Template, values: dict | None = None, skips: dict[str, se
         engine.record_step(step)
     engine.current_step = None
     return engine
+
+
+def test_only_an_absence_a_non_routine_disruption_caused_is_excused(template: Template) -> None:
+    by_choice = skipping(template, {"office_capacity_per_week": 5}, excused=False)
+    by_choice.propose("working", "submit_exception_request", 2, sessions=[1], reason="felt like it")
+    by_choice.process_queue("exception", 2)
+    assert by_choice.requests["R1"].status == "rejected"
+    recorded = next(e for e in by_choice.events if e.type == "duty_recorded" and e.payload["person"] == "working")
+    assert (recorded.payload["cause"], recorded.payload["excusable"]) == (None, False)
+
+    # A delay no longer than their slack (working: 15 min) didn't stop them, so skipping is a choice.
+    small = {"kind": "transport", "period": 1, "steps": [1], "people": ["working"], "delay": 15, "description": "slow bus"}
+    within = skipping(template, {"office_capacity_per_week": 5, "disruptions": [small]}, excused=False)
+    within.propose("working", "submit_exception_request", 2, sessions=[1], reason="bus")
+    within.process_queue("exception", 2)
+    assert within.requests["R1"].status == "rejected"
+
+    excused = skipping(template, {"office_capacity_per_week": 5})
+    excused.propose("working", "submit_exception_request", 2, sessions=[1], reason="strike")
+    excused.process_queue("exception", 2)
+    assert excused.requests["R1"].status == "approved"
+    assert "outside their control" in excused.cause_text("attend_class", "working", 1)
+
+
+def test_a_routine_clash_is_not_excused_and_an_emergency_is(template: Template) -> None:
+    clashes = [{"kind": "work_shift_clash", "period": 1, "steps": [1], "people": ["working"], "description": "shift"},
+               {"kind": "family_emergency", "period": 2, "steps": [1], "people": ["family"], "description": "hospital"}]
+    engine = skipping(template, {"office_capacity_per_week": 5, "disruptions": clashes},
+                      skips={"working": {1}, "family": {3}}, excused=False)
+    engine.propose("working", "submit_exception_request", 2, sessions=[1], reason="shift")
+    engine.propose("family", "submit_exception_request", 2, sessions=[3], reason="hospital")
+    engine.process_queue("exception", 2)
+    assert (engine.requests["R1"].status, engine.requests["R2"].status) == ("rejected", "approved")
+    # A clash only matters if they chose to miss: no plan means they came anyway.
+    came = skipping(template, {"disruptions": clashes}, skips={}, excused=False)
+    assert came.records[("attend_class", "working", 1)] == "met"
+
+
+def test_a_step_written_as_text_is_read_as_its_number(engine: Engine) -> None:
+    engine.current_step = 9
+    planned = engine.propose("working", "skip", 5, session="week 5 session 9")
+    assert planned.type == "duty_planned" and planned.step == 9
+    wrong = engine.propose("working", "skip", 5, session="tomorrow")
+    assert wrong.payload["reason"] == "bad parameters: session must be a whole number"
 
 
 def test_queue_is_fifo_within_capacity_and_records_what_it_holds(template: Template) -> None:
@@ -239,14 +312,21 @@ def test_partial_at_decide_approves_the_missed_sessions_and_rejects_the_attended
 
 
 def test_other_decision_rules(template: Template) -> None:
+    emergency = {"kind": "family_emergency", "period": 1, "steps": [2], "people": ["working"], "description": "parent ill"}
     engine = Engine(template, {**VALUES, "request_timing": "in_advance",
                                "decision_rule": "approve_if_filed_before_occurrence",
-                               "office_capacity_per_week": 5})
-    engine.propose("working", "submit_exception_request", 1, sessions=[2], reason="dentist")
+                               "office_capacity_per_week": 5, "disruptions": [emergency]})
+    engine.propose("working", "submit_exception_request", 1, sessions=[2], reason="parent ill")
+    engine.propose("resident", "submit_exception_request", 1, sessions=[2], reason="dentist")
     engine.record_step(1)
+    engine.start_step(2)
+    engine.current_step = 2
+    engine.propose("working", "skip", 1, session=2)
     engine.record_step(2)
+    engine.current_step = None
     engine.process_queue("exception", 1)
-    assert engine.requests["R1"].status == "approved"
+    # filed before, and the absence had a valid cause: approved; filed before but attended: rejected
+    assert (engine.requests["R1"].status, engine.requests["R2"].status) == ("approved", "rejected")
 
     lenient = skipping(template, {"decision_rule": "approve_all", "office_capacity_per_week": 5})
     lenient.propose("resident", "submit_exception_request", 2, sessions=[2], reason="r")

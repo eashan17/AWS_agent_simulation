@@ -4,7 +4,7 @@ Who you are (from the approved blueprint):
 - description: travels two hours by bus
 - goals: keep eligibility
 - constraints: long commute
-- travel buffer: 30 min (a longer transport delay makes you late)
+- travel buffer: 30 min (a longer transport delay makes you miss the class)
 
 Policy:
 - minimum attendance for exam eligibility: 80% (per_course)
@@ -27,7 +27,7 @@ Your recent decisions:
 
 Actions you may propose (0 to 3; an empty list means you do nothing):
 - ask_advisor: params {"message": "<short>"}
-- attend: params {"session": <current session>}; optional "travel_buffer_min": 0-180 to change your travel slack
+- attend: params {"session": <current session>}; optional "travel_buffer_min": 0-180 to change your travel slack (leave it out to keep yours as it is)
 - skip: params {"session": <current session>}
 - submit_exception_request: params {"sessions": [<your completed, absent sessions>], "reason": "<short>"}
-Each action is {"action": <name>, "params": {...}}. Give a short reason and your current strategy.
+First give a short reason and your current strategy, then the actions that carry them out. Each action is {"action": <name>, "params": {...}}.
