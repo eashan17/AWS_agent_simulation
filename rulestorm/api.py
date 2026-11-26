@@ -410,6 +410,26 @@ def get_adaptations(run_id: str, store: Store = Depends(get_store)) -> dict:
     return {"run_id": run_id, "status": run["status"], "adaptations": found, "by_person": by_person}
 
 
+@app.get("/api/runs/{run_id}/people/{person}")
+def get_person(run_id: str, person: str, store: Store = Depends(get_store)) -> dict:
+    """One person in a run (slice M7c): profile, limits, and every decision with the state it was
+    made from. Rules over the run's records, no model call; it works while the run is going too."""
+    from rulestorm.evidence import template_named
+    from rulestorm.people import person_view
+
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    record = store.get_blueprint(run["blueprint_id"])
+    values = record.blueprint.values if record is not None and record.blueprint is not None else {}
+    try:
+        view = person_view(template_named(run["template"].split("@")[0]), values, store.run_events(run_id),
+                           run_id, person)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return view.model_dump()
+
+
 @app.get("/api/runs/{run_id}/findings")
 def get_findings(run_id: str, store: Store = Depends(get_store)) -> dict:
     """The problems found in a finished run (slice 8): checks failed and requests still pending at

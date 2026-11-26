@@ -385,7 +385,7 @@
       "duty": "attend_class",
       "routine": true,
       "obligation": {"label": "work shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit",
-                     "stakes": "If you attend during your work shift, you miss the shift; you can miss {limit} shift{s}, and the next one loses you the job. If you do nothing, you go to your shift."}
+                     "stakes": "If you attend during your work shift, you miss the shift; once you are past your limit, the next one loses you the job. If you do nothing, you go to your shift."}
     },
     {
       "id": "family_emergency",
@@ -394,7 +394,7 @@
       "duty": "attend_class",
       "routine": false,
       "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit",
-                     "stakes": "If you attend during a family emergency, you leave your family without care; you can do so {limit} time{s}, and the next time the care arrangement breaks down. If you do nothing, you stay with your family."}
+                     "stakes": "If you attend during a family emergency, you leave your family without care; once you are past your limit, the next time the care arrangement breaks down. If you do nothing, you stay with your family."}
     },
     {
       "id": "admin_capacity",

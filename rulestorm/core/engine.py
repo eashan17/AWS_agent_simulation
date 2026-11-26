@@ -1074,6 +1074,12 @@ class Engine:
         self.pending_attributes.clear()
         return recorded
 
+    def person_state(self, person: str, step: int):
+        """Slice M7c: the person's own state before `step` is recorded (rulestorm/core/margins.py)."""
+        from rulestorm.core.margins import person_state
+
+        return person_state(self, person, step)
+
     def _obligation_clash(self, obstacles: list[Obstacle], duty_id: str, person: str) -> Obstacle | None:
         """The conflict hitting this person at this duty that carries an obligation, if any."""
         for o in obstacles:

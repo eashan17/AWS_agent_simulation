@@ -22,6 +22,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from rulestorm.core.engine import CountResult, Engine, Event
+from rulestorm.core.margins import PersonState
 from rulestorm.core.model import Template
 
 
@@ -77,6 +78,8 @@ class DecisionContext(BaseModel):
     situation: list[str] = Field(default_factory=list)
     # Slice M5: at a step the person named, what they said they would do then (one line each).
     reminders: list[str] = Field(default_factory=list)
+    # Slice M7c: the person's own state (rulestorm/core/margins.py), for people who owe a duty.
+    state: PersonState | None = None
 
     def action_limit(self) -> int:
         """Everyone may propose 3 actions; someone with more requests waiting for them (to consent
@@ -361,6 +364,8 @@ class Term:
             payload = {"proposals": [p.model_dump() for p in decision.proposals],
                        "reason": decision.reason, "strategy": decision.strategy,
                        "no_action": not decision.proposals, "error": decision.error}
+            if context.state is not None:  # slice M7c: what the person decided from
+                payload["state"] = context.state.model_dump()
             recorded = e.emit("decision", context.person, period, step, payload=payload,
                               caused_by=[t.event_id for t in context.triggers])
             if decision.intends:  # slice M5: only when stated, so older event logs stay as they were
@@ -443,6 +448,7 @@ class Term:
             unavailable_actions=unavailable, capacity_now=capacity_now,
             situation=e.situation(person, step) if any(e.owes(person, d) for d in e.duties.values()) else [],
             reminders=self.reminders(person, step),
+            state=e.person_state(person, step) if counts else None,
         )
 
     def reminders(self, person: str, step: int) -> list[str]:

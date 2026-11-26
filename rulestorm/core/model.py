@@ -209,8 +209,9 @@ class Obligation(Block):
     lost_label: str = Field(min_length=1, description="what happens past the limit, e.g. the job is lost")
     limit_attribute: str = Field(min_length=1, description="the per-person attribute holding the limit")
     # Slice M7b: both stakes, in a fixed order (meet the duty -> miss it; past the limit -> lost;
-    # do nothing -> go to it), as the person reads them. {limit} is their limit, {s} its plural "s".
-    stakes: str = Field(min_length=1, description="the person's stakes; {limit} and {s} are filled in")
+    # do nothing -> go to it), as the person reads them. Slice M7c: no number; the person's limit
+    # and how many they have left are in their own state.
+    stakes: str = Field(min_length=1, description="the stakes in words; the numbers are in the person's state")
 
 
 class DisruptionKind(Block):
@@ -545,8 +546,9 @@ def _reference_errors(t: Template) -> list[str]:
         if d.kind == "capacity" and d.request_type is None:
             errors.append(f"{owner}: a capacity disruption needs 'request_type'")
         if d.obligation is not None:
-            if "{limit}" not in d.obligation.stakes:
-                errors.append(f"{owner}: the obligation's stakes must state the person's {{limit}}")
+            if "{" in d.obligation.stakes:
+                errors.append(f"{owner}: the obligation's stakes hold no placeholder (the numbers are in the "
+                              "person's state)")
             if d.kind != "conflict":
                 errors.append(f"{owner}: only a conflict can carry an obligation")
             limit = d.obligation.limit_attribute

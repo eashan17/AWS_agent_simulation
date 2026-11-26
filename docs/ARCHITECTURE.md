@@ -109,7 +109,7 @@ A template may only use these. Anything outside them needs new engine code, by d
 |---|---|---|
 | **Calendar** | number of periods (e.g. weeks), steps per period (sessions / nights), labels, and a **fixed phase order**: period start (capacity disruptions, then pending-request triggers) → each step (obstacles → decisions, including endorsements (the consenting people are asked again, in a short phase of their own, about requests filed in that step: added in L9d) → requests with `processed: each_step` → recording) → period end (requests with `processed: period_end` → checks) | Steps through time in exactly that order. For attendance it is today's order, which decides "pending at the checkpoint"; for curfew it means a permission is filed, consented to and decided before that night is recorded |
 | **Role** | id, label, `llm: bool` plus `rules: [recorder / queue_processor / checker]` (a role may be both, like faculty: an LLM that also records attendance), allowed action IDs | LLM roles decide when triggered, and their prompt lists only their allowed actions. Rules aren't actions: they run automatically at their phase and are never offered to an LLM |
-| **Person** | id, role, label; profile (description, at most 2 goals, at most 2 constraints) and numeric attributes, from the blueprint | Holds memory, strategy and attribute values |
+| **Person** | id, role, label; profile (description, at most 2 goals, at most 2 constraints) and numeric attributes, from the blueprint | Holds memory, strategy and attribute values; from M7c a `PersonState` recomputed from the records (see Person state) |
 | **Attribute** | id, label, range, which role has it (e.g. `slack_min`) | Read by obstacle rules; changed only by an action with a `set_attribute` effect |
 | **Duty** | id, label, owed by role, each step, the actions that plan to meet or miss it, `recorded_by` role, obstacle rule (`delay > attribute` means missed) | Creates each occurrence. **Recording is not an action:** at the recording phase the recorder rule records met or missed for everyone, applying each person's plan and any obstacle, with `caused_by`. A person with no plan is treated as planning to meet it |
 | **Action** | id, label, allowed roles, parameters, one or more effects from a fixed library (`plan_meet, plan_miss, set_attribute, file_request, endorse, decide_request, message, respond, correct_record, cancel_occurrence`), preconditions from a fixed list (`own_occurrence`, `occurrence_recorded`, `occurrence_not_yet`, `not_already_covered`, …). `plan_meet` and `plan_miss` only record the person's plan for an upcoming occurrence; the outcome comes at recording. Example: `attend` = `plan_meet` plus an optional `set_attribute` on `slack_min` (today's "change your travel buffer") | Refuses anything not allowed (an `action_rejected` event with the reason code and a plain `detail`) and commits the rest. The engine writes the detail itself from the fixed reason library and the template's labels (for example "session 5 had not been recorded yet when you sent this"); templates hold no refusal sentences, and the person's prompt shows the detail, not the code |
@@ -231,6 +231,28 @@ Each item is a general block used by both templates. Template words stay in the 
 - The rulebook states both stakes with numbers, in a fixed order.
 - New detector `obligation_lost`: the rule kept someone compliant at the cost of their job or care.
 - Attendance: `work_shift_clash` and `family_emergency`. Curfew: `evening_job_shift` and `family_emergency`.
+
+
+**Person state (M7c, 27 Nov).**
+- The brief's agent schema (`memory`, `resources`, `knowledge`, `current_strategy`; "common schemas for agent state, observations, decisions and actions") was narrowed at the plan of 24 Nov to a profile, numeric attributes, 3 memory notes and a strategy line. Rules and stakes then reached people as prompt sentences, and their own tally didn't: in the M7b runs no one used the misses they had left. M7c restores the state.
+- `Engine.person_state(person, step) -> PersonState`, recomputed from the records, never stored apart from them:
+  - per duty and count: `missed`, `excused`, `pending`, the count's text, and `misses_left` before each check (the single check, or every ladder step), 0 when the next miss fails it;
+  - per obligation the person can be hit by: `missed`, `limit`, `left`, `lost`;
+  - their own requests and their current strategy (already in the context).
+- `misses_to_fail` moves from rulebook.py into core (it is general); the rulebook and explore import it from there.
+- `DecisionContext.state` carries it. The prompt shows one "Your state" block in place of the separate count lines; the lines frozen in tests/golden stay character for character inside it. The rules block keeps only the mechanics: a template's obligation `stakes` no longer hold `{limit}` ("past your limit you lose the job"); the number is in the state.
+- Every `decision` event's payload records the `state` it was made from, so the evidence and the people route show what the person knew (the brief's "structured decision records: observation context").
+- `GET /api/runs/{id}/people/{person}`: the person's profile and limits, and per decision the state it was made from, its actions and reason. It reads the run's events; no engine is rebuilt.
+- Memory stays the last 3 decision notes; the tally is the state, not memory.
+
+**Structured output (M7d, 27 Nov).**
+- Bedrock Converse `outputConfig.textFormat` (`json_schema`) constrains decoding to the schema. Probed 27 Nov on `deepseek.v3.2` in ap-southeast-2: 6 of 6 real fills well-formed, 15–20 s; 5 of 6 passed every check (the other a wrong value, retried as now).
+- `strict_schema(model)`: Bedrock enforces types, enums, `required`, `$defs` and `minItems` 0/1, but not min/max, lengths or `maxItems`, and needs `additionalProperties: false` on every object. Those keywords are dropped from what Bedrock sees; Pydantic still validates every reply, with the one retry.
+- Limits: at most 12 optional properties and 16 union properties per schema. Measured 27 Nov: fill 9 and 2, variants 6 and 2, pick 0 and 0, on both templates.
+- A label's `field` becomes an enum of the value names and sections, so a fill can't name "purpose".
+- The first call with a new schema compiles a grammar (up to about 90 s; cached 24 h). The 5 fixed schemas (pick; fill and variants per template; the search reuses variants) are warmed once at server start, in the background; `RULESTORM_WARM_SCHEMAS=0` turns that off for tests and local work.
+- A Bedrock `ValidationException` on the schema falls back to today's unconstrained call, logged. The repair of the key typo stays for that path.
+- Not used for agent decisions (each action's `params` is an open object, which a strict schema forbids) or for the comparison (its schema changes with each blueprint, so each call would compile anew).
 
 **The template's readings, shown and changeable (M8).**
 - **What counts as exceptional:** a policy choice of `unforeseen_only` (default: routine causes are rejected, as today) or `any_documented`.

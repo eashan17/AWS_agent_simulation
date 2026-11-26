@@ -12,7 +12,9 @@ A case file names its template and values and says what people do, by person and
                                                 filed in advance, else the step after the last one),
                   "consent": true | false      (request types that need consent),
                   "decision": "approved" | "rejected"   (request types an LLM person decides)}]
-    "report": ["count", "queue", "permission", "ladder", "failed_check", "readings", "obligations"]
+    "report": ["count", "queue", "permission", "ladder", "failed_check", "readings", "obligations", "state"]
+                                                ("state", slice M7c: the focus person's own state
+                                                before each step a clash or delay hits them)
                                                 the lines to print
     "claims": [{"person", "step", "cause", "then": "<action>"}]   ("claims": a planned miss with
                                                 that claimed cause; if the engine refuses the claim,
@@ -52,6 +54,7 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
     count_lines: list[str] = []
     reading_lines: list[str] = []
     claim_lines: list[str] = []
+    state_lines: list[str] = []
     last_queue: dict[str, Event] = {}
     spp, periods = template.calendar.steps_per_period, template.calendar.periods
 
@@ -96,6 +99,11 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
         for step in range((period - 1) * spp + 1, period * spp + 1):
             e.current_step = step
             e.start_step(step)
+            if "state" in case.get("report", []):
+                for hit in e.hitting(focus, step):
+                    state = e.person_state(focus, step)
+                    state_lines.append(f"{focus} state, {template.calendar.step_label} {step}: "
+                                       f"{'; '.join(state.lines(template))}  [{hit.event_id}]")
             for person, steps in missed.items():
                 if step in steps:
                     e.propose(person, plan_miss.id, period, **{_param(plan_miss, "step"): step})
@@ -148,6 +156,8 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
             lines += claim_lines
         elif item == "obligations":
             lines += _obligation_lines(e, template, focus)
+        elif item == "state":
+            lines += state_lines or [f"state: nothing hit {focus}"]
         else:
             raise ValueError(f"unknown report item {item!r}")
     return lines, e

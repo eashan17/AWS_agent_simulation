@@ -11,53 +11,10 @@ does. No domain word lives here: every label comes from the template.
 
 from typing import Any
 
-from pydantic import BaseModel
-
-from rulestorm.core.engine import count_value, excused_reading, passes
+from rulestorm.core.engine import excused_reading
+# Moved to core on 27 Nov (slice M7c: the person state needs them); imported here for older callers.
+from rulestorm.core.margins import MissesToFail, _first_failing, misses_to_fail  # noqa: F401
 from rulestorm.core.model import Template
-
-
-class MissesToFail(BaseModel):
-    """How many misses make a person fail one check (or reach one ladder step)."""
-
-    check: str
-    outcome: str  # the template's word for failing, or the ladder step's outcome
-    period: int | None  # the period a single-threshold check runs in; None for a ladder (every period)
-    due: int  # occurrences counted by then (a ladder: the whole term)
-    threshold: float
-    misses: int | None  # None: no number of misses fails it
-
-
-def _first_failing(kind: str, comparison: str, threshold: float, due: int) -> int | None:
-    for missed in range(due + 1):
-        if not passes(count_value(kind, due - missed, missed), comparison, threshold):
-            return missed
-    return None
-
-
-def misses_to_fail(template: Template, values: dict[str, Any]) -> list[MissesToFail]:
-    """For each check: the fewest misses that fail it, assuming no cancelled occurrences.
-    Worked out by the engine's own counting (`count_value`, `passes`), so it can't drift from it."""
-    t, cal = template, template.calendar
-    counts = {c.id: c for c in t.counts}
-    failed = t.terms.get("check_failed", "failed")
-    out = []
-    for check in t.checks:
-        kind = counts[check.count].kind
-        if check.ladder is None:
-            period = values[check.at_param]
-            due = period * cal.steps_per_period
-            threshold = values[check.threshold_param]
-            out.append(MissesToFail(check=check.id, outcome=failed, period=period, due=due, threshold=threshold,
-                                    misses=_first_failing(kind, check.comparison, threshold, due)))
-        else:
-            due = cal.periods * cal.steps_per_period
-            for step in check.ladder:
-                threshold = values[step.threshold_param]
-                out.append(MissesToFail(check=check.id, outcome=step.outcome, period=None, due=due,
-                                        threshold=threshold,
-                                        misses=_first_failing(kind, check.comparison, threshold, due)))
-    return out
 
 
 def _a(word: str) -> str:
@@ -81,8 +38,8 @@ def _short(label: str) -> str:
 
 def _stakes(t: Template, values: dict[str, Any], person: str | None, clashes) -> list[str]:
     """One line per clash with an obligation, in the template's fixed order (meet the duty: miss the
-    obligation; past the limit: lose it; do nothing: go to it), with this person's limit from the
-    blueprint (or the parameter's default). Left out for someone with no limit."""
+    obligation; past the limit: lose it; do nothing: go to it). The person's limit and how many they
+    have left are in their state (slice M7c), not here. Left out for someone with no limit."""
     if person is None:
         return []
     lines = []
@@ -95,8 +52,7 @@ def _stakes(t: Template, values: dict[str, Any], person: str | None, clashes) ->
         limit = limits.get(person)
         if limit is None:
             continue
-        lines.append(f"- {kind.label.capitalize()}: "
-                     + kind.obligation.stakes.format(limit=limit, s="" if limit == 1 else "s"))
+        lines.append(f"- {kind.label.capitalize()}: {kind.obligation.stakes}")
     return lines
 
 

@@ -204,35 +204,35 @@ def test_the_comparison_measures_count_what_their_labels_say() -> None:
     assert labels["requests_decided"].startswith("requests decided") and "requests_rejected" in labels
 
 
-# --- slice M7b: both stakes, in numbers, in a fixed order ------------------------------------------
+# --- slices M7b and M7c: both stakes in a fixed order; the numbers are in the person's state ---------
 
 
-def test_each_person_reads_both_stakes_with_their_own_limit(attendance) -> None:
+def test_each_person_reads_both_stakes_in_a_fixed_order_with_no_number(attendance) -> None:
     values = {**VALUES, "shift_limits": {"commuter": 2, "resident": 2, "working": 2, "family": 1},
               "care_limits": {"commuter": 3, "resident": 3, "working": 3, "family": 1}}
     working = "\n".join(rule_lines(attendance, values, "working"))
-    stakes = ("- Work shift clash: If you attend during your work shift, you miss the shift; you can miss 2 shifts, "
-              "and the next one loses you the job. If you do nothing, you go to your shift.")
+    stakes = ("- Work shift clash: If you attend during your work shift, you miss the shift; once you are past your "
+              "limit, the next one loses you the job. If you do nothing, you go to your shift.")
     assert stakes in working
-    # Fixed order: what attending costs, then the limit, then what doing nothing means.
-    at = working.index(stakes)
-    assert working.index("you miss the shift", at) < working.index("you can miss 2", at) < working.index(
+    at = working.index(stakes)  # fixed order: what attending costs, then the limit, then doing nothing
+    assert working.index("you miss the shift", at) < working.index("past your limit", at) < working.index(
         "If you do nothing", at)
-    assert "you can do so 3 times, and the next time the care arrangement breaks down" in working
+    assert "once you are past your limit, the next time the care arrangement breaks down" in working
     assert "No action for a session means your plan stays: attend class, except during a clash below." in working
-    family = "\n".join(rule_lines(attendance, values, "family"))
-    assert "you can miss 1 shift, and the next one" in family and "you can do so 1 time, and" in family
+    assert not any(ch.isdigit() for line in working.splitlines() if "clash:" in line or "emergency:" in line
+                   for ch in line)  # slice M7c: no number in the stakes
     assert "Work shift clash:" not in "\n".join(rule_lines(attendance, values, "faculty"))  # no limit: left out
 
 
-def test_a_curfew_resident_reads_the_stakes_in_its_own_words_and_the_default_limit() -> None:
+def test_a_curfew_resident_reads_the_stakes_in_its_own_words() -> None:
     curfew = load_template("hostel_curfew")
-    text = "\n".join(rule_lines(curfew, CURFEW_VALUES, "intern"))  # no limits in the values: the default, 2
-    assert ("- Evening job shift: If you return on time during your evening shift, you miss the shift; you can miss "
-            "2 shifts, and the next one loses you the job. If you do nothing, you work your shift and return late.") in text
+    text = "\n".join(rule_lines(curfew, CURFEW_VALUES, "intern"))  # no limits in the values: the default
+    assert ("- Evening job shift: If you return on time during your evening shift, you miss the shift; once you are "
+            "past your limit, the next one loses you the job. If you do nothing, you work your shift and return "
+            "late.") in text
 
 
-def test_the_prompt_carries_the_persons_own_stakes(attendance) -> None:
+def test_the_prompt_carries_the_stakes_and_the_persons_own_state(attendance) -> None:
     rendered = {}
 
     def recording(contexts):
@@ -241,5 +241,8 @@ def test_the_prompt_carries_the_persons_own_stakes(attendance) -> None:
         return decider(contexts)
 
     simulate(attendance, VALUES, recording)
-    assert "you can miss 2 shifts" in rendered["commuter"]
-    assert "Work shift clash:" not in rendered["advisor"]
+    commuter = rendered["commuter"]
+    assert "past your limit, the next one loses you the job" in commuter
+    assert "Your state (your own record, kept from what happened; before session" in commuter
+    assert "left before exam eligibility" in commuter
+    assert "Work shift clash:" not in rendered["advisor"] and "Your state" not in rendered["advisor"]

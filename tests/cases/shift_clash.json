@@ -18,5 +18,5 @@
       {"kind": "work_shift_clash", "period": 2, "until_period": 6, "steps": [2], "people": ["working"], "description": "Tuesday evening shift"}
     ]
   },
-  "report": ["obligations", "count"]
+  "report": ["state", "obligations", "count"]
 }

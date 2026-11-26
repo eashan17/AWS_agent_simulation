@@ -73,6 +73,9 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
         lines += ["", "You said you would: " + "; ".join(c.reminders) + ".",
                   "This is a reminder, not a commitment: decide what you do now."]
     request_word = terms.get("request", "request")
+    if c.state is not None:  # slice M7c: the person's own record; the count lines below sit inside it
+        lines += ["", f"Your state (your own record, kept from what happened; before {cal.step_label} {c.step}):",
+                  *(f"- {x}" for x in c.state.lines(template))]
     if c.counts:
         for count_id, result in c.counts.items():
             label = next(x.label for x in template.counts if x.id == count_id)

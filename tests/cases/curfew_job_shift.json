@@ -19,5 +19,5 @@
       {"kind": "evening_job_shift", "period": 1, "until_period": 5, "steps": [3], "people": ["intern"], "description": "evening shift at the internship"}
     ]
   },
-  "report": ["obligations", "count"]
+  "report": ["state", "obligations", "count"]
 }
