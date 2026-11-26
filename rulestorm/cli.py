@@ -56,6 +56,8 @@ def main(argv: list[str] | None = None) -> None:
     llm_commands = llm.add_subparsers(dest="llm_command", required=True)
     smoke_cmd = llm_commands.add_parser("smoke", help="real Bedrock call: auth, latency, tokens, quotas")
     smoke_cmd.add_argument("--model", help="Bedrock model ID (default: the configured model)")
+    schemas_cmd = llm_commands.add_parser("schemas", help="the structured-output schemas and their limits (slice M7d)")
+    schemas_cmd.add_argument("--warm", action="store_true", help="also compile each on Bedrock now (5 short calls)")
 
     run = commands.add_parser("run", help="simulated terms")
     run_commands = run.add_subparsers(dest="run_command", required=True)
@@ -133,6 +135,15 @@ def main(argv: list[str] | None = None) -> None:
         lines = run_case(case, load_template(case["template"]))
         for line in lines:
             print(line)
+    elif args.command == "llm" and args.llm_command == "schemas":
+        from rulestorm import llm, structured
+
+        for line in structured.schema_lines():
+            print(line)
+        if args.warm:
+            for line in structured.warm(llm.get_model(max_attempts=1)):
+                print(line)
+
     elif args.command == "llm" and args.llm_command == "smoke":
         from rulestorm import smoke
 

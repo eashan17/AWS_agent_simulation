@@ -209,7 +209,8 @@ def _targeted(store, template, parent, policy, history, model) -> tuple[list[Bas
     except DailyCapReached as exc:
         return [], str(exc)
     outcome = llm.decide(search_prompt(template, parent.blueprint, policy.environment, history),
-                         variants_schema(template), model=model, max_tokens=2000, deadline_s=BLUEPRINT_DEADLINE_S)
+                         variants_schema(template), model=model, max_tokens=2000, deadline_s=BLUEPRINT_DEADLINE_S,
+                         structured=True)
     if outcome.no_action or not outcome.value:
         return [], outcome.error or "the AI proposed nothing"
     return list(outcome.value.variants)[:TARGETED_PER_ROUND], None

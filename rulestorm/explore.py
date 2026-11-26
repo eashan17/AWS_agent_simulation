@@ -251,7 +251,8 @@ def propose_variants(store, parent_id: str, model: llm.Model | None = None) -> V
     policy = store.get_policy(parent.policy_id)
     model = model or llm.get_model(max_attempts=1)
     outcome = llm.decide(variants_prompt(template, parent.blueprint, policy.environment), variants_schema(template),
-                         model=model, max_tokens=VARIANTS_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S)
+                         model=model, max_tokens=VARIANTS_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S,
+                         structured=True)
     result = VariantsResult(parent_id=parent_id, status="invalid" if outcome.no_action else "valid",
                             errors=[outcome.error] if outcome.error else [], attempts=outcome.attempts,
                             seconds=outcome.seconds)

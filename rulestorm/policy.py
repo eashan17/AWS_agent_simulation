@@ -123,7 +123,7 @@ def interpret(policy: Policy, model: llm.Model | None = None) -> BlueprintDraft:
     draft = BlueprintDraft(policy_id=policy.id, model_id=model.model_id, status="invalid", attempts=0, seconds=0)
 
     pick = llm.decide(pick_prompt(policy, list(templates.values())), pick_schema(list(templates)), model=model,
-                      max_tokens=PICK_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S)
+                      max_tokens=PICK_MAX_TOKENS, deadline_s=BLUEPRINT_DEADLINE_S, structured=True)
     draft.attempts = pick.attempts
     _measure(draft, pick, pick_schema(list(templates)))
     if pick.no_action:
@@ -136,7 +136,7 @@ def interpret(policy: Policy, model: llm.Model | None = None) -> BlueprintDraft:
         draft.pick_reason = pick.value.reason
         fill = llm.decide(fill_prompt(template, policy.text, policy.purpose, policy.environment),
                           fill_schema(template), model=model, max_tokens=BLUEPRINT_MAX_TOKENS,
-                          deadline_s=BLUEPRINT_DEADLINE_S - (time.monotonic() - started))
+                          deadline_s=BLUEPRINT_DEADLINE_S - (time.monotonic() - started), structured=True)
         draft.attempts += fill.attempts
         _measure(draft, fill, fill_schema(template))
         draft.status = "invalid" if fill.no_action else "valid"

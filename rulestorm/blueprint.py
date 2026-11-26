@@ -168,13 +168,23 @@ def fill_parameters(template: Template) -> list[Parameter]:
 class FillBase(BaseModel):
     template: ClassVar[Template]
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_limit_labels(cls, data: Any) -> Any:
+        """A label naming the obligation limits is dropped before the label names are checked:
+        `to_blueprint` writes their labels itself (slices M7b, M7d)."""
+        if isinstance(data, dict):
+            limits = [p.name for p in obligation_limits(cls.template)]
+            data = dict(data)
+            for key in ("facts", "assumptions"):
+                if isinstance(data.get(key), list):
+                    data[key] = [x for x in data[key]
+                                 if not (isinstance(x, dict) and _names_any(str(x.get("field", "")), limits))]
+        return data
+
     @model_validator(mode="after")
     def _every_value_labelled(self) -> "FillBase":
         names = {p.name: p.kind for p in self.template.parameters}
-        # A label naming the obligation limits is dropped: `to_blueprint` writes their labels itself.
-        limits = [p.name for p in obligation_limits(self.template)]
-        self.facts = [x for x in self.facts if not _names_any(x.field, limits)]
-        self.assumptions = [x for x in self.assumptions if not _names_any(x.field, limits)]
         labels = [*self.facts, *self.assumptions]
         unknown = sorted({x.field for x in labels} - set(names) - set(SECTIONS))
         if unknown:
@@ -198,11 +208,18 @@ class FillBase(BaseModel):
 
 
 def fill_schema(template: Template) -> type[FillBase]:
+    # Slice M7d: a label names one of the values the fill sets or a section, so with structured
+    # output a fill can't name "purpose" or "Environment" (about 1 fill in 10 did, 27 Nov).
+    names = tuple([p.name for p in fill_parameters(template)] + list(SECTIONS))
+    label = create_model(f"FillLabel_{template.id}", __base__=Label,
+                         field=(Literal[names], Field(description="a value's name, or a whole section")))
     model = create_model(
         f"Fill_{template.id}", __base__=FillBase,
         values=(_fill_values_model(template.ref, template.model_dump_json()), ...),
-        facts=(list[Label], Field(min_length=1, max_length=MAX_LABELS, description="values stated in the user's text")),
-        assumptions=(list[Label], Field(min_length=1, max_length=MAX_LABELS, description="values the AI proposed")),
+        facts=(list[label], Field(min_length=1, max_length=MAX_LABELS, description="values stated in the user's text")),
+        # May be empty: the limits' assumption labels are added in `to_blueprint`, and the coverage
+        # check still refuses a value no label covers.
+        assumptions=(list[label], Field(min_length=0, max_length=MAX_LABELS, description="values the AI proposed")),
     )
     model.template = template
     return model
@@ -218,7 +235,8 @@ def to_blueprint(template: Template, fill: FillBase) -> TemplateBlueprint:
                                      + ", ".join(f"{who} {n}" for who, n in values[name].items()))[:200])
         for name in sorted(limits, key=[p.name for p in template.parameters].index)]
     return TemplateBlueprint(template_id=template.id, template_version=template.version, values=values,
-                             facts=list(fill.facts), assumptions=assumptions)
+                             facts=[Label(field=x.field, statement=x.statement) for x in fill.facts],
+                             assumptions=[Label(field=x.field, statement=x.statement) for x in assumptions])
 
 
 # --- the fill prompt ----------------------------------------------------------------------------

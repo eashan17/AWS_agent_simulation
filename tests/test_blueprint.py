@@ -146,7 +146,7 @@ def test_labels_are_grouped_by_section_and_cover_every_value(template) -> None:
         schema.model_validate(no_people)
     unknown = copy.deepcopy(FILL)
     unknown["facts"].append({"field": "scenario.students", "statement": "old path"})
-    with pytest.raises(ValidationError, match="unknown: scenario.students"):
+    with pytest.raises(ValidationError, match=r"facts\.1\.field\s+Input should be 'threshold_pct'"):  # slice M7d
         schema.model_validate(unknown)
 
 
@@ -250,10 +250,10 @@ def test_fill_gets_what_is_left_of_the_shared_budget(policy) -> None:
     import time
 
     class SlowPick(FakeModel):
-        def complete(self, prompt, max_tokens, timeout_s=None):
+        def complete(self, prompt, max_tokens, timeout_s=None, **kw):
             if not self.prompts:
                 time.sleep(0.5)  # the pick takes half a second
-            return super().complete(prompt, max_tokens, timeout_s)
+            return super().complete(prompt, max_tokens, timeout_s, **kw)
 
     model = SlowPick([PICK, json.dumps(FILL)])
     interpret(policy, model)

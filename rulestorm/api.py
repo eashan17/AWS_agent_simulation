@@ -32,10 +32,13 @@ def get_store() -> Store:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """At startup, a run left `running` by a restart becomes failed (interrupted) (slice 7b)."""
+    """At startup, a run left `running` by a restart becomes failed (interrupted) (slice 7b), and
+    the structured-output schemas are compiled in the background (slice M7d)."""
     from rulestorm.runner import recover_interrupted
+    from rulestorm.structured import warm_in_background
 
     recover_interrupted(app.dependency_overrides.get(get_store, get_store)())
+    warm_in_background()
     yield
 
 

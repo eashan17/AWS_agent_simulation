@@ -41,6 +41,60 @@ class Model(Protocol):
     def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> Reply: ...
 
 
+# --- structured output (slice M7d) ---------------------------------------------------------------
+# Bedrock Converse `outputConfig.textFormat` (json_schema) constrains decoding to a schema: the reply
+# is always well-formed JSON of that shape. Bedrock enforces types, enums, `required`, `$defs` and
+# `minItems` 0 or 1, but not numeric limits, lengths or `maxItems`, and every object must be closed.
+# Those keywords are left out of what Bedrock sees; Pydantic still checks every reply.
+_NOT_ENFORCED = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength",
+                 "maxLength", "maxItems", "title"}
+MAX_OPTIONAL, MAX_UNIONS = 12, 16  # Bedrock's limits per schema
+
+
+def strict_schema(schema: type[BaseModel]) -> dict:
+    """The model's JSON schema in the subset Bedrock enforces."""
+    def walk(node):
+        if isinstance(node, list):
+            return [walk(x) for x in node]
+        if not isinstance(node, dict):
+            return node
+        out = {}
+        for k, v in node.items():
+            if k in ("properties", "$defs") and isinstance(v, dict):  # names, not keywords: keep them all
+                out[k] = {name: walk(sub) for name, sub in v.items()}
+            elif k not in _NOT_ENFORCED:
+                out[k] = walk(v)
+        if out.get("minItems", 0) > 1:
+            out["minItems"] = 1
+        if out.get("type") == "object" or "properties" in out:
+            out["additionalProperties"] = False
+            out.setdefault("properties", {})
+        return out
+
+    return walk(schema.model_json_schema())
+
+
+def schema_counts(schema: dict) -> tuple[int, int]:
+    """(optional properties, union-typed properties), counted across every object, as Bedrock does."""
+    optional = unions = 0
+
+    def walk(node) -> None:
+        nonlocal optional, unions
+        if isinstance(node, dict):
+            if isinstance(node.get("properties"), dict):
+                optional += len(set(node["properties"]) - set(node.get("required", [])))
+                unions += sum(1 for p in node["properties"].values()
+                              if isinstance(p, dict) and ("anyOf" in p or isinstance(p.get("type"), list)))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(schema)
+    return optional, unions
+
+
 @dataclass
 class Outcome(Generic[T]):
     """What `decide` returns. `value` is None means "no action"; `error` says why."""
@@ -114,17 +168,20 @@ class DeadlineExceeded(Exception):
     """No reply before the time budget ran out."""
 
 
-def _complete_by(model: "Model", prompt: str, max_tokens: int, timeout_s: float | None) -> Reply:
+def _complete_by(model: "Model", prompt: str, max_tokens: int, timeout_s: float | None,
+                 schema: dict | None = None) -> Reply:
     """Boto's read timeout only fires when the socket goes quiet, so it is not a wall-clock
     limit (a blueprint once took 75 s against a 55 s budget). With a timeout, the call runs in
-    a daemon thread and we stop waiting at the deadline; an abandoned call finishes unseen."""
+    a daemon thread and we stop waiting at the deadline; an abandoned call finishes unseen.
+    `schema` (slice M7d) goes only to a model that says it takes one (`structured`)."""
+    extra = {"schema": schema} if schema is not None and getattr(model, "structured", False) else {}
     if timeout_s is None:
-        return model.complete(prompt, max_tokens, None)
+        return model.complete(prompt, max_tokens, None, **extra)
     box: dict = {}
 
     def call() -> None:
         try:
-            box["reply"] = model.complete(prompt, max_tokens, timeout_s)
+            box["reply"] = model.complete(prompt, max_tokens, timeout_s, **extra)
         except Exception as exc:  # handed back to decide, which records it
             box["error"] = exc
 
@@ -144,13 +201,16 @@ def decide(
     model: Model | None = None,
     max_tokens: int = 800,
     deadline_s: float | None = None,
+    structured: bool = False,
 ) -> Outcome[T]:
     """`deadline_s` is one time budget shared by both attempts: each attempt may wait for
-    whatever is left of it, and the retry is skipped if less than MIN_ATTEMPT_S remains."""
+    whatever is left of it, and the retry is skipped if less than MIN_ATTEMPT_S remains.
+    `structured` (slice M7d) asks the model to constrain its reply to the schema."""
     model = model or get_model()
     outcome: Outcome[T] = Outcome(value=None)
     started = time.monotonic()
     current = _prompt_with_schema(prompt, schema)
+    constraint = strict_schema(schema) if structured else None
     try:
         for attempt in (1, 2):
             timeout_s = None
@@ -160,7 +220,7 @@ def decide(
                     outcome.error += f" (no retry: {timeout_s:.0f} s left of the {deadline_s:.0f} s budget)"
                     break
             outcome.attempts = attempt
-            reply = _complete_by(model, current, max_tokens, timeout_s)
+            reply = _complete_by(model, current, max_tokens, timeout_s, constraint)
             outcome.raw_replies.append(reply.text)
             outcome.input_tokens += reply.input_tokens
             outcome.output_tokens += reply.output_tokens
@@ -185,6 +245,8 @@ def decide(
 
 class BedrockModel:
     """Bedrock Converse in-Region. `max_attempts=1` turns boto retries off (blueprint calls)."""
+
+    structured = True  # slice M7d: takes a schema for Bedrock structured output
 
     def __init__(self, model_id: str | None = None, max_attempts: int = 5) -> None:
         import boto3
@@ -221,13 +283,24 @@ class BedrockModel:
                 )
             return self._clients[key]
 
-    def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> Reply:
+    def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None,
+                 schema: dict | None = None) -> Reply:
         client = self.client if timeout_s is None else self._client(timeout_s)
-        response = client.converse(
-            modelId=self.model_id,
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"maxTokens": max_tokens, "temperature": 0.7},
-        )
+        request = {"modelId": self.model_id, "messages": [{"role": "user", "content": [{"text": prompt}]}],
+                   "inferenceConfig": {"maxTokens": max_tokens, "temperature": 0.7}}
+        if schema is not None:
+            constrained = {**request, "outputConfig": {"textFormat": {"type": "json_schema", "structure": {
+                "jsonSchema": {"name": str(schema.get("title") or "reply")[:64] or "reply",
+                               "schema": json.dumps(schema)}}}}}
+            try:
+                response = client.converse(**constrained)
+            except Exception as exc:  # Bedrock refused the schema ("Schema is too complex", a keyword)
+                if "ValidationException" not in type(exc).__name__ + str(getattr(exc, "response", "")):
+                    raise
+                log.warning("structured output refused, calling without it: %s", _short(str(exc)))
+                response = client.converse(**request)
+        else:
+            response = client.converse(**request)
         text = "".join(
             part.get("text", "") for part in response["output"]["message"]["content"]
         )
@@ -239,15 +312,19 @@ class FakeModel:
     """Scripted replies for automated tests. Each item is a reply text or an exception to raise."""
 
     model_id = "fake"
+    structured = True  # records the schema it was given (slice M7d); the script decides the reply
 
     def __init__(self, script: list[str | Exception] | None = None) -> None:
         self.script = list(script or [])
         self.prompts: list[str] = []
         self.timeouts: list[float | None] = []
+        self.schemas: list[dict | None] = []
 
-    def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None) -> Reply:
+    def complete(self, prompt: str, max_tokens: int, timeout_s: float | None = None,
+                 schema: dict | None = None) -> Reply:
         self.prompts.append(prompt)
         self.timeouts.append(timeout_s)
+        self.schemas.append(schema)
         if not self.script:
             raise RuntimeError("fake model script is empty")
         item = self.script.pop(0)
