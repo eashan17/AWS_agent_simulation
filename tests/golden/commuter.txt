@@ -28,6 +28,6 @@ Your recent decisions:
 Actions you may propose (0 to 3; an empty list means you do nothing):
 - ask_advisor: params {"message": "<short>"}
 - attend: params {"session": <current session>}; optional "travel_buffer_min": 0-180 to change your travel slack (leave it out to keep yours as it is)
-- skip: params {"session": <current session>}
+- skip: params {"session": <current session>}; optional "cause": "none" if it is your own choice, or the ID or kind of a disruption hitting you now (see "Your situation now") (leave it out if nothing stops you: it is your own choice)
 - submit_exception_request: params {"sessions": [<your completed, absent sessions>], "reason": "<short>"}
 First give a short reason and your current strategy, then the actions that carry them out. Each action is {"action": <name>, "params": {...}}.
