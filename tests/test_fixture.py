@@ -69,7 +69,13 @@ def test_reset_demo_restores_the_run_its_findings_and_their_evidence(store, bund
         run = http.get("/api/runs/demo").json()
         assert run["status"] == "completed" and len(run["timeline"]) == len(bundle["events"])
         findings = http.get("/api/runs/demo/findings").json()["findings"]
-        assert [(f["kind"], f["person"]) for f in findings] == [(f["kind"], f["person"]) for f in bundle["findings"]]
+        # the bundle's findings come back as the harm ones, with the same IDs; slice M2's near
+        # misses are numbered after them
+        assert all("harm" in f for f in findings)
+        harm = [f for f in findings if f["harm"]]
+        assert [(f["kind"], f["person"]) for f in harm] == [(f["kind"], f["person"]) for f in bundle["findings"]]
+        assert [f["finding_id"] for f in harm] == [f"demo-F{i + 1}" for i in range(len(harm))]
+        assert all(f["kind"] == "near_threshold" for f in findings[len(harm):])
         hero = next(f for f in findings if f["finding_id"] == "demo-F1")
         assert hero["title"] == HERO_TITLE and hero["chain"] == bundle["findings"][0]["chain"]
         evidence = http.get("/api/findings/demo-F1/evidence").json()
@@ -109,3 +115,22 @@ def test_only_a_finished_run_with_a_finding_can_be_exported(store) -> None:
     assert exported["hero"]["finding_id"] == "demo-F1" and exported["schema"] == SCHEMA
     with pytest.raises(FixtureError, match="no finding"):
         export_run(store, "demo", hero="demo-F9")
+
+
+def test_the_hero_is_found_by_kind_person_and_check_not_by_number(bundle) -> None:
+    from rulestorm.fixture import FixtureError, hero_of
+
+    hero = {**bundle["hero"], "check": "exam_eligibility"}
+    moved = [{"finding_id": "demo-F1", "kind": "near_threshold", "person": "working", "check": "exam_eligibility"},
+             {"finding_id": "demo-F2", "kind": "check_failed", "person": "family", "check": "exam_eligibility"},
+             {"finding_id": "demo-F3", "kind": "check_failed", "person": "working", "check": "exam_eligibility"}]
+    assert hero_of({**bundle, "hero": hero}, moved) == "demo-F3"
+    assert hero_of(bundle, moved) == "demo-F3"  # an older bundle without the check: kind and person
+    with pytest.raises(FixtureError):
+        hero_of({**bundle, "hero": hero}, moved[:2])
+
+
+def test_the_restored_hero_is_still_harm(store) -> None:
+    restored = restore_demo(store)
+    hero = next(f for f in store.run_findings("demo") if f["finding_id"] == restored["hero"])
+    assert (restored["hero"], hero["kind"], hero["person"], hero["harm"]) == ("demo-F1", "check_failed", "working", True)

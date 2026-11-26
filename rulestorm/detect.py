@@ -12,21 +12,36 @@ records, plans, requests and decisions) is not followed, so one person's chain n
 another's (slice 5 gotcha). Events about nobody in particular, such as a capacity change or a queue
 that held the request, stay in the chain.
 
+Slice M2 adds a third kind and marks which findings are harm:
+- `near_threshold`: a person passed, but with at most one miss to spare before the step that
+  harms them (a single check's fail point, or a ladder's last step). Not harm: it shows where the
+  rule nearly bit. It is numbered after every finding of the older kinds, so their IDs don't move.
+- `harm` is true for `check_failed` and `pending_at_check`; it is worked out from the kind, so a
+  finding stored before M2 gets it when read (`with_harm`).
+A single check's margin is read from its own `check_evaluated` event. A ladder's last step is
+usually never reached, so its margin is counted from the records at the end of the term, which
+needs the blueprint's values (the last step's threshold): without them, ladders give no near miss.
+
 Detection reads only the engine's general event types; titles come from the template's terms
-(`finding_check_failed`, `finding_pending_at_check`), never from code.
+(`finding_check_failed`, `finding_pending_at_check`, `finding_near_threshold`), never from code.
 """
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from rulestorm.core.engine import count_records, excused_reading
 from rulestorm.core.model import Template
+from rulestorm.rulebook import _first_failing
 
-Kind = Literal["check_failed", "pending_at_check"]
-KINDS: tuple[Kind, ...] = ("check_failed", "pending_at_check")
+Kind = Literal["check_failed", "pending_at_check", "near_threshold"]
+KINDS: tuple[Kind, ...] = ("check_failed", "pending_at_check", "near_threshold")
+HARM_KINDS: tuple[str, ...] = ("check_failed", "pending_at_check", "obligation_lost")
+NEAR_SPARE = 1  # a pass with at most this many misses to spare is a near miss
 DISRUPTION_TYPES = ("obstacle", "capacity_changed", "occurrence_cancelled")
 # Used only when a template has no finding title in its terms.
-_FALLBACK_TITLES = {"check_failed": "{check} failed", "pending_at_check": "{request} still pending at the {check}"}
+_FALLBACK_TITLES = {"check_failed": "{check} failed", "pending_at_check": "{request} still pending at the {check}",
+                    "near_threshold": "{check} passed with one miss to spare"}
 
 
 class Finding(BaseModel):
@@ -45,10 +60,24 @@ class Finding(BaseModel):
     pending_requests: list[str]
     disruptions: list[str] = Field(description="the chain's disruption event IDs, in order")
     chain: list[str] = Field(description="event IDs in run order, ending at the check")
+    harm: bool = Field(False, description="did the rule harm the person (set from the kind)")
+    spare: int | None = Field(None, description="near_threshold: misses to spare before the harmful step")
+
+    @model_validator(mode="after")
+    def _harm_from_kind(self) -> "Finding":
+        self.harm = self.kind in HARM_KINDS
+        return self
 
 
-def detect(run_id: str, events: list[dict[str, Any]], template: Template) -> list[Finding]:
-    """Every finding in a run's events, ordered by the check event, then kind."""
+def with_harm(finding: dict[str, Any]) -> dict[str, Any]:
+    """A stored finding with its `harm` flag (findings saved before slice M2 have none)."""
+    return {**finding, "harm": finding.get("kind") in HARM_KINDS}
+
+
+def detect(run_id: str, events: list[dict[str, Any]], template: Template,
+           values: dict[str, Any] | None = None) -> list[Finding]:
+    """Every finding in a run's events: the older kinds ordered by the check event, then kind;
+    then the near misses. `values` (the blueprint's) lets ladders give near misses too."""
     by_id = {e["event_id"]: e for e in events}
     owners = {e["payload"]["request_id"]: e["payload"]["person"]
               for e in events if e["type"] == "request_filed"}
@@ -76,7 +105,84 @@ def detect(run_id: str, events: list[dict[str, Any]], template: Template) -> lis
                 count=p["count"], count_if_pending_approved=p["count_if_pending_approved"],
                 pending_requests=list(p["pending_requests"]),
                 disruptions=[i for i in chain if by_id[i]["type"] in DISRUPTION_TYPES], chain=chain))
+    failed = {(f.person, f.check) for f in found if f.kind == "check_failed"}
+    for event, spare in _near_misses(events, template, values):
+        p = event["payload"]
+        if (p["person"], p["check"]) in failed:
+            continue
+        chain = own_chain(by_id, event["event_id"], p["person"], subjects, owners)
+        check = checks.get(p["check"])
+        found.append(Finding(
+            finding_id=f"{run_id}-F{len(found) + 1}", run_id=run_id, kind="near_threshold",
+            title=title(template, "near_threshold"), person=p["person"], check=p["check"],
+            check_label=check.label if check else p["check"], check_event_id=event["event_id"],
+            period=event["period"], outcome=_outcome(template, p),
+            count=p["count"], count_if_pending_approved=p["count_if_pending_approved"],
+            pending_requests=list(p["pending_requests"]),
+            disruptions=[i for i in chain if by_id[i]["type"] in DISRUPTION_TYPES], chain=chain, spare=spare))
     return found
+
+
+def _near_misses(events: list[dict[str, Any]], template: Template,
+                 values: dict[str, Any] | None) -> list[tuple[dict[str, Any], int]]:
+    """(the check event to anchor on, misses to spare) for each person who passed a check with at
+    most NEAR_SPARE misses to spare before the step that harms them, in run order."""
+    out: list[tuple[dict[str, Any], int]] = []
+    counts = {c.id: c for c in template.counts}
+    for check in template.checks:
+        count = counts[check.count]
+        mine = [e for e in events if e["type"] == "check_evaluated" and e["payload"]["check"] == check.id]
+        if check.ladder is None:
+            for e in mine:
+                p = e["payload"]
+                if not p["passed"]:
+                    continue
+                spare = _spare(count.kind, check.comparison, p["threshold"], p["count"]["met"], p["count"]["missed"])
+                if spare is not None and 0 < spare <= NEAR_SPARE:
+                    out.append((e, spare))
+            continue
+        if values is None or check.ladder[-1].threshold_param not in values:
+            continue
+        threshold = values[check.ladder[-1].threshold_param]
+        last: dict[str, dict[str, Any]] = {}  # person -> their last event of this ladder (the anchor)
+        for e in mine:
+            last[e["payload"]["person"]] = e
+        for person, e in last.items():
+            if e["payload"].get("ladder_step") == len(check.ladder) and not e["payload"]["passed"]:
+                continue  # reached the last step: that is check_failed
+            met, missed = _term_tally(events, template, count, person, values)
+            spare = _spare(count.kind, check.comparison, threshold, met, missed)
+            if spare is not None and 0 < spare <= NEAR_SPARE:
+                out.append((e, spare))
+    return sorted(out, key=lambda x: x[0]["seq"])
+
+
+def _spare(kind: str, comparison: str, threshold: float, met: int, missed: int) -> int | None:
+    """Misses to spare before failing (0 or less: failed), with the same number counted."""
+    fails_at = _first_failing(kind, comparison, threshold, met + missed)
+    return None if fails_at is None else fails_at - missed
+
+
+def _term_tally(events: list[dict[str, Any]], template: Template, count, person: str,
+                values: dict[str, Any]) -> tuple[int, int]:
+    """A person's (met, missed) for a count from the final records, counted as the engine counts."""
+    records: dict[int, str] = {}
+    cancelled: set[int] = set()
+    for e in events:
+        if e["type"] == "occurrence_cancelled" and e["payload"].get("duty") == count.duty:
+            cancelled.add(e["step"])
+        for key, change in (e.get("state_change") or {}).items():
+            parts = key.split(".")
+            if len(parts) == 4 and parts[0] == "record" and parts[1] == count.duty and parts[2] == person:
+                records[int(parts[3])] = change["to"]
+    mine = {e["payload"]["request_id"] for e in events
+            if e["type"] == "request_filed" and e["payload"].get("person") == person}
+    excused = ({s for e in events if e["type"] == "request_decided" and e["payload"]["request_id"] in mine
+                for s in e["payload"].get("approved_steps") or []}
+               if "approved_request" in count.exclude else set())
+    f = count_records(count.kind, records, cancelled if "cancelled" in count.exclude else set(), excused,
+                      excused_reading(template, count, values))
+    return f.met, f.missed
 
 
 def own_chain(by_id: dict[str, dict[str, Any]], start: str, person: str, subjects: set[str],

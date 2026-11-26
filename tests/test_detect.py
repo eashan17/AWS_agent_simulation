@@ -179,3 +179,65 @@ def test_a_curfew_request_still_waiting_before_any_penalty_is_a_bottleneck_findi
     # (the late night itself links to the check through the pending request, which was filed
     # before that night was recorded, so it is not on the chain: IDEAS, linking a record to the
     # request that covers it)
+
+
+# --- slice M2: near misses and harm ------------------------------------------------------------
+
+NEAR_CASE = {
+    "template": "attendance", "focus_person": "working", "count": "attendance_pct",
+    # by the week-8 check (16 sessions): commuter 11 / 16 fails; working 13 / 16 passes with 1
+    # absence to spare (a 4th would make it 12 / 16 = 75%); family 15 / 16 has 3 to spare
+    "outcomes": {"commuter": {"missed": [1, 3, 5, 7, 9]}, "working": {"missed": [10, 12, 14]},
+                 "family": {"missed": [2]}},
+    "values": {"threshold_pct": 80, "request_timing": "after_missed", "partial_at_submit": False,
+               "partial_at_decide": False, "decision_rule": "approve_if_covered_missed",
+               "office_capacity_per_week": 2, "checkpoint_week": 8,
+               "disruptions": [{"kind": "admin_capacity", "period": 9, "capacity": 2, "description": "usual"}]},
+    "report": [],
+}
+
+
+def test_a_pass_with_one_absence_to_spare_is_a_near_miss_not_harm_numbered_after_the_rest(attendance) -> None:
+    from rulestorm.core.cases import play_case
+    from rulestorm.evidence import evidence
+
+    _, engine = play_case(NEAR_CASE, attendance)
+    events = events_of(engine)
+    findings = detect("L-near", events, attendance)
+    assert [(f.finding_id, f.kind, f.person, f.harm) for f in findings] == [
+        ("L-near-F1", "check_failed", "commuter", True),
+        ("L-near-F2", "near_threshold", "working", False),
+    ]
+    near = findings[1]
+    assert near.spare == 1 and near.outcome == "eligible" and near.count["value"] == 81.2
+    assert near.title == "A student keeps exam eligibility with one absence to spare"
+    assert near.chain[-1] == near.check_event_id
+    shown = evidence(near.model_dump(), events, attendance)
+    assert shown.steps[-1].calculation.matches_recorded is True
+
+
+def test_a_ladder_near_miss_needs_the_values_and_counts_the_records(attendance) -> None:
+    import json
+    from pathlib import Path
+
+    from rulestorm.core.cases import play_case
+
+    curfew = load_template("hostel_curfew")
+    case = json.loads((Path(__file__).parent / "cases" / "curfew_r2.json").read_text(encoding="utf-8"))
+    case["values"]["disruptions"] = case["values"]["disruptions"][:1]  # no night-12 overrun: 3 late returns
+    _, engine = play_case(case, curfew)
+    events = events_of(engine)
+    assert not [f for f in detect("L-c", events, curfew) if f.kind == "near_threshold"]  # no values given
+    found = detect("L-c", events, curfew, case["values"])
+    near = [f for f in found if f.kind == "near_threshold"]
+    assert [(f.person, f.spare, f.harm) for f in near] == [("researcher", 1, False)]
+    assert near[0].outcome == "guardian informed"  # where they stand: one before disciplinary
+    assert not [f for f in found if f.kind == "check_failed"]
+
+
+def test_stored_findings_get_harm_when_read() -> None:
+    from rulestorm.detect import with_harm
+
+    assert with_harm({"kind": "check_failed"})["harm"] is True
+    assert with_harm({"kind": "pending_at_check"})["harm"] is True
+    assert with_harm({"kind": "near_threshold"})["harm"] is False

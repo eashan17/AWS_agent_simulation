@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model
 from rulestorm import llm
 from rulestorm.blueprint import Label, TemplateBlueprint, _allowed, _field, _meaning, values_model
 from rulestorm.core.engine import excused_reading
+from rulestorm.detect import with_harm
 from rulestorm.core.model import Parameter, Template, load_template
 from rulestorm.rulebook import MissesToFail, _first_failing, misses_to_fail  # noqa: F401
 from rulestorm.policy import (
@@ -345,7 +346,8 @@ class HuntResult(BaseModel):
 def hunt(store, parent_id: str, max_runs: int = 10, model=None, out_dir: str = "runs",
          on_run=None, run_one=None) -> HuntResult:
     """Runs the parent's approved variants, then the parent, one real term at a time (again from
-    the first while runs are left), and stops at the first run with a finding. Each run is saved
+    the first while runs are left), and stops at the first run with a harm finding (a near miss
+    alone doesn't stop it). Each run is saved
     with its findings, exactly as a background run is, so the one found can be opened by ID later.
     Stops early if a run fails or today's run cap is used up."""
     from rulestorm.runner import run_now
@@ -365,11 +367,11 @@ def hunt(store, parent_id: str, max_runs: int = 10, model=None, out_dir: str = "
             result.stopped = str(exc)
             break
         run = store.get_run(run_id)
-        findings = store.run_findings(run_id)
+        findings = [with_harm(f) for f in store.run_findings(run_id)]
         row = HuntRun(blueprint_id=blueprint_id, variant=variant, run_id=run_id, status=run["status"],
                       findings=len(findings))
         result.runs.append(row)
-        if findings:
+        if any(f["harm"] for f in findings):  # slice M2: a near miss alone doesn't stop the hunt
             result.found, result.findings = row, findings
             break
         if run["status"] == "failed":

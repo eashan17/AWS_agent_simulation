@@ -112,7 +112,7 @@ def test_round_two_is_told_how_close_round_one_came_and_ends_honestly(http, stor
 
 
 def test_a_break_the_rerun_does_not_repeat_is_reported_and_the_search_goes_on(store, approved, monkeypatch) -> None:  # noqa: F811
-    rows = iter([[{"finding_id": "X-F1", "kind": "check_failed"}], [], [], []])
+    rows = iter([[{"finding_id": "X-F1", "kind": "check_failed", "person": "working", "harm": True}], [], [], []])
 
     def fake_run(store_, record, s, agent_model, out_dir):
         row = {"run_id": f"L-{record['runs_used']}", "status": "completed", "findings": next(rows),
@@ -179,3 +179,50 @@ def test_refusals_and_restart(http, store, approved, monkeypatch, tmp_path) -> N
                        "created_at": "x"})
     recover_interrupted(store)
     assert store.get_search("S-cut")["status"] == "failed"
+
+
+# --- slice M2: only a repeated harm for the same person is a break ----------------------------------
+
+def _scripted(store, approved, monkeypatch, rows, max_runs=4):
+    rows = iter(rows + [[]] * 10)
+
+    def fake_run(store_, record, s, agent_model, out_dir):
+        row = {"run_id": f"L-{record['runs_used']}", "status": "completed", "findings": next(rows),
+               "closeness": {"closest": {"spare": 1, "text": "working: 1 absences to spare"},
+                             "pending_at_check": 0, "queue": {"peak": 0, "lowest_capacity": 2,
+                                                              "periods_over_capacity": 0}, "checks": []}}
+        s["runs"].append(row)
+        record["runs_used"] += 1
+        return row
+
+    monkeypatch.setattr(search, "_run_scenario", fake_run)
+    record = {"id": "S-m2", "blueprint_id": approved.id, "status": "running", "max_runs": max_runs, "runs_used": 0,
+              "seed": 1, "rounds": [], "result": None, "created_at": "x"}
+    store.save_search(record)
+    search._rounds(store, record, ProposalModel(MILD, HARSH), None, "runs")
+    return record
+
+
+def test_a_near_miss_alone_is_never_rerun_and_never_stops_the_search(store, approved, monkeypatch) -> None:  # noqa: F811
+    near = {"finding_id": "X-F1", "kind": "near_threshold", "person": "working", "harm": False}
+    record = _scripted(store, approved, monkeypatch, [[near]])
+    first = record["rounds"][0]["scenarios"][0]
+    assert first["status"] == "ran: no harm" and len(first["runs"]) == 1  # no rerun
+    assert record["status"] == "not_broken" and record["runs_used"] == 4
+
+
+def test_a_rerun_with_the_same_harm_for_a_different_person_does_not_confirm(store, approved, monkeypatch) -> None:  # noqa: F811
+    working = {"finding_id": "X-F1", "kind": "check_failed", "person": "working", "harm": True}
+    family = {"finding_id": "Y-F1", "kind": "check_failed", "person": "family", "harm": True}
+    record = _scripted(store, approved, monkeypatch, [[working], [family]])
+    first = record["rounds"][0]["scenarios"][0]
+    assert first["status"] == "broke once, not repeated" and first["confirmed"] is False
+    assert record["status"] == "not_broken"
+
+
+def test_the_same_harm_for_the_same_person_confirms_the_break(store, approved, monkeypatch) -> None:  # noqa: F811
+    working = {"finding_id": "X-F1", "kind": "check_failed", "person": "working", "harm": True}
+    near = {"finding_id": "Y-F2", "kind": "near_threshold", "person": "family", "harm": False}
+    record = _scripted(store, approved, monkeypatch, [[working], [dict(working, finding_id="Y-F1"), near]])
+    assert record["status"] == "broken"
+    assert record["rounds"][0]["scenarios"][0]["status"] == "broke, repeated by the rerun"

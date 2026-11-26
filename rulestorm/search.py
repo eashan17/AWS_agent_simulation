@@ -12,8 +12,9 @@ spare before a check would fail them, requests still pending at a check, and the
 against its capacity. From round 2 the prompt carries those results and asks the AI to push the
 weak point that came closest; the random scenario varies the closest scenario so far.
 
-A run with a finding is run once more on the same scenario. Only a break the rerun repeats ends
-the search (`broken`); otherwise the scenario is marked "broke once, not repeated" and the search
+A run with a harm finding is run once more on the same scenario (a near miss alone is not a
+break, so it is never rerun). Only a break the rerun repeats, the same kind of harm for the same
+person (slice M2), ends the search (`broken`); otherwise the scenario is marked "broke once, not repeated" and the search
 goes on, because the AI people choose afresh in each run. With no confirmed break the search ends
 `not_broken` with the closest scenario. Runs go one at a time, through the normal runner and its
 daily caps. Everything here is within-model evidence.
@@ -32,6 +33,7 @@ from rulestorm import config, llm
 from rulestorm.blueprint import Label, TemplateBlueprint, values_model
 from rulestorm.comparison import ComparisonActive, _run_one
 from rulestorm.core.engine import count_records, count_value, excused_reading
+from rulestorm.detect import with_harm
 from rulestorm.core.model import Template, load_template
 from rulestorm.counterfactual import LABEL, NOTE
 from rulestorm.explore import (
@@ -340,7 +342,8 @@ def _run_scenario(store, record, scenario, agent_model, out_dir) -> dict:
         record["runs_used"] += 1
         bp = store.get_blueprint(scenario["blueprint_id"]).blueprint
         events = store.run_events(run_id)
-        row["findings"] = [{"finding_id": f["finding_id"], "kind": f["kind"]} for f in store.run_findings(run_id)]
+        row["findings"] = [{"finding_id": f["finding_id"], "kind": f["kind"], "person": f.get("person"),
+                            "harm": with_harm(f)["harm"]} for f in store.run_findings(run_id)]
         row["closeness"] = closeness(load_template(bp.template_id), bp.values, events)
     store.update_search(record)
     return row
@@ -394,15 +397,16 @@ def _rounds(store, record: dict, model, agent_model, out_dir: str) -> None:
                 break
             history.append({"name": s["name"], "source": s["source"], "blueprint_id": s["blueprint_id"],
                             "closeness": first["closeness"]})
-            if not first["findings"]:
-                s["status"] = "ran: no finding"
+            harms = {(f["kind"], f["person"]) for f in first["findings"] if f["harm"]}
+            if not harms:  # slice M2: a near miss alone is not a break, so it is never rerun
+                s["status"] = "ran: no harm" if first["findings"] else "ran: no finding"
                 continue
             if record["runs_used"] >= record["max_runs"]:
                 s.update(status="broke once, no runs left to repeat it", confirmed=False)
                 continue
             again = _run_scenario(store, record, s, agent_model, out_dir)
-            kinds = {f["kind"] for f in first["findings"]}
-            if again["run_id"] and kinds & {f["kind"] for f in again["findings"]}:
+            # a break is repeated only by the same kind of harm for the same person (slice M2)
+            if again["run_id"] and harms & {(f["kind"], f["person"]) for f in again["findings"] if f["harm"]}:
                 s.update(status="broke, repeated by the rerun", confirmed=True)
                 record["status"] = "broken"
                 record["result"] = {"scenario": s["name"], "source": s["source"], "blueprint_id": s["blueprint_id"],

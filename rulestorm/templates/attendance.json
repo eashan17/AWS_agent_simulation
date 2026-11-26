@@ -17,7 +17,8 @@
     "setting": "a simulated term of one course",
     "missed_plural": "absences",
     "finding_check_failed": "Students fall below the attendance threshold and lose exam eligibility",
-    "finding_pending_at_check": "Exception-processing bottleneck creates an eligibility risk"
+    "finding_pending_at_check": "Exception-processing bottleneck creates an eligibility risk",
+    "finding_near_threshold": "A student keeps exam eligibility with one absence to spare"
   },
   "example_input": {
     "text": "Students must maintain at least 80% attendance in each course to be eligible for examinations. Exceptional circumstances may be considered through formally approved exceptions.",

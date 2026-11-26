@@ -267,3 +267,16 @@ def test_the_hunt_stops_at_a_finding_or_when_todays_run_cap_is_used_up(store, pa
     run_one, ran = fake_runs(store, [None, DailyCapReached("daily run cap of 20 reached")], prefix="L-capped")
     result = explore.hunt(store, parent.id, max_runs=10, run_one=run_one)
     assert len(result.runs) == 1 and hunt_lines(result)[-1] == "stopped after 1 runs: daily run cap of 20 reached"
+
+
+def test_the_hunt_does_not_stop_on_a_near_miss(store, parent) -> None:
+    from rulestorm.cli import hunt_lines
+
+    approved_strike(store, parent)
+    run_one, ran = fake_runs(store, ["near_threshold", "near_threshold", "check_failed"], prefix="L-near")
+    result = explore.hunt(store, parent.id, max_runs=10, run_one=run_one)
+    assert len(ran) == 3 and result.found.run_id == "L-near2" and result.findings[0]["harm"] is True
+
+    run_one, ran = fake_runs(store, ["near_threshold"] * 2, prefix="L-only")
+    result = explore.hunt(store, parent.id, max_runs=2, run_one=run_one)
+    assert result.found is None and hunt_lines(result)[-1] == "no harm in 2 runs (near misses only)"

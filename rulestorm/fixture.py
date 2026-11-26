@@ -58,7 +58,7 @@ def export_run(store, run_id: str, hero: str | None = None) -> dict[str, Any]:
         "schema": SCHEMA,
         "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source_run_id": run_id,
-        "hero": {k: chosen[k] for k in ("finding_id", "kind", "person", "title")},
+        "hero": {k: chosen[k] for k in ("finding_id", "kind", "person", "check", "title")},
         "run": {k: run[k] for k in RUN_KEYS},
         "events": store.run_events(run_id),
         "findings": findings,
@@ -96,17 +96,25 @@ def check_blueprint(bundle: dict[str, Any]):
     return record, template
 
 
+def hero_of(bundle: dict[str, Any], findings: list[dict[str, Any]]) -> str:
+    """The restored hero's ID: the finding of the same kind, person and check (slice M2), not the
+    same number, so findings added by a newer detector can't move it. A bundle exported before
+    the hero carried its check matches on kind and person."""
+    want = bundle["hero"]
+    match = next((f for f in findings if f["kind"] == want["kind"] and f["person"] == want["person"]
+                  and f["check"] == want.get("check", f["check"])), None)
+    if match is None:
+        raise FixtureError(f"the hero finding {want['finding_id']} is not found again in the bundled events")
+    return match["finding_id"]
+
+
 def restore_demo(store, path: str | Path = DEFAULT_PATH) -> dict[str, Any]:
     """Restores the bundled run as `demo`; returns what was restored, with the hero's new ID."""
     bundle = read_fixture(path)
     record, template = check_blueprint(bundle)
     events = bundle["events"]
-    findings = [f.model_dump() for f in detect(DEMO_RUN_ID, events, template)]
-    source = bundle["hero"]["finding_id"]
-    hero = f"{DEMO_RUN_ID}-F{source.rsplit('-F', 1)[1]}"
-    if not any(f["finding_id"] == hero and f["kind"] == bundle["hero"]["kind"]
-               and f["person"] == bundle["hero"]["person"] for f in findings):
-        raise FixtureError(f"the hero finding {source} is not found again in the bundled events")
+    findings = [f.model_dump() for f in detect(DEMO_RUN_ID, events, template, record.blueprint.values)]
+    hero = hero_of(bundle, findings)
     store.restore_policy(Policy.model_validate(bundle["policy"]))
     store.restore_blueprint(record)
     store.replace_run({"id": DEMO_RUN_ID, **bundle["run"]}, events, findings)

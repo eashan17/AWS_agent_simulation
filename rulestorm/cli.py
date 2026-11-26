@@ -250,6 +250,8 @@ def hunt_lines(result) -> list[str]:
             lines.append(f"    chain: {' → '.join(finding['chain'])}")
     elif result.stopped:
         lines.append(f"stopped after {len(result.runs)} runs: {result.stopped}")
+    elif any(r.findings for r in result.runs):  # slice M2: only near misses, which don't stop it
+        lines.append(f"no harm in {len(result.runs)} runs (near misses only)")
     else:
         lines.append(f"no finding in {len(result.runs)} runs")
     return lines

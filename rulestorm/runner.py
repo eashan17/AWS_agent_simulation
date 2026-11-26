@@ -34,7 +34,7 @@ from rulestorm.agents import Agents, summarise, write_run_file
 from rulestorm.core.model import load_template
 from rulestorm.core.term import Term
 from rulestorm import config
-from rulestorm.detect import detect
+from rulestorm.detect import detect, with_harm
 from rulestorm.telemetry import report_run
 from rulestorm.policy import DailyCapReached, check_version, require_approved
 from rulestorm.store import _now
@@ -113,7 +113,7 @@ def _run(store, run_id, record, template, agents, out_dir) -> None:
         summary = summarise(engine, agents)
         seconds = round(time.monotonic() - started, 1)
         write_run_file(out_dir, run_id, record.id, template.ref, seconds, summary, bp, engine.events)
-        findings = detect(run_id, [e.model_dump() for e in engine.events], template)
+        findings = detect(run_id, [e.model_dump() for e in engine.events], template, bp.values)
         store.add_findings(run_id, [f.model_dump() for f in findings])
         store.update_run(run_id, status=summary.status, summary=summary.model_dump(), finished_at=_now())
         report_run(run_id, template.ref, summary.status, seconds, summary.model_dump())
@@ -136,11 +136,16 @@ def findings_of(store, run: dict) -> list[dict]:
         return []
     saved = store.run_findings(run["id"])
     if saved:
-        return saved
+        return [with_harm(f) for f in saved]
     template = load_template(run["template"].split("@")[0])
-    found = [f.model_dump() for f in detect(run["id"], store.run_events(run["id"]), template)]
+    try:  # the values let ladders give near misses; an old or unreadable blueprint only loses those
+        record = store.get_blueprint(run["blueprint_id"]) if run.get("blueprint_id") else None
+        values = record.blueprint.values if record is not None and record.blueprint is not None else None
+    except ValueError:
+        values = None
+    found = [f.model_dump() for f in detect(run["id"], store.run_events(run["id"]), template, values)]
     store.add_findings(run["id"], found)
-    return store.run_findings(run["id"])
+    return [with_harm(f) for f in store.run_findings(run["id"])]
 
 
 SHORT_ERROR_CHARS = 120
