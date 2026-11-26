@@ -1,0 +1,23 @@
+{
+  "description": "Test-only case (slice M7a). The intern's evening job shift clashes with night 3 of weeks 1-5 (nights 3, 8, 13, 18, 23), and they can miss 2 shifts before the job is lost. They come back on time on nights 3 and 8 (shift missed, 1 and 2 of 2), make no plan for night 13 (they go to the shift: late, a routine cause), and come back on time on night 18: the third missed shift loses the job. From then on the shift no longer clashes with night 23. The one late return shows in the count.",
+  "template": "hostel_curfew",
+  "focus_person": "intern",
+  "count": "late_returns",
+  "meets": {"intern": [3, 8, 18, 23]},
+  "values": {
+    "curfew_time": "22:00",
+    "warning_at": 2,
+    "inform_guardian_at": 3,
+    "disciplinary_at": 4,
+    "request_timing": "in_advance",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "warden_capacity_per_night": 1,
+    "slack_min": {"intern": 20, "researcher": 15, "athlete": 30, "local": 45, "fresher": 10, "volunteer": 25},
+    "shift_limits": {"intern": 2, "researcher": 2, "athlete": 2, "local": 2, "fresher": 2, "volunteer": 2},
+    "disruptions": [
+      {"kind": "evening_job_shift", "period": 1, "until_period": 5, "steps": [3], "people": ["intern"], "description": "evening shift at the internship"}
+    ]
+  },
+  "report": ["obligations", "count"]
+}

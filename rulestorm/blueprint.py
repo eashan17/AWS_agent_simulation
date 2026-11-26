@@ -80,6 +80,7 @@ def _field(t: Template, p: Parameter) -> tuple[Any, Any]:
     info = {"description": p.description} if p.description else {}
     if p.default is not None:  # slice M1: a value with a default may be left out (it reads as the default)
         info["default"] = p.default
+        info["validate_default"] = True  # a per-person default (slice M7a limits) becomes its model
     if p.type == "int":
         return int, Field(ge=p.min, le=p.max, **info)
     if p.type == "bool":

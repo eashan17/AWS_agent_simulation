@@ -241,9 +241,11 @@ def test_a_routine_clash_is_not_excused_and_an_emergency_is(template: Template) 
     engine.propose("family", "submit_exception_request", 2, sessions=[3], reason="hospital")
     engine.process_queue("exception", 2)
     assert (engine.requests["R1"].status, engine.requests["R2"].status) == ("rejected", "approved")
-    # A clash only matters if they chose to miss: no plan means they came anyway.
-    came = skipping(template, {"disruptions": clashes}, skips={}, excused=False)
-    assert came.records[("attend_class", "working", 1)] == "met"
+    # Slice M7a: a clash carrying an obligation with no plan goes to the obligation (it used to mean
+    # they came anyway), recorded missed with the clash as a routine cause.
+    went = skipping(template, {"disruptions": clashes}, skips={}, excused=False)
+    assert went.records[("attend_class", "working", 1)] == "missed"
+    assert went.record_cause[("attend_class", "working", 1)][1] is False
 
 
 def test_a_step_written_as_text_is_read_as_its_number(engine: Engine) -> None:

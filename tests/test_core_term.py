@@ -210,7 +210,8 @@ def test_profiles_reach_their_decision_context(template) -> None:
     assert seen["commuter"].profile == PROFILES["commuter"]
     assert seen["advisor"].profile == PROFILES["advisor"]
     assert seen["commuter"].counts["attendance_pct"].kind == "rate"
-    assert seen["commuter"].attributes == {"travel_buffer_min": 30}
+    # Slice M7a: the obligation limits are attributes too (their defaults here; prompted in M7b).
+    assert seen["commuter"].attributes == {"travel_buffer_min": 30, "shift_miss_limit": 2, "care_miss_limit": 2}
     assert "attendance_admin" not in seen and "exam_officer" not in seen
 
 

@@ -9,6 +9,7 @@
     "step": "night",
     "duty_met": "back on time",
     "duty_missed": "late",
+    "duty_meets": "returns on time",
     "request": "late-entry request",
     "requests": "late-entry requests",
     "count": "late returns",
@@ -76,7 +77,9 @@
     {"id": "discipline_committee", "role": "discipline_committee", "label": "applies the late-return penalties"}
   ],
   "attributes": [
-    {"id": "return_slack_min", "label": "slack (minutes between your usual return and curfew)", "role": "resident", "min": 0, "max": 120}
+    {"id": "return_slack_min", "label": "slack (minutes between your usual return and curfew)", "role": "resident", "min": 0, "max": 120},
+    {"id": "shift_miss_limit", "label": "evening shifts you can miss before the job is lost", "role": "resident", "min": 0, "max": 10},
+    {"id": "care_miss_limit", "label": "times you can be away from family care before it breaks down", "role": "resident", "min": 0, "max": 10}
   ],
   "duties": [
     {"id": "return_by_curfew", "label": "be back by curfew", "owed_by": "resident", "recorded_by": "security", "obstacle_attribute": "return_slack_min"}
@@ -176,8 +179,10 @@
   "disruptions": [
     {"id": "transport_delay", "label": "transport delay", "kind": "obstacle", "duty": "return_by_curfew", "routine": false},
     {"id": "lab_overrun", "label": "lab session overrun", "kind": "obstacle", "duty": "return_by_curfew", "routine": false},
-    {"id": "family_emergency", "label": "family emergency", "kind": "conflict", "duty": "return_by_curfew", "routine": false},
-    {"id": "evening_job_shift", "label": "evening job shift", "kind": "conflict", "duty": "return_by_curfew", "routine": true},
+    {"id": "family_emergency", "label": "family emergency", "kind": "conflict", "duty": "return_by_curfew", "routine": false,
+     "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit"}},
+    {"id": "evening_job_shift", "label": "evening job shift", "kind": "conflict", "duty": "return_by_curfew", "routine": true,
+     "obligation": {"label": "evening shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit"}},
     {"id": "warden_away", "label": "warden away", "kind": "capacity", "request_type": "late_entry"}
   ],
   "triggers": [
@@ -304,6 +309,22 @@
       "attribute": "return_slack_min",
       "sentence": "slack before curfew: {value} min (a longer delay makes you late)",
       "prompt_section": "you"
+    },
+    {
+      "name": "shift_limits",
+      "kind": "people",
+      "type": "attribute",
+      "description": "how many evening job shifts each resident can miss before it is lost; set it from their profile",
+      "attribute": "shift_miss_limit",
+      "default": {"intern": 2, "researcher": 2, "athlete": 2, "local": 2, "fresher": 2, "volunteer": 2}
+    },
+    {
+      "name": "care_limits",
+      "kind": "people",
+      "type": "attribute",
+      "description": "how many family-care duties each resident can miss before it is lost; set it from their profile",
+      "attribute": "care_miss_limit",
+      "default": {"intern": 2, "researcher": 2, "athlete": 2, "local": 2, "fresher": 2, "volunteer": 2}
     }
   ]
 }

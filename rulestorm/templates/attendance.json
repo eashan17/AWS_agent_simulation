@@ -9,6 +9,7 @@
     "step": "session",
     "duty_met": "present",
     "duty_missed": "absent",
+    "duty_meets": "attends",
     "request": "exception request",
     "requests": "exceptions",
     "count": "attendance %",
@@ -129,6 +130,20 @@
       "role": "student",
       "min": 0,
       "max": 180
+    },
+    {
+      "id": "shift_miss_limit",
+      "label": "work shifts you can miss before the job is lost",
+      "role": "student",
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "care_miss_limit",
+      "label": "times you can be away from family care before it breaks down",
+      "role": "student",
+      "min": 0,
+      "max": 10
     }
   ],
   "duties": [
@@ -368,14 +383,16 @@
       "label": "work shift clash",
       "kind": "conflict",
       "duty": "attend_class",
-      "routine": true
+      "routine": true,
+      "obligation": {"label": "work shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit"}
     },
     {
       "id": "family_emergency",
       "label": "family emergency",
       "kind": "conflict",
       "duty": "attend_class",
-      "routine": false
+      "routine": false,
+      "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit"}
     },
     {
       "id": "admin_capacity",
@@ -561,6 +578,22 @@
       "attribute": "travel_buffer_min",
       "sentence": "travel buffer: {value} min (a longer transport delay makes you miss the class)",
       "prompt_section": "you"
+    },
+    {
+      "name": "shift_limits",
+      "kind": "people",
+      "type": "attribute",
+      "description": "how many work shifts each student can miss before it is lost; set it from their profile",
+      "attribute": "shift_miss_limit",
+      "default": {"commuter": 2, "resident": 2, "working": 2, "family": 2}
+    },
+    {
+      "name": "care_limits",
+      "kind": "people",
+      "type": "attribute",
+      "description": "how many family-care duties each student can miss before it is lost; set it from their profile",
+      "attribute": "care_miss_limit",
+      "default": {"commuter": 2, "resident": 2, "working": 2, "family": 2}
     }
   ]
 }

@@ -1,0 +1,22 @@
+{
+  "description": "Test-only case (slice M7a). The working student's shift clashes with session 2 of weeks 2-6 (sessions 4, 6, 8, 10, 12), and they can miss 2 shifts before the job is lost. They attend sessions 4 and 6 (shift missed, 1 and 2 of 2), make no plan for session 8 (they go to the shift: absent, a routine cause, so not a valid reason), and attend session 10: the third missed shift loses the job. From then on the shift no longer clashes with session 12.",
+  "template": "attendance",
+  "focus_person": "working",
+  "count": "attendance_pct",
+  "meets": {"working": [4, 6, 10, 12]},
+  "values": {
+    "threshold_pct": 80,
+    "request_timing": "after_missed",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "decision_rule": "approve_if_covered_missed",
+    "office_capacity_per_week": 2,
+    "checkpoint_week": 10,
+    "slack_min": {"commuter": 30, "resident": 10, "working": 15, "family": 20},
+    "shift_limits": {"commuter": 2, "resident": 2, "working": 2, "family": 2},
+    "disruptions": [
+      {"kind": "work_shift_clash", "period": 2, "until_period": 6, "steps": [2], "people": ["working"], "description": "Tuesday evening shift"}
+    ]
+  },
+  "report": ["obligations", "count"]
+}

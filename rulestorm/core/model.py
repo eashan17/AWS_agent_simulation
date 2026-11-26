@@ -201,6 +201,15 @@ class Check(Block):
         return self
 
 
+class Obligation(Block):
+    """Slice M7a: what a conflict costs on the other side. Meeting the duty during the clash misses
+    the obligation; past the person's limit (a per-person attribute) it is lost, once."""
+
+    label: str = Field(min_length=1, description="what is missed, e.g. a shift")
+    lost_label: str = Field(min_length=1, description="what happens past the limit, e.g. the job is lost")
+    limit_attribute: str = Field(min_length=1, description="the per-person attribute holding the limit")
+
+
 class DisruptionKind(Block):
     id: str = Field(min_length=1)
     label: str = Field(min_length=1)
@@ -211,6 +220,7 @@ class DisruptionKind(Block):
     # plan around (a regular shift: routine) or outside their control (a strike, an emergency)?
     # A rule-decided queue excuses only misses a non-routine disruption caused.
     routine: bool | None = Field(None, description="obstacle/conflict: true if a person could plan around it")
+    obligation: Obligation | None = Field(None, description="conflict: the obligation meeting the duty costs")
 
 
 class Trigger(Block):
@@ -528,6 +538,13 @@ def _reference_errors(t: Template) -> list[str]:
                           f"(true if a person could plan around it)")
         if d.kind == "capacity" and d.request_type is None:
             errors.append(f"{owner}: a capacity disruption needs 'request_type'")
+        if d.obligation is not None:
+            if d.kind != "conflict":
+                errors.append(f"{owner}: only a conflict can carry an obligation")
+            limit = d.obligation.limit_attribute
+            ref(owner, "limit attribute", limit, attributes)
+            if limit in attributes and not any(p.type == "attribute" and p.attribute == limit for p in t.parameters):
+                errors.append(f"{owner}: no parameter sets the limit attribute '{limit}'")
 
     for i, trigger in enumerate(t.triggers, 1):
         for role in trigger.notifies:

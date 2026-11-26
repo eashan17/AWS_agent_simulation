@@ -5,12 +5,15 @@ A case file names its template and values and says what people do, by person and
     "template": "<template id>",   "values": {...},   "focus_person": "<person>",
     "count": "<count id>"                      (for the "count" lines)
     "outcomes": {"<person>": {"missed": [<steps>]}}   planned misses; everyone else plans to meet
+    "meets": {"<person>": [<steps>]}           explicit plans to meet the duty (slice M7a: during a clash
+                                                with an obligation, no plan means they go to the obligation)
     "requests": [{"person", "steps", "reason",
                   "filed_at": <step>           (default: the first covered step if requests are
                                                 filed in advance, else the step after the last one),
                   "consent": true | false      (request types that need consent),
                   "decision": "approved" | "rejected"   (request types an LLM person decides)}]
-    "report": ["count", "queue", "permission", "ladder", "failed_check", "readings"]   the lines to print
+    "report": ["count", "queue", "permission", "ladder", "failed_check", "readings", "obligations"]
+                                                the lines to print
     "claims": [{"person", "step", "cause", "then": "<action>"}]   ("claims": a planned miss with
                                                 that claimed cause; if the engine refuses the claim,
                                                 the person is asked again and takes `then`)
@@ -26,7 +29,7 @@ case's scripted answers, given through the template's own actions, so the engine
 
 from typing import Any
 
-from rulestorm.core.engine import CountResult, Engine, Event
+from rulestorm.core.engine import DEFAULT_OBLIGATION, CountResult, Engine, Event
 from rulestorm.core.model import Template
 
 
@@ -42,6 +45,8 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
     missed = {person: set(o.get("missed", [])) for person, o in case.get("outcomes", {}).items()}
     action_of = {kind: a for a in template.actions for eff in a.effects for kind in [eff.kind]}
     plan_miss = action_of["plan_miss"]
+    plan_meet = action_of.get("plan_meet")
+    meets = {person: set(steps) for person, steps in case.get("meets", {}).items()}
     requests = [dict(r, filed_at=r.get("filed_at", _default_filing(e, r))) for r in case.get("requests", [])]
     by_id: dict[str, dict] = {}  # request ID -> its case entry
     count_lines: list[str] = []
@@ -94,6 +99,9 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
             for person, steps in missed.items():
                 if step in steps:
                     e.propose(person, plan_miss.id, period, **{_param(plan_miss, "step"): step})
+            for person, steps in meets.items():
+                if step in steps:
+                    e.propose(person, plan_meet.id, period, **{_param(plan_meet, "step"): step})
             for claim in case.get("claims", []):
                 if claim["step"] == step:
                     claim_lines.extend(_claim(e, template, plan_miss, claim, period))
@@ -138,6 +146,8 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
             lines += reading_lines
         elif item == "claims":
             lines += claim_lines
+        elif item == "obligations":
+            lines += _obligation_lines(e, template, focus)
         else:
             raise ValueError(f"unknown report item {item!r}")
     return lines, e
@@ -179,6 +189,26 @@ def _claim(e: Engine, template: Template, plan_miss, claim: dict[str, Any], peri
         outcome = then if again.type != "action_rejected" else f"{then} rejected ({again.payload['reason']})"
         lines.append(f"{person} asked again, {step_word} {step}: {outcome}  [{again.event_id}]")
     return lines
+
+
+def _obligation_lines(e: Engine, template: Template, focus: str) -> list[str]:
+    """Slice M7a: each clash with an obligation the person met the duty in (the obligation missed,
+    or lost past the limit), and each one they had no plan for (they went to the obligation)."""
+    step_word, terms = template.calendar.step_label, template.terms
+    meets, missed = terms.get("duty_meets", "meets the duty"), terms.get("duty_missed", "missed")
+    lines = []
+    for ev in e.events:
+        p = ev.payload
+        if ev.type in ("obligation_missed", "obligation_lost") and p["person"] == focus:
+            what = (f"{p['obligation']} missed ({p['missed']} of {p['limit']})" if ev.type == "obligation_missed"
+                    else p["lost"])
+            lines.append(f"{focus} {meets} during {p['obligation']}, {step_word} {ev.step}: {what}  [{ev.event_id}]")
+        elif ev.type == "duty_recorded" and p["person"] == focus and p["plan"] == DEFAULT_OBLIGATION:
+            kind = e.disruption_kinds[e.event(p["cause"]).payload["disruption"]]
+            lines.append(f"{focus} no plan during {kind.obligation.label}, {step_word} {ev.step}: goes to "
+                         f"{kind.obligation.label}, {missed} ({'routine' if kind.routine else 'not routine'})  "
+                         f"[{ev.event_id}]")
+    return lines or [f"obligations: none for {focus}"]
 
 
 def _reading_lines(e: Engine, template: Template, count_id: str, focus: str, period: int) -> list[str]:

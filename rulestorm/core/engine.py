@@ -23,6 +23,9 @@ from rulestorm.core.model import REQUEST_OUTCOMES, Action, Count, Duty, Template
 
 Outcome = Literal["met", "missed"]
 NO_PLAN = "meet"  # a person with no plan is treated as planning to meet the duty
+# Slice M7a: a person with no plan during a clash that carries an obligation goes to the obligation,
+# so a timeout or an untriggered person never silently gives it up.
+DEFAULT_OBLIGATION = "default_obligation"
 # Slice M6: a disruption entry may recur, but the expanded copies (one per period) stay within
 # these caps, so a stress test can't pile hardships on until the arithmetic forces a failure.
 MAX_OCCURRENCES = 24
@@ -252,7 +255,8 @@ class Engine:
         self.attributes: dict[tuple[str, str], int] = {}
         for p in template.parameters:
             if p.type == "attribute":
-                for person, value in (self.values.get(p.name) or {}).items():
+                # A blueprint made before the parameter existed reads its default (slice M7a limits).
+                for person, value in (self.values.get(p.name) or p.default or {}).items():
                     self.attributes[(person, p.attribute)] = value
         # Set by the term loop; while set, plans can be made only for this step.
         self.current_step: int | None = None
@@ -262,6 +266,9 @@ class Engine:
         self.obstacles_by_step: dict[int, list[Obstacle]] = {}
         self.processed_slots: set[tuple[str, int, int | None]] = set()
         self.ladder_reached: dict[tuple[str, str], int] = {}  # (check, person) -> ladder steps reached
+        # Slice M7a: per (person, disruption kind), the obligation missed so far and the loss event.
+        self.obligation_missed: dict[tuple[str, str], int] = {}
+        self.obligation_lost: dict[tuple[str, str], str] = {}
         # Request types decided by an LLM person: the slot open now (only while it is open can
         # its offered requests be decided).
         self.open_slots: dict[str, dict[str, Any]] = {}
@@ -841,12 +848,16 @@ class Engine:
                 continue
             if kind.kind in ("obstacle", "conflict"):
                 conflict = kind.kind == "conflict"
+                # Once a person has lost the obligation, that kind of clash no longer hits them.
+                people = [p for p in d.people if (p, d.kind) not in self.obligation_lost]
+                if not people:
+                    continue
                 event = self.emit("obstacle", "environment", period, step,
                                   payload={"disruption": d.kind, "description": d.description, "duty": kind.duty,
-                                           "delay": 0 if conflict else d.delay, "people": d.people,
+                                           "delay": 0 if conflict else d.delay, "people": people,
                                            "conflict": conflict, "routine": bool(kind.routine)})
                 self.obstacles_by_step.setdefault(step, []).append(
-                    Obstacle(event_id=event.event_id, duty=kind.duty, people=d.people,
+                    Obstacle(event_id=event.event_id, duty=kind.duty, people=people,
                              delay=0 if conflict else d.delay, kind=d.kind, conflict=conflict))
                 events.append(event)
             elif kind.kind == "cancellation" and step not in self.recorded_steps[kind.duty] | self.cancelled[kind.duty]:
@@ -1013,6 +1024,9 @@ class Engine:
             for person in self.people_owing(duty):
                 plan, plan_event = self.plans.get((duty.id, person, step), (NO_PLAN, None))
                 causes = [plan_event] if plan_event else []
+                clash = self._obligation_clash(obstacles, duty.id, person)
+                if clash is not None and plan_event is None:
+                    plan = DEFAULT_OBLIGATION  # no plan: they go to the obligation
                 outcome: Outcome = "met" if plan == "meet" else "missed"
                 hit_by = None  # an obstacle that made a person who meant to come miss it
                 # Whatever kept them away: that obstacle, one they would have missed for anyway
@@ -1053,10 +1067,42 @@ class Engine:
                                   caused_by=causes)
                 self.record_event[key] = event.event_id
                 recorded.append(event)
+                if clash is not None and plan == "meet":
+                    recorded.append(self._miss_obligation(person, clash, period, step, event.event_id))
         for key, value in self.pending_attributes.items():
             self.attributes[key] = value
         self.pending_attributes.clear()
         return recorded
+
+    def _obligation_clash(self, obstacles: list[Obstacle], duty_id: str, person: str) -> Obstacle | None:
+        """The conflict hitting this person at this duty that carries an obligation, if any."""
+        for o in obstacles:
+            kind = self.disruption_kinds.get(o.kind)
+            if o.conflict and o.duty == duty_id and person in o.people and kind and kind.obligation:
+                return o
+        return None
+
+    def _miss_obligation(self, person: str, clash: Obstacle, period: int, step: int, record_id: str) -> Event:
+        """They met the duty during the clash, so they missed the obligation: `obligation_missed`,
+        or, the first time past their limit, `obligation_lost` (once; the clash then skips them)."""
+        obligation = self.disruption_kinds[clash.kind].obligation
+        limit = self.attributes.get((person, obligation.limit_attribute))
+        if limit is None:
+            raise KeyError(f"missing value '{obligation.limit_attribute}' for {person}")
+        missed = self.obligation_missed.get((person, clash.kind), 0) + 1
+        self.obligation_missed[(person, clash.kind)] = missed
+        payload = {"person": person, "disruption": clash.kind, "obligation": obligation.label,
+                   "missed": missed, "limit": limit}
+        if missed <= limit:
+            return self.emit("obligation_missed", "environment", period, step, payload=payload,
+                             state_change={f"obligation.{clash.kind}.{person}.missed": {"from": missed - 1, "to": missed}},
+                             caused_by=[clash.event_id, record_id])
+        event = self.emit("obligation_lost", "environment", period, step,
+                          payload={**payload, "lost": obligation.lost_label},
+                          state_change={f"obligation.{clash.kind}.{person}": {"from": "kept", "to": "lost"}},
+                          caused_by=[clash.event_id, record_id])
+        self.obligation_lost[(person, clash.kind)] = event.event_id
+        return event
 
     def has_wrong_record(self, duty_id: str) -> bool:
         """Is any recorded mark of this duty different from what happened? Only then can a
