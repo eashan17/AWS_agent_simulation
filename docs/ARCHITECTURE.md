@@ -5,6 +5,23 @@ A policymaker types an institutional rule. RuleStorm matches it to a template, f
 
 **Re-planned 24 Nov (Level 2, team decision).** Slices 1–6c were built on a fixed attendance model, with policy rules and the cast written in code. Level 2 replaces that core with one general engine made of fixed building blocks, plus **templates written as data**. It ships two templates: attendance and a structurally different hostel curfew. The AI picks a template and fills it from the policy; the user approves.
 
+**Model change, 26 Nov evening (team decision; slices M0–M11).** Every failure so far was either planted (stress conditions piled on until the arithmetic forced one) or random (an AI person's mistake). The cause was structural, and the same in both templates:
+- following the rule cost nothing;
+- hardships happened once;
+- the exception process had no friction except a queue number;
+- results were only pass/fail;
+- the readings that decide outcomes were hidden.
+
+The change adds, on both templates:
+- competing obligations with stakes on both sides;
+- recurring disruptions;
+- the template's readings as visible, changeable policy parameters;
+- an engine-checked claim of cause, plus each person's current situation in their prompt;
+- a per-run ledger of who carried the rule;
+- a cause class on every harm.
+
+See "Model change (M slices)" below.
+
 ## Pieces and data flow
 Everything runs in one Python process on one EC2 instance. Arrows show the direction data moves.
 
@@ -48,6 +65,8 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
             ├─ GET /api/searches/{id} ─> rounds, closeness per run, result (broken / not_broken + closest)
             ├─ POST /api/blueprints/{id}/repeats {times, include_run} ─> the same blueprint run again, in turn (slice 21)
             ├─ GET /api/repeats/{id} ─> per person failed X of N, findings per run, each measure's spread
+            ├─ GET /api/runs/{id}/ledger ─> per person: margin to each check, absences by kind, requests, obligations,
+            │      AI-mistake counts; per finding its harm flag and cause class (slice M3, M9)
             └─ GET /api/findings/{id}/evidence ─> ordered steps, labels in the template's own terms
     CLI: python -m rulestorm.cli <command> calls the same core functions as each route.
     On startup: any run still marked running → failed (interrupted).
@@ -74,7 +93,9 @@ Everything runs in one Python process on one EC2 instance. Arrows show the direc
 | `comparison.py` | Strict, flexible and progressive policy versions under the same environment and people, run in turn, compared as a trade-off table (slice 15) |
 | `telemetry.py` | One CloudWatch embedded-metric log line per finished run: `LLMCalls`, `Tokens`, `RunDurationSeconds` (slice 14) |
 | `catalog.py` | A template's display words, labels and parameter specs for the screens (slice U0); only shipped template IDs can be named |
-| `fixture.py` | Export a finished run and restore it as run `demo` (slice 10) |
+| `fixture.py` | Export a finished run and restore it as run `demo` (slice 10); from M3 the hero is found by (kind, person, check), not by its position |
+| `ledger.py` | Who carried the rule, by rules over a run's records, no AI call: per person the margin to every check (every ladder step too), absences excused, unexcused and pending, requests filed, refused, rejected and waited, obligations missed and lost, AI-mistake counts. `search.closeness` is a thin wrapper over it (slice M3) |
+| `evaluation.py` | The pre-registered evaluation report over a repeat: AI-mistake rate, a ledger per run, the cause class of every harm, calls per run, and sampled decisions to read (slice M10; protocol in docs/EVALUATION.md) |
 | `store.py`, `runner.py`, `api.py`, `cli.py` | Storage (SQLite), background runs, routes, terminal commands |
 | `fixtures/demo_run.json` | The seeded demo run on the new format, with a schema version |
 | `deploy/deploy.sh`, `deploy/rulestorm.service`, `deploy/rulestorm.env` | The deploy script, the systemd unit and the server's settings template (slice 11; steps in docs/DEPLOY.md) |
@@ -98,7 +119,7 @@ A template may only use these. Anything outside them needs new engine code, by d
 | | **Decision rule** from a fixed list (`approve_if_covered_missed`, `approve_if_filed_before_occurrence`, `approve_all`). **Policy parameters:** `timing: after_missed / in_advance`; `partial_at_submit: bool` (accept the valid occurrences, drop the rest, instead of refusing the whole request); `partial_at_decide: bool` (approve the qualifying occurrences instead of rejecting the whole request) | First come, first served within capacity per processing slot; `queue_over_capacity` holds the rest |
 | **Count** | id, label, `rate` (met ÷ due, excluding listed statuses: `approved_request`, `cancelled`; pending counts as missed) or `tally` (number missed, excluding approved) | Recomputed on demand, always from records |
 | **Check** | id, label, run by a checker role, count, comparison (`>=` / `<=`), and **either** one threshold at one timing parameter **or** an **escalation ladder** checked every period (an ordered list of threshold → outcome, each a blueprint parameter) | Records `check_evaluated` with both figures (as is, and if pending requests were approved). An escalation outcome is an event that can trigger listed roles. A ladder step is reached once the count no longer passes that step's threshold, by the same `engine.passes` a single check uses; comparisons are `>=`, `<=`, `>`, `<`, so a tally `<` 2 reaches its step at 2. Each step a person newly reaches is one `check_evaluated` (with `outcome`, `ladder_step`), recorded in ladder order even when several are reached at once; its `passed` is false only at the last step (built in L9a). A ladder period with no new step records where the person stands (`standing`, `ladder_step`, no `outcome`, so it notifies nobody) only if a request for an occurrence already recorded is still pending, so a wait before any penalty is visible at the check (added after slice 8) |
-| **Disruption kind** | `obstacle` (delay on a duty for listed people, at an explicit list of steps in its period), `capacity` (queue capacity override in a period), `cancellation` (listed occurrences cancelled) | Applied at its phase, recorded as an event |
+| **Disruption kind** | `obstacle` (delay on a duty for listed people, at an explicit list of steps in its period), `conflict` (a personal clash the person may miss the duty for; 26 Nov), `capacity` (queue capacity override in a period), `cancellation` (listed occurrences cancelled). Obstacles and conflicts state `routine`. From M6 an entry may recur (`until_period`, `every`); from M7 a conflict may name an `obligation`; from M8 each kind states `leaves_proof` | Applied at its phase, recorded as an event |
 | **Trigger** | from today's five: an obstacle hits a person; a person's own duty is missed; a count comes within N of the threshold (plus listed roles); a request has been pending ≥ N periods (plus listed roles); ≥ K people missed in one step (to a listed role). Also, for the new blocks: a request awaiting consent reaches its `endorsed_by` person; a request awaiting an LLM decision reaches its `decided_by` person at its processing slot; an escalation outcome reaches its listed roles; **a message or response reaches the person it is for** (`message_received`, at most once per person per period, so two people can't chat every step; added 24 Nov after L7) | Decides who is asked in each phase. Each template chooses which triggers it uses: attendance uses today's five plus `message_received`, so the advisor's advice reaches the student (real runs after the change: 15 and 9 decisions, 18 and 11 calls on the 6b scenario, against 6b's 13 and 14–17). No other new triggers |
 | **Parameter spec** | name, type, range, `kind: policy / environment / people`, a sentence template for prompts | What the blueprint must fill. Variants vary only `environment`; the three-policy comparison varies only `policy` |
 
@@ -177,6 +198,97 @@ The template has its own pre-filled example policy (for example: "Residents must
 - The templates hold structure (who exists, what they may do, what is counted and checked), never scenario numbers.
 - The pre-filled example inputs are ordinary, editable user input.
 
+## Model change (M slices, 26 Nov evening)
+Each item is a general block used by both templates. Template words stay in the templates.
+
+**Why: the five gaps found in the code (26 Nov).**
+1. A `conflict` never forced a miss, and attending through it cost nothing (`record_step`; rulebook "you miss the session only if you choose to").
+2. A disruption had one `period`, so a routine work shift happened once.
+3. Every filed, excusable miss was approved; the only friction was capacity and the check week.
+4. The only detectors were `check_failed` and `pending_at_check`; margin lived inside the search.
+5. Excused classes left the count (5 / 8 = 62.5% instead of 13 / 16 = 81%), and nothing showed it.
+
+**Versions and defaults (M0).**
+- One `policy.check_version(template, blueprint)` replaces the eight copies of `template.version != bp.template_version` (agents, comparison, counterfactual, explore, fixture, repeats, runner, search). An older blueprint gets a clear 409 "made with an older template", never a 500.
+- `Parameter.default` gives every new value today's behaviour, so v1 blueprints, `tests/cases/*.json` and the demo fixture keep validating until the re-record.
+- `Template.reads_versions` lists the blueprint versions a template still reads (`[1, 2]`). Both templates go to `@2` at their first edit in M1.
+
+**One way of counting (M1).**
+- One pure `count_records(kind, records, cancelled, excused, reading)` is used by `Engine.count`, `evidence.calculation`, the search's closeness and the ledger.
+- The sentences that state the counting (rulebook, explore) read the same reading.
+- `Count.excused_param` names a policy choice: `remove` (default: excused occurrences leave the count, as today) or `count_as_met`.
+
+**Recurrence (M6).**
+- A disruption entry may cover periods `period` … `until_period`, every `every` periods. `expand_disruptions` turns it into per-period copies before any check.
+- Caps: 10 entries (unchanged), 24 expanded occurrences, 12 hitting any one person.
+- Every reader of a raw `period` uses the expansion or shows the range: explore's queue lines, the search's changed values, the CLI, the UI.
+- The fill is told that routine kinds recur as the profile implies. Variants and random scenarios may use ranges within the same caps.
+
+**Competing obligations (M7).**
+- A `conflict` kind may name an `obligation`: `label` (what is missed, e.g. "work shift"), `lost_label` (e.g. "job lost") and `limit_attribute`, a per-person `Attribute` the fill sets from the profile. The limit is labelled an assumption and is editable before approval.
+- Meeting the policy duty during that clash records `obligation_missed`. Passing the limit records `obligation_lost` once, and the person stops having that clash.
+- **A person with no plan during an obligation clash goes to the obligation** (`plan: default_obligation`), so a timeout or an untriggered person never silently gives up a job.
+- The rulebook states both stakes with numbers, in a fixed order.
+- New detector `obligation_lost`: the rule kept someone compliant at the cost of their job or care.
+- Attendance: `work_shift_clash` and `family_emergency`. Curfew: `evening_job_shift` and `family_emergency`.
+
+**The template's readings, shown and changeable (M8).**
+- **What counts as exceptional:** a policy choice of `unforeseen_only` (default: routine causes are rejected, as today) or `any_documented`.
+- **Proof:** each disruption kind states `leaves_proof` (a template reading, shown). A request type may name a `proof_param` (policy bool, default false): with it on, a cause that leaves no proof isn't excused. `cause_text` says "no documentation".
+- **Filing deadline:** a request type may name a `deadline_param` (policy int, 0 = none), with a new precondition `within_deadline`.
+- `GET /api/templates/{id}` adds `readings`: the count reading, routine, leaves_proof and obligation per kind, the decision-rule sentences, and which of them are parameters.
+- What-ifs may change one policy value (int, bool or choice, with `stated_only` respected) as well as one environment value. `matched` accepts either. Policy versions may change the new policy values.
+- A values check keeps ladder thresholds in order.
+- **The new readings stay out of the blueprint fill.** They take `Parameter.default`, are shown as template readings and are editable on the review screen, so the fill (25–30 s of a 55 s budget) grows only by recurrence ranges and obligation limits. M7b measures 5 fills per example, which must stay under 40 s.
+
+**Integrity of the AI people (M4, M5).**
+- **Claimed cause:** a new action-parameter type `cause`, optional, only on actions that plan a miss (attendance `skip`, curfew `stay_out_late`).
+  - The engine accepts "none" (their own choice) or the exact ID or kind of a disruption hitting this person this step. There is no free-text matching: anything else is refused with the valid values listed.
+  - Otherwise it refuses with `claim: not_affecting_you`, a detail from `Engine.situation` and the valid causes. The person is asked once more in the same step, so a refused claim never silently turns into attending.
+- **"Your situation now":** a block in every prompt, from `Engine.situation(person, step)`: what affects them this step, or that nothing does. It sits after the trigger list, so the frozen golden lines stay as they are.
+- **Intentions:** a decision may state up to 2 `intends` (actions planned later). A trigger `intention_due` asks the person at the step they named, at most once per person per step. The prompt reminds them ("You said you would …") and says it's a reminder, not a commitment. Met or unmet is recorded.
+- `ActionParam.omit_means` words what leaving an optional value out means.
+- The run summary adds `false_claims`, `intentions_stated`, `intentions_unmet`, `error_decisions_while_hit`.
+
+**Results: harm, near misses and why (M2, M3, M9).**
+- **Findings:** new kinds `near_threshold` (passed, spare ≤ 1 at the last step that harms) and `obligation_lost`, numbered after the old kinds so earlier IDs don't move.
+  - Every finding has `harm` (true for check_failed, obligation_lost, pending_at_check).
+  - Every harm has a `cause_class`, by rules over the records, in this order. All events are looked up by (person, step) for every step in the chain:
+    1. *no_reply*: the model call for that person failed or timed out in a step of the chain. This is an infrastructure problem, not an AI mistake.
+    2. *ai_mistake*: a refused false claim or a refused untrue correction.
+    3. *forced*: misses caused by obstacles over slack alone reach the fail point.
+    4. *process*: it needs a pending, late, proof-refused or deadline-refused request.
+    5. *trade_off*: it comes from obligation clashes (attending cost the obligation, or meeting the obligation cost the duty), under the policy's reading of what is exceptional. Every `obligation_lost` is a *trade_off*.
+    6. *chosen*: the remaining misses are skips when nothing affected the person.
+  - The ledger shows, next to each *trade_off*, the assumptions that set it: how often the clash recurs and the person's limit. That way the policymaker sees the harm comes from the rule and the conditions, not from the AI.
+- **Everything that used to mean "broke" uses `harm`:**
+  - the search reruns only on harm, and a confirmed break needs the same kind **and person**, with neither finding *no_reply*, *ai_mistake* nor *forced*;
+  - `explore hunt` stops only on harm;
+  - the UI's red tone is harm.
+- **Margins:** ladder margins are measured to every step, from the records (a ladder rarely emits events). Ranking and `near_threshold` use the last step.
+- **Repeats and comparison** add the spread of margins, obligations lost, near misses, unexcused absences and AI mistakes.
+
+**Evaluation before re-recording (M10).** docs/EVALUATION.md is written and committed before any run:
+- fresh fills of both example policies, 5 repeats each, no code or prompt change in between (a fix restarts the protocol);
+- the report covers the AI-mistake rate, the ledger of every run, the cause class of every harm, calls per run, and 15 sampled decisions to read;
+- success is integrity and a full ledger, never "a failure appeared". No harm is a valid result;
+- then one search per example, reported with cause classes;
+- **pass lines, set beforehand:**
+  - false claims plus no-reply decisions are at most 10% of decisions;
+  - at most 150 calls per run;
+  - no failed runs;
+  - every fill under 40 s.
+
+  A miss on any line is a no-go for M11.
+
+**The demo run and the cutoff (M11).**
+- `RULESTORM_RETIRED_BEFORE` is set only in the deploy that also ships the new fixture.
+- `reset-demo` gives the restored run, blueprint and policy the restore time, so `demo` is never hidden by the cutoff.
+- The demo run is chosen from the M10 runs:
+  - a harm finding by docs/DEMO_FLOW.md's rule, if one exists;
+  - otherwise the run with the smallest margin, exported with its `near_threshold` finding, or with no finding at all, in which case the ledger is the headline.
+- The fixture test accepts both.
+
 **Hero chain from real runs:** nothing in code or a template is changed to make a finding appear. The demo replays a recorded real run (must-have 9). The hero is whichever real finding is strongest at the 26 Nov checkpoint (team choice). Chosen 25 Nov: the eligibility failure in L-ff6f0ca8 (`check_failed`, the working student at 72.7% after storms), bundled in `fixtures/demo_run.json` and restored as run `demo` with `reset-demo`, which re-detects the findings from the bundled events and refuses a file whose blueprint no longer fits its template.
 
 ## What carries over and what is ported
@@ -242,6 +354,8 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 | HTTPS link | CloudFront (built 25 Nov: https://d2emiyaz9dq4bi.cloudfront.net, E1IG4DB09R82EC), origin = the EC2 public DNS name; `/api/*` all methods, CachingDisabled + AllViewer, 60 s origin timeout | Browsers warn on plain HTTP | Submit `http://<elastic-ip>` |
 | Setup and deploy | One-time console checklist (`docs/DEPLOY.md`, Budgets alert first); `deploy/deploy.sh <tag>` in a Session Manager shell, which also runs `reset-demo` so the demo run exists on a fresh instance | Least setup on a new account; the hero path must work on the live link | Tarball through Session Manager |
 | Monitoring | EC2 status-check alarm → SNS email | We must know if the judged link dies | Check `/api/health` by hand |
+| Model realism (26 Nov evening, team decision) | Competing obligations, recurrence, readings as parameters, checked claims, ledger and cause classes (M0–M11), all general and on both templates | A policymaker needs to see who a rule hurts and why. A model where complying costs nothing can only show planted or random failures | Staged go/no-go: the 28 Nov checkpoint deploy (M0–M9 plus the UI, with the cutoff unset and the current fixture), M10 by 29 Nov 12:00 IST, M11 by 29 Nov 18:00 IST. On a no-go, deploy the last tag that passed its live checks, with the cutoff unset and the fixture it shipped with; the rest ships after 5 Dec for Round 2 |
+| Search break | A harm finding for the same kind and person, repeated by the rerun, neither *no_reply*, *ai_mistake* nor *forced* (M2, M9) | A break caused by an AI error or by piled-on disruptions tells the policymaker nothing about the rule | Report "broke once" or "not broken" with the closest margin, never an invented break |
 
 ## Speed target
 - **Hero moment:** opening a stored run, its findings and a finding's evidence each answer in under 1 second.
@@ -263,6 +377,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 - **Global caps:** live in `/etc/rulestorm.env`, not Parameter Store.
 - **Counterfactual (slice 13, 25 Nov):** `counterfactual.py` copies a run's blueprint with one single-value `environment` parameter changed (a list such as `disruptions` can't be changed this way), labels it a fact, approves it and starts its run through the normal runner (409 and the daily caps apply). It is stored with `counterfactual_of`, not `parent_id`, so `explore run` and `hunt` never pick it up. `GET /api/runs/{a}/compare/{b}` reads both runs' events: longest queue and periods over capacity, waiting time from `request_decided.waited_periods`, and every check result; it lists every value the blueprints differ in and says `matched` only when that is one environment value.
 - **Live account (25 Nov, team decision):** our one current account is the live account, and development stays in it too, so the live caps are lower than the code's defaults (10 runs and 1,000 model calls a day, in `deploy/rulestorm.env`). It had USD 100 of credits on 25 Nov; the server, address and disk take about USD 18 up to 17 Dec. Bedrock was already called here during development, so the Budgets alert comes before the first deploy rather than before the first Bedrock call. The deploy (`deploy/deploy.sh`, `deploy/rulestorm.service`, `docs/DEPLOY.md`) installs a git tag into `/opt/rulestorm/releases/<tag>`, keeps the store in `/var/lib/rulestorm`, and runs the app as user `rulestorm` on port 80 with only `CAP_NET_BIND_SERVICE`.
+- **Model change (26 Nov evening):** build all of M0–M11, no cuts, deployed before the 30 Nov freeze (team decision). Old recordings are hidden with `RULESTORM_RETIRED_BEFORE` (an ISO time; anything stored before it reads as not found), never deleted.
 - **Earlier team decisions (BRIEF):** no Streamlit, Vercel or Supabase; SQLite, not DynamoDB; 2–3 AWS accounts (one live); link shared with the team and judges only, no login; deploy freeze 30 Nov–5 Dec.
 
 ## Not doing
@@ -272,6 +387,7 @@ Caps are taken atomically: `UPDATE … SET n = n + 1 WHERE date = ? AND n < cap`
 - **AWS setup:** no scripted account setup (CLI or IaC), no deploy key, no Node on the instance, no Parameter Store.
 - **Server:** one uvicorn worker, one active run at a time; no websockets or server-sent events, so the UI polls.
 - **Libraries:** no Pandas or Plotly until a nice-to-have needs them.
+- **Results:** no tuning of a template, prompt or scenario until a failure appears; changes are judged by docs/EVALUATION.md. No policy score, and no LLM-written explanation of a cause class.
 
 ## Critic findings rejected
 - **"Make blueprint generation asynchronous":** rejected. The blueprint calls share one 55 s wall-clock budget inside CloudFront's 60 s, so a sync request is enough.
