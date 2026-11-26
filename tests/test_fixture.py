@@ -36,7 +36,9 @@ def test_the_file_is_utf8_without_a_bom_and_in_this_schema(bundle) -> None:
 def test_the_bundled_blueprint_still_fits_its_template(bundle) -> None:
     record, template = check_blueprint(bundle)
     assert record.approved and record.status == "valid" and record.id == bundle["run"]["blueprint_id"]
-    assert f"{template.id}@{template.version}" == bundle["run"]["template"]
+    # recorded on an older version the template still reads (slice M1 bumped both to @2)
+    made = bundle["run"]["template"]
+    assert made.split("@")[0] == template.id and int(made.split("@")[1]) in template.reads_versions
     assert bundle["policy"]["id"] == record.policy_id
 
 

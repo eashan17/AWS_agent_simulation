@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from rulestorm.core.model import REQUEST_OUTCOMES, Action, Duty, Template
+from rulestorm.core.model import REQUEST_OUTCOMES, Action, Count, Duty, Template
 
 Outcome = Literal["met", "missed"]
 NO_PLAN = "meet"  # a person with no plan is treated as planning to meet the duty
@@ -92,6 +92,7 @@ class CountResult(BaseModel):
     pending: list[str]
     approved: list[str]
     rejected: list[str]
+    reading: str = "remove"  # slice M1: how excused occurrences were counted (remove | count_as_met)
 
     def text(self) -> str:
         if self.kind == "tally":
@@ -107,6 +108,47 @@ def count_value(kind: str, met: int, missed: int) -> float | None:
         due = met + missed
         return round(met * 100 / due, 1) if due else None
     return float(missed)
+
+
+class Tally(BaseModel):
+    met: int
+    due: int
+    missed: int
+    value: float | None
+
+
+def count_records(kind: str, records: dict[int, str], cancelled: set[int], excused: set[int],
+                  reading: str = "remove") -> Tally:
+    """The one way a check's figure is counted (slice M1), used by the engine, the evidence's
+    recomputation and the search's closeness. `records` maps each recorded step to met or missed;
+    `cancelled` steps leave the count; `excused` steps (covered by an approved request, or assumed
+    approved) leave it under `remove` and count as met under `count_as_met`. Callers pass empty
+    sets for whatever their count doesn't exclude."""
+    if reading not in ("remove", "count_as_met"):
+        raise ValueError(f"unknown excused reading {reading!r}")
+    met = missed = 0
+    for step, outcome in records.items():
+        if step in cancelled or outcome not in ("met", "missed"):
+            continue
+        if step in excused:
+            if reading == "remove":
+                continue
+            outcome = "met"
+        if outcome == "met":
+            met += 1
+        else:
+            missed += 1
+    return Tally(met=met, due=met + missed, missed=missed, value=count_value(kind, met, missed))
+
+
+def excused_reading(template: Template, count: Count, values: dict[str, Any]) -> str:
+    """The count's excused reading from the blueprint's values, else its parameter's default."""
+    if count.excused_param is None:
+        return "remove"
+    if count.excused_param in values:
+        return values[count.excused_param]
+    p = next((p for p in template.parameters if p.name == count.excused_param), None)
+    return (p.default if p is not None and p.default is not None else "remove")
 
 
 def passes(value: float | None, comparison: str, threshold: float) -> bool:
@@ -905,8 +947,10 @@ class Engine:
 
     # --- counts -----------------------------------------------------------------------------
 
-    def count(self, count_id: str, person: str, assume_pending_approved: bool = False) -> CountResult:
-        """Always recomputed from the records. Pending requests count as missed unless assumed approved."""
+    def count(self, count_id: str, person: str, assume_pending_approved: bool = False,
+              reading: str | None = None) -> CountResult:
+        """Always recomputed from the records. Pending requests count as missed unless assumed approved.
+        Excused occurrences are read as the policy's reading says, unless `reading` overrides it."""
         c = self.counts[count_id]
         own = [r for r in self.requests.values() if r.person == person
                and self.request_types[r.request_type].covers == c.duty]
@@ -916,18 +960,22 @@ class Engine:
             if assume_pending_approved:
                 excused |= {s for r in own if r.status == "pending" for s in r.steps}
         cancelled = self.cancelled[c.duty] if "cancelled" in c.exclude else set()
-        due = sorted(s for s in self.recorded_steps[c.duty] | cancelled
-                     if s not in cancelled and s not in excused and (c.duty, person, s) in self.records)
-        met = sum(1 for s in due if self.records[(c.duty, person, s)] == "met")
-        missed = len(due) - met
-        value = count_value(c.kind, met, missed)
-        return CountResult(count=count_id, person=person, kind=c.kind, met=met, due=len(due), missed=missed,
-                           value=value, pending=[r.request_id for r in own if r.status == "pending"],
+        records = {s: self.records[(c.duty, person, s)] for s in self.recorded_steps[c.duty]
+                   if (c.duty, person, s) in self.records}
+        reading = reading or self.excused_reading(c)
+        tally = count_records(c.kind, records, cancelled, excused, reading)
+        return CountResult(count=count_id, person=person, kind=c.kind, met=tally.met, due=tally.due,
+                           missed=tally.missed, value=tally.value,
+                           pending=[r.request_id for r in own if r.status == "pending"],
                            approved=[r.request_id for r in own if r.status == "approved"],
-                           rejected=[r.request_id for r in own if r.status == "rejected"])
+                           rejected=[r.request_id for r in own if r.status == "rejected"], reading=reading)
 
-    def calculate(self, count_id: str, person: str, period: int, assume_pending_approved: bool = False) -> Event:
-        result = self.count(count_id, person, assume_pending_approved)
+    def excused_reading(self, count: Count) -> str:
+        return excused_reading(self.t, count, self.values)
+
+    def calculate(self, count_id: str, person: str, period: int, assume_pending_approved: bool = False,
+                  reading: str | None = None) -> Event:
+        result = self.count(count_id, person, assume_pending_approved, reading)
         return self.emit("count_calculated", "engine", period,
                          payload={"assume_pending_approved": assume_pending_approved, **result.model_dump()},
                          caused_by=[self.requests[r].filed_event for r in self.count(count_id, person).pending])

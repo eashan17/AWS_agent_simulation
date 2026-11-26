@@ -78,6 +78,8 @@ class ValuesBase(BaseModel):
 
 def _field(t: Template, p: Parameter) -> tuple[Any, Any]:
     info = {"description": p.description} if p.description else {}
+    if p.default is not None:  # slice M1: a value with a default may be left out (it reads as the default)
+        info["default"] = p.default
     if p.type == "int":
         return int, Field(ge=p.min, le=p.max, **info)
     if p.type == "bool":
@@ -139,7 +141,9 @@ class FillBase(BaseModel):
             raise ValueError(f"label fields must be a value's name or a section ({', '.join(SECTIONS)}); "
                              f"unknown: {', '.join(unknown)}")
         covered = {x.field for x in labels}
-        missing = [n for n, kind in names.items() if n not in covered and kind not in covered]
+        defaults = {p.name: p.default for p in self.template.parameters if p.default is not None}
+        missing = [n for n, kind in names.items() if n not in covered and kind not in covered
+                   and not (n in defaults and getattr(self.values, n, None) == defaults[n])]
         if missing:
             raise ValueError(f"label these in facts or assumptions (or label their section): {', '.join(missing)}")
         for p in self.template.parameters:

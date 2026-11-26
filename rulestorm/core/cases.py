@@ -10,7 +10,9 @@ A case file names its template and values and says what people do, by person and
                                                 filed in advance, else the step after the last one),
                   "consent": true | false      (request types that need consent),
                   "decision": "approved" | "rejected"   (request types an LLM person decides)}]
-    "report": ["count", "queue", "permission", "ladder", "failed_check"]   the lines to print
+    "report": ["count", "queue", "permission", "ladder", "failed_check", "readings"]   the lines to print
+    "readings_at": <period>                    ("readings": the period whose end it counts at, after
+                                                that period's queues; default the last)
     "permission_check": {"role", "actor", "action", "params"}
 
 It runs in the term loop's phase order: period start (capacity disruptions); each step
@@ -27,6 +29,11 @@ from rulestorm.core.model import Template
 
 def run_case(case: dict[str, Any], template: Template) -> list[str]:
     """Plays a fixed case through the general engine; returns the lines to print, each with its event ID."""
+    return play_case(case, template)[0]
+
+
+def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engine]:
+    """`run_case`, also returning the engine the case was played on (its events and records)."""
     e = Engine(template, case["values"])
     focus = case["focus_person"]
     missed = {person: set(o.get("missed", [])) for person, o in case.get("outcomes", {}).items()}
@@ -35,6 +42,7 @@ def run_case(case: dict[str, Any], template: Template) -> list[str]:
     requests = [dict(r, filed_at=r.get("filed_at", _default_filing(e, r))) for r in case.get("requests", [])]
     by_id: dict[str, dict] = {}  # request ID -> its case entry
     count_lines: list[str] = []
+    reading_lines: list[str] = []
     last_queue: dict[str, Event] = {}
     spp, periods = template.calendar.steps_per_period, template.calendar.periods
 
@@ -91,6 +99,8 @@ def run_case(case: dict[str, Any], template: Template) -> list[str]:
             if "count" in case.get("report", []):
                 count_lines = _count_lines(e, template, case["count"], focus, period)
         process(period, None)
+        if "readings" in case.get("report", []) and period == case.get("readings_at", periods):
+            reading_lines = _reading_lines(e, template, case["count"], focus, period)
         e.run_checks(period)
 
     lines: list[str] = []
@@ -117,9 +127,11 @@ def run_case(case: dict[str, Any], template: Template) -> list[str]:
                                  f"[{ev.event_id}]")
         elif item == "failed_check":
             lines += _failed_check_lines(e, template, focus)
+        elif item == "readings":
+            lines += reading_lines
         else:
             raise ValueError(f"unknown report item {item!r}")
-    return lines
+    return lines, e
 
 
 def _default_filing(e: Engine, request: dict[str, Any]) -> int:
@@ -138,6 +150,23 @@ def _count_lines(e: Engine, template: Template, count_id: str, focus: str, perio
     pending = len(now.payload["pending"])
     return [f"{CountResult(**_result(now)).text()} ({pending} {word} pending)  [{now.event_id}]",
             f"{CountResult(**_result(projected)).text()} (if {pending} approved)  [{projected.event_id}]"]
+
+
+def _reading_lines(e: Engine, template: Template, count_id: str, focus: str, period: int) -> list[str]:
+    """The same records counted under each excused reading the count's policy choice allows (slice M1)."""
+    count = next(c for c in template.counts if c.id == count_id)
+    if count.excused_param is None:
+        raise ValueError(f"count '{count_id}' has no excused reading to compare")
+    p = next(p for p in template.parameters if p.name == count.excused_param)
+    lines = []
+    for reading in p.choices:
+        ev = e.calculate(count_id, focus, period, reading=reading)
+        r = ev.payload
+        figure = (f"{r['met']} / {r['due']} = {r['value']:.1f}%" if r["kind"] == "rate" and r["value"] is not None
+                  else f"{r['missed']}")
+        words = (p.sentences or {}).get(reading, reading)
+        lines.append(f"{count.label} {figure} ({words})  [{ev.event_id}]")
+    return lines
 
 
 def _checks_of(e: Engine, person: str) -> list[Event]:

@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from rulestorm.core.engine import count_value, passes
+from rulestorm.core.engine import count_value, excused_reading, passes
 from rulestorm.core.model import Template
 
 
@@ -150,8 +150,13 @@ def rule_lines(template: Template, values: dict[str, Any]) -> list[str]:
     for count in t.counts:
         bits = []
         if "approved_request" in count.exclude:
-            bits.append(f"An approved {request} excuses its {step}s; a pending or rejected one still counts them "
-                        f"as {missed}.")
+            if excused_reading(t, count, values) == "count_as_met":
+                met = t.terms.get("duty_met", "met")
+                bits.append(f"An approved {request}'s {step}s count as {met}; a pending or rejected one still "
+                            f"counts them as {missed}.")
+            else:
+                bits.append(f"An approved {request} excuses its {step}s; a pending or rejected one still counts "
+                            f"them as {missed}.")
         if "cancelled" in count.exclude:
             bits.append(f"A cancelled {step} doesn't count.")
         if bits:

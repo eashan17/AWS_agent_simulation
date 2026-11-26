@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model
 
 from rulestorm import llm
 from rulestorm.blueprint import Label, TemplateBlueprint, _allowed, _field, _meaning, values_model
+from rulestorm.core.engine import excused_reading
 from rulestorm.core.model import Parameter, Template, load_template
 from rulestorm.rulebook import MissesToFail, _first_failing, misses_to_fail  # noqa: F401
 from rulestorm.policy import (
@@ -77,8 +78,12 @@ def misses_lines(template: Template, values: dict[str, Any]) -> list[str]:
     for count in t.counts:
         if "approved_request" in count.exclude:
             request = t.terms.get("request", "request")
-            lines.append(f"- An approved {request} excuses the {cal.step_label}s it covers; pending or rejected "
-                         f"ones still count as {missed}.")
+            if excused_reading(t, count, values) == "count_as_met":
+                lines.append(f"- An approved {request} counts the {cal.step_label}s it covers as "
+                             f"{t.terms.get('duty_met', 'met')}; pending or rejected ones still count as {missed}.")
+            else:
+                lines.append(f"- An approved {request} excuses the {cal.step_label}s it covers; pending or "
+                             f"rejected ones still count as {missed}.")
     return lines
 
 

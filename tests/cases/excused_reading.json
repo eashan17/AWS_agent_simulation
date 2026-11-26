@@ -1,0 +1,26 @@
+{
+  "description": "Test-only case (slice M1). By the end of week 8 the working student has 16 sessions recorded: 8 absences one approved exception covers (sessions 1-8) and 3 unexcused absences (10, 12, 14). Removing the excused sessions gives 5 / 8; counting them as attended gives 13 / 16.",
+  "template": "attendance",
+  "focus_person": "working",
+  "count": "attendance_pct",
+  "outcomes": {
+    "working": {"missed": [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14]}
+  },
+  "requests": [
+    {"person": "working", "steps": [1, 2, 3, 4, 5, 6, 7, 8], "reason": "hospital stay"}
+  ],
+  "values": {
+    "threshold_pct": 80,
+    "request_timing": "after_missed",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "decision_rule": "approve_all",
+    "office_capacity_per_week": 10,
+    "checkpoint_week": 8,
+    "disruptions": [
+      {"kind": "admin_capacity", "period": 9, "capacity": 10, "description": "the office works as usual"}
+    ]
+  },
+  "readings_at": 8,
+  "report": ["readings"]
+}

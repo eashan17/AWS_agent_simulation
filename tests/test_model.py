@@ -26,7 +26,7 @@ def test_every_shipped_template_passes(path: Path) -> None:
 
 def test_attendance_has_todays_world() -> None:
     t = load_template("attendance")
-    assert t.ref == "attendance@1"
+    assert t.ref == "attendance@2"
     llm_actions = {a for r in t.roles for a in r.actions}
     assert llm_actions == {"attend", "skip", "submit_exception_request", "ask_advisor",
                            "edit_attendance", "cancel_session", "advise_student"}

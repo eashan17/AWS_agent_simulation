@@ -37,8 +37,8 @@ def _saved(store, approved, version: int, values: dict) -> str:  # noqa: F811
 
 
 def test_template_check_prints_the_versions_it_reads() -> None:
-    assert "reads versions: 1" in check_file("attendance").lines()
-    assert "reads versions: 1" in check_file("hostel_curfew").lines()
+    assert "reads versions: 1, 2" in check_file("attendance").lines()
+    assert "reads versions: 1, 2" in check_file("hostel_curfew").lines()
 
 
 def test_a_template_must_read_its_own_version() -> None:
@@ -78,7 +78,7 @@ def test_a_version_the_template_does_not_read_is_refused_by_name() -> None:
     })
     with pytest.raises(TemplateVersionUnreadable) as exc:
         check_version(template, record)
-    assert str(exc.value) == "blueprint B-old was made with attendance@0; this server reads attendance@1"
+    assert str(exc.value) == "blueprint B-old was made with attendance@0; this server reads attendance@1, attendance@2"
 
 
 def test_every_start_route_answers_409_for_an_unreadable_version(client, store, approved) -> None:  # noqa: F811
@@ -86,7 +86,7 @@ def test_every_start_route_answers_409_for_an_unreadable_version(client, store, 
     old = _saved(store, approved, 0, approved.blueprint.values)
     store.create_run("L-old", old, "attendance@0", 10, "fake")
     store.update_run("L-old", status="completed")
-    message = f"blueprint {old} was made with attendance@0; this server reads attendance@1"
+    message = f"blueprint {old} was made with attendance@0; this server reads attendance@1, attendance@2"
 
     starts = {
         "run": ("/api/runs", {"blueprint_id": old}),

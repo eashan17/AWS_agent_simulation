@@ -1,6 +1,7 @@
 {
   "id": "attendance",
-  "version": 1,
+  "version": 2,
+  "reads_versions": [1, 2],
   "title": "Attendance and exam eligibility",
   "scope": "Minimum attendance rules for a course, with exception requests handled by an office and an eligibility check at a set point in the term.",
   "terms": {
@@ -331,7 +332,8 @@
       "exclude": [
         "approved_request",
         "cancelled"
-      ]
+      ],
+      "excused_param": "excused_counting"
     }
   ],
   "checks": [
@@ -495,6 +497,18 @@
         "approve_if_covered_missed": "The attendance office approves a request only if every class it covers is a recorded absence with a valid reason.",
         "approve_if_filed_before_occurrence": "The attendance office approves a request only for classes it was filed before, and only absences with a valid reason.",
         "approve_all": "The attendance office approves every request it processes."
+      }
+    },
+    {
+      "name": "excused_counting",
+      "kind": "policy",
+      "type": "choice",
+      "description": "whether a session an approved exception covers leaves the attendance count (remove) or counts as attended (count_as_met); keep remove unless the policy says excused absences count as attended",
+      "choices": ["remove", "count_as_met"],
+      "default": "remove",
+      "sentences": {
+        "remove": "excused removed",
+        "count_as_met": "excused counted as attended"
       }
     },
     {

@@ -20,7 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from rulestorm.core.engine import count_value
+from rulestorm.core.engine import count_records
 from rulestorm.core.model import Template, load_template
 
 Label = Literal["recorded fact", "calculated", "AI interpretation"]
@@ -97,7 +97,8 @@ def evidence(finding: dict[str, Any], events: list[dict[str, Any]], template: Te
 def calculation(check: dict[str, Any], events: list[dict[str, Any]], template: Template, words=None) -> Calculation:
     """The check's count, recomputed from the events before it, as the engine counts: met ÷ due for
     a rate or the number missed for a tally; a pending request counts as missed unless assumed
-    approved; approved requests and cancelled occurrences are left out where the count says so."""
+    approved; cancelled occurrences are left out where the count says so, and excused ones are
+    read as the check recorded (left out, or counted as met), through the engine's `count_records`."""
     words = words or _Words(template)
     p = check["payload"]
     count = next(c for c in template.counts if c.id == p["count"]["count"])
@@ -122,6 +123,7 @@ def calculation(check: dict[str, Any], events: list[dict[str, Any]], template: T
         elif e["type"] == "request_endorsement_refused" and q["request_id"] in requests:
             requests[q["request_id"]]["status"] = "rejected"
     pending = [r for r, v in requests.items() if v["status"] == "pending"]
+    reading = p["count"].get("reading", "remove")  # recorded by the engine at the check (slice M1)
 
     def figure(assume_approved: bool) -> Figure:
         excused: set[int] = set()
@@ -130,11 +132,9 @@ def calculation(check: dict[str, Any], events: list[dict[str, Any]], template: T
             if assume_approved:
                 excused |= {s for r in pending for s in requests[r]["steps"]}
         left_out = cancelled if "cancelled" in count.exclude else set()
-        due = [s for s in records if s not in left_out and s not in excused]
-        met = sum(records[s] == "met" for s in due)
-        missed = len(due) - met
-        value = count_value(count.kind, met, missed)
-        return Figure(met=met, due=len(due), missed=missed, value=value, text=words.figure(count, met, len(due), missed, value))
+        f = count_records(count.kind, records, left_out, excused, reading)
+        return Figure(met=f.met, due=f.due, missed=f.missed, value=f.value,
+                      text=words.figure(count, f.met, f.due, f.missed, f.value))
 
     now, approved = figure(False), figure(True)
     recorded, if_approved = p["count"], p["count_if_pending_approved"]

@@ -1,6 +1,7 @@
 {
   "id": "hostel_curfew",
-  "version": 1,
+  "version": 2,
+  "reads_versions": [1, 2],
   "title": "Hostel curfew and late entry",
   "scope": "Hostel curfew rules for college residents, with late-entry permission that needs a guardian's consent and the warden's decision, and penalties that escalate with repeated late returns.",
   "terms": {
@@ -152,7 +153,7 @@
     }
   ],
   "counts": [
-    {"id": "late_returns", "label": "late returns", "kind": "tally", "duty": "return_by_curfew", "exclude": ["approved_request"]}
+    {"id": "late_returns", "label": "late returns", "kind": "tally", "duty": "return_by_curfew", "exclude": ["approved_request"], "excused_param": "excused_counting"}
   ],
   "checks": [
     {
@@ -255,6 +256,18 @@
       "sentences": {
         "true": "The warden can approve some nights of a request and refuse the rest.",
         "false": "The warden approves or refuses each request whole."
+      }
+    },
+    {
+      "name": "excused_counting",
+      "kind": "policy",
+      "type": "choice",
+      "description": "whether a night an approved late-entry request covers leaves the late-return count (remove) or counts as back on time (count_as_met); keep remove unless the policy says excused nights count as on time",
+      "choices": ["remove", "count_as_met"],
+      "default": "remove",
+      "sentences": {
+        "remove": "excused removed",
+        "count_as_met": "excused counted as back on time"
       }
     },
     {

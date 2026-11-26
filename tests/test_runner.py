@@ -74,7 +74,7 @@ def test_a_post_answers_at_once_and_a_second_gets_409_with_the_same_run(client, 
     second = http.post("/api/runs", json={"blueprint_id": approved.id})
     assert second.status_code == 409 and second.json()["run_id"] == run_id
     running = http.get(f"/api/runs/{run_id}").json()
-    assert running["status"] == "running" and running["periods"] == 10 and running["template"] == "attendance@1"
+    assert running["status"] == "running" and running["periods"] == 10 and running["template"] == "attendance@2"
     assert running["run_id"] == run_id
 
     model.gate.set()

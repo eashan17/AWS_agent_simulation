@@ -149,7 +149,7 @@ def test_valid_reply_gives_a_valid_template_blueprint(policy) -> None:
     draft = interpret(policy, FakeModel([PICK, json.dumps(FILL)]))
     assert draft.status == "valid" and draft.errors == []
     assert isinstance(draft.blueprint, TemplateBlueprint)
-    assert (draft.blueprint.template_id, draft.blueprint.template_version) == ("attendance", 1)
+    assert (draft.blueprint.template_id, draft.blueprint.template_version) == ("attendance", 2)
     assert draft.blueprint.values["request_timing"] == "after_missed"
     assert draft.blueprint.values["disruptions"][0]["people"] == ["commuter", "working"]
 
@@ -223,7 +223,7 @@ def test_pick_none_gives_out_of_scope_with_the_reason_and_no_fill_call(policy) -
 def test_pick_records_the_template_and_fills_it(policy) -> None:
     model = FakeModel([PICK, json.dumps(FILL)])
     draft = interpret(policy, model)
-    assert (draft.status, draft.template_id, draft.template_version) == ("valid", "attendance", 1)
+    assert (draft.status, draft.template_id, draft.template_version) == ("valid", "attendance", 2)
     assert draft.pick_reason == "the policy sets a minimum attendance"
     assert draft.attempts == 2 and len(model.prompts) == 2
 
@@ -302,7 +302,7 @@ def test_templates_route_lists_scope_and_example_input() -> None:
     response = TestClient(app).get("/api/templates")
     assert response.status_code == 200
     attendance = next(t for t in response.json() if t["id"] == "attendance")
-    assert attendance["version"] == 1 and attendance["scope"].startswith("Minimum attendance rules")
+    assert attendance["version"] == 2 and attendance["scope"].startswith("Minimum attendance rules")
     assert "80%" in attendance["example_input"]["text"]
     assert set(attendance["example_input"]) == {"text", "purpose", "environment"}
 

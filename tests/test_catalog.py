@@ -21,7 +21,7 @@ def test_a_template_gives_its_own_words_people_and_parameters(http) -> None:
     curfew = http.get("/api/templates/hostel_curfew")
     assert curfew.status_code == 200
     t = curfew.json()
-    assert t["ref"] == "hostel_curfew@1" and t["calendar"]["step_label"] == "night"
+    assert t["ref"] == "hostel_curfew@2" and t["calendar"]["step_label"] == "night"
     assert t["terms"]["request"] == "late-entry request" and len(t["people"]) == 10
     assert {"id", "role", "label"} <= set(t["people"][0])
     assert any(r["llm"] is False and r["rules"] for r in t["roles"])  # rule-run roles are marked

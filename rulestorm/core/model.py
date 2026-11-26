@@ -50,6 +50,10 @@ TriggerKind = Literal[
 # meet it anyway; capacity: a queue's capacity for one period; cancellation: the step is off.
 DisruptionKindName = Literal["obstacle", "conflict", "capacity", "cancellation"]
 CountExclusion = Literal["approved_request", "cancelled"]
+# Slice M1: how a count reads an excused occurrence (one an approved request covers): it leaves the
+# count (`remove`) or counts as met (`count_as_met`). A policy choice, named by `Count.excused_param`.
+ExcusedReading = Literal["remove", "count_as_met"]
+EXCUSED_READINGS: tuple[str, ...] = ("remove", "count_as_met")
 ParameterKind = Literal["policy", "environment", "people"]
 ParameterType = Literal["int", "bool", "choice", "text", "attribute", "profiles", "disruptions"]
 PromptSection = Literal["policy", "request_rules", "you"]
@@ -161,6 +165,8 @@ class Count(Block):
     kind: Literal["rate", "tally"]
     duty: str
     exclude: list[CountExclusion] = Field(default_factory=list)
+    excused_param: str | None = Field(None, description="the policy choice parameter that says how an "
+                                                        "excused occurrence counts (remove or count_as_met)")
 
 
 class LadderStep(Block):
@@ -479,7 +485,18 @@ def _reference_errors(t: Template) -> list[str]:
         _choices_within(errors, params, rt.timing_param, RequestTiming)
 
     for count in t.counts:
-        ref(f"count '{count.id}'", "duty", count.duty, duties)
+        owner = f"count '{count.id}'"
+        ref(owner, "duty", count.duty, duties)
+        param(owner, count.excused_param, {"policy"})
+        if count.excused_param in params:
+            p = params[count.excused_param]
+            if p.type != "choice" or sorted(p.choices or []) != sorted(EXCUSED_READINGS):
+                errors.append(f"{owner}: excused_param '{p.name}' must be a choice of "
+                              f"{', '.join(EXCUSED_READINGS)}")
+            if p.default not in EXCUSED_READINGS:
+                errors.append(f"{owner}: excused_param '{p.name}' needs a default reading")
+            if "approved_request" not in count.exclude:
+                errors.append(f"{owner}: excused_param needs 'approved_request' in exclude")
 
     for check in t.checks:
         owner = f"check '{check.id}'"
