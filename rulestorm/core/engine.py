@@ -23,6 +23,10 @@ from rulestorm.core.model import REQUEST_OUTCOMES, Action, Count, Duty, Template
 
 Outcome = Literal["met", "missed"]
 NO_PLAN = "meet"  # a person with no plan is treated as planning to meet the duty
+# Slice M6: a disruption entry may recur, but the expanded copies (one per period) stay within
+# these caps, so a stress test can't pile hardships on until the arithmetic forces a failure.
+MAX_OCCURRENCES = 24
+MAX_OCCURRENCES_PER_PERSON = 12
 
 
 class Event(BaseModel):
@@ -58,15 +62,63 @@ class Request(BaseModel):
 
 class DisruptionValue(BaseModel):
     """One disruption from the blueprint. `kind` is a disruption ID from the template;
-    `steps` are positions within the period (1 = its first step)."""
+    `steps` are positions within the period (1 = its first step). From slice M6 an entry may
+    recur: from `period` to `until_period`, every `every` periods (no `until_period`: once)."""
 
     kind: str
     period: int = Field(ge=1)
+    until_period: int | None = Field(None, ge=1)
+    every: int = Field(1, ge=1)
     steps: list[int] = Field(default_factory=list)
     people: list[str] = Field(default_factory=list)
     delay: int = Field(0, ge=0)
     capacity: int | None = Field(None, ge=0)
     description: str = ""
+
+
+def disruption_periods(d: DisruptionValue) -> list[int]:
+    """The periods an entry covers: `period` alone, or `period` to `until_period` every `every`."""
+    return list(range(d.period, (d.until_period or d.period) + 1, d.every))
+
+
+def expand_disruptions(entries: list[Any]) -> list[DisruptionValue]:
+    """Each entry as per-period copies, in entry order, each with no range of its own. Every
+    reader of a disruption's `period` goes through this (or shows the range)."""
+    out = []
+    for raw in entries:
+        d = raw if isinstance(raw, DisruptionValue) else DisruptionValue.model_validate(raw)
+        if d.until_period is not None and d.until_period < d.period:
+            raise ValueError(f"disruption '{d.kind}' has until_period {d.until_period} before its period {d.period}")
+        out += [d.model_copy(update={"period": n, "until_period": None, "every": 1}) for n in disruption_periods(d)]
+    return out
+
+
+def disruption_when(template: Template, d: Any) -> str:
+    """`<period> 3`, `<period>s 1–10` or `<period>s 2–8, every 2`, with the template's period label."""
+    d = d if isinstance(d, DisruptionValue) else DisruptionValue.model_validate(d)
+    label = template.calendar.period_label
+    if d.until_period is None or d.until_period == d.period:
+        return f"{label} {d.period}"
+    return f"{label}s {d.period}–{d.until_period}" + (f", every {d.every}" if d.every > 1 else "")
+
+
+def disruption_text(template: Template, d: Any) -> str:
+    """One line per entry: `<kind> <period>s 1–10, <step> 2: <people> (<description>)`."""
+    d = d if isinstance(d, DisruptionValue) else DisruptionValue.model_validate(d)
+    step = template.calendar.step_label
+    text = f"{d.kind} {disruption_when(template, d)}"
+    if d.steps:
+        text += f", {step}{'s' if len(d.steps) > 1 else ''} {', '.join(map(str, d.steps))}"
+    if d.capacity is not None:
+        text += f": capacity {d.capacity}"
+    elif d.people:
+        text += ": " + ", ".join(d.people)
+    return text + (f" ({d.description})" if d.description else "")
+
+
+def occurrence_count(entries: list[Any]) -> int:
+    """How many per-period copies the entries expand to (the cap is MAX_OCCURRENCES)."""
+    return len(expand_disruptions(entries))
 
 
 class Obstacle(BaseModel):
@@ -216,8 +268,23 @@ class Engine:
 
     def _disruptions(self) -> list[DisruptionValue]:
         names = [p.name for p in self.t.parameters if p.type == "disruptions"]
-        found = [DisruptionValue.model_validate(d) for name in names for d in self.values.get(name) or []]
+        entries = [DisruptionValue.model_validate(d) for name in names for d in self.values.get(name) or []]
         spp = self.t.calendar.steps_per_period
+        for d in entries:
+            if (d.until_period or d.period) > self.t.calendar.periods:
+                raise ValueError(f"disruption '{d.kind}' is outside the calendar")
+        found = expand_disruptions(entries)
+        if len(found) > MAX_OCCURRENCES:
+            raise ValueError(f"the disruptions recur {len(found)} times in all; at most {MAX_OCCURRENCES} "
+                             f"{self.t.calendar.period_label} occurrences are allowed")
+        per_person: dict[str, int] = {}
+        for d in found:
+            for person in set(d.people):
+                per_person[person] = per_person.get(person, 0) + 1
+        crowded = sorted(f"{person} ({n})" for person, n in per_person.items() if n > MAX_OCCURRENCES_PER_PERSON)
+        if crowded:
+            raise ValueError(f"disruptions hit {', '.join(crowded)} too often; at most {MAX_OCCURRENCES_PER_PERSON} "
+                             f"{self.t.calendar.period_label} occurrences may hit one person")
         for d in found:
             kind = self.disruption_kinds.get(d.kind)
             if kind is None:

@@ -34,6 +34,7 @@ from rulestorm.blueprint import Label, TemplateBlueprint, values_model
 from rulestorm.comparison import ComparisonActive, _run_one
 from rulestorm.detect import with_harm
 from rulestorm.ledger import margins
+from rulestorm.core.engine import disruption_when
 from rulestorm.core.model import Template, load_template
 from rulestorm.counterfactual import LABEL, NOTE
 from rulestorm.explore import (
@@ -150,6 +151,9 @@ def random_scenario(template: Template, base: dict[str, Any], rng: random.Random
                         d["people"] = (sorted(rng.sample(owed, rng.randint(1, len(owed)))) if kind.kind == "obstacle"
                                        else [rng.choice(owed)])
                         d["delay"] = rng.choice([15, 30, 45, 60, 90, 120]) if kind.kind == "obstacle" else 0
+                        if kind.routine and rng.random() < 0.5:
+                            d["until_period"] = rng.randint(d["period"], cal.periods)
+                            d["every"] = rng.choice([1, 1, 2])
                     elif kind.kind == "capacity":
                         d["capacity"] = rng.randint(0, max(1, base[request_types[kind.request_type].capacity_param]))
                     else:
@@ -172,7 +176,7 @@ def changed_env(template: Template, parent: dict, child: dict) -> list[dict]:
         if a == b:
             continue
         if p.type == "disruptions":
-            text = lambda d: f"{template.calendar.period_label} {d['period']}: {d['description']}"  # noqa: E731
+            text = lambda d: f"{disruption_when(template, d)}: {d['description']}"  # noqa: E731
             out.append({"parameter": p.name, "added": [text(d) for d in b if d not in a],
                         "removed": [text(d) for d in a if d not in b]})
         else:

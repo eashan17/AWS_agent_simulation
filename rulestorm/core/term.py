@@ -546,8 +546,10 @@ def _dry_run_disruptions(template: Template) -> list[dict[str, Any]]:
         elif d.kind == "conflict":
             duty = next(x for x in template.duties if x.id == d.duty)
             people = [p.id for p in template.people if p.role == duty.owed_by]
-            disruptions.append({"kind": d.id, "period": period, "steps": [1], "people": people[:1],
-                                "description": "dry run"})
+            entry = {"kind": d.id, "period": period, "steps": [1], "people": people[:1], "description": "dry run"}
+            if d.routine:  # slice M6: a routine clash recurs, so the dry run covers a range too
+                entry.update(until_period=template.calendar.periods, every=2)
+            disruptions.append(entry)
         elif d.kind == "capacity":
             disruptions.append({"kind": d.id, "period": period, "capacity": 0, "description": "dry run"})
         else:

@@ -203,8 +203,8 @@ def describe_blueprint(record) -> list[str]:
                 continue
             value = bp.values[p.name]
             if p.type == "disruptions":
-                shown = "; ".join(f"{template.calendar.period_label} {d['period']} {d['kind']}: {d['description']}"
-                                  for d in value)
+                from rulestorm.core.engine import MAX_OCCURRENCES, disruption_text, occurrence_count
+                shown = "; ".join(disruption_text(template, d) for d in value)
             elif p.type == "profiles":
                 shown = "; ".join(f"{pid}: {prof['description']}" for pid, prof in value.items())
             elif isinstance(value, dict):
@@ -214,6 +214,8 @@ def describe_blueprint(record) -> list[str]:
             label = bp.label_for(template, p.name)
             tag = f"  [{label[0]}: {label[1].statement}]" if label else "  [unlabelled]"
             lines.append(f"  {p.name}: {shown}{tag}")
+            if p.type == "disruptions":  # slice M6: the expanded copies against the cap
+                lines.append(f"  occurrences: {occurrence_count(value)} of {MAX_OCCURRENCES}")
     return lines
 
 

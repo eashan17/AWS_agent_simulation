@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model
 
 from rulestorm import llm
 from rulestorm.blueprint import Label, TemplateBlueprint, _allowed, _field, _meaning, values_model
-from rulestorm.core.engine import excused_reading
+from rulestorm.core.engine import MAX_OCCURRENCES, MAX_OCCURRENCES_PER_PERSON, disruption_when, excused_reading
 from rulestorm.detect import with_harm
 from rulestorm.core.model import Parameter, Template, load_template
 from rulestorm.rulebook import MissesToFail, _first_failing, misses_to_fail  # noqa: F401
@@ -140,7 +140,7 @@ def queue_lines(template: Template, values: dict[str, Any]) -> list[str]:
         crunches = [d for p in environment(t) if p.type == "disruptions" for d in values[p.name]
                     if next(k for k in t.disruptions if k.id == d["kind"]).request_type == rt.id]
         for d in crunches:
-            lines.append(f"- In the approved environment, {cal.period_label} {d['period']} can decide only "
+            lines.append(f"- In the approved environment, {disruption_when(t, d)} can decide only "
                          f"{d['capacity']} ({d['description']}).")
     return lines
 
@@ -186,7 +186,9 @@ def variants_prompt(template: Template, parent: TemplateBlueprint, environment_t
         "institution under which the policy could fail its purpose or treat people unfairly. Each targets a "
         "different weak point and sets every one of these values (name: meaning; allowed values):",
         *(f"- {p.name}: {_meaning(p)}; {_allowed(t, p)}" for p in env),
-        f"A disruption lasting several {cal.period_label}s is one entry per {cal.period_label}. Use the figures "
+        f"A disruption that lasts or recurs over several {cal.period_label}s is one entry from `period` to "
+        f"`until_period`, every `every` {cal.period_label}s; at most {MAX_OCCURRENCES} {cal.period_label} "
+        f"occurrences in all and {MAX_OCCURRENCES_PER_PERSON} on one person. Use the figures "
         "above: conditions too mild to fail a check, or a queue that never fills, test nothing. Keep names "
         "under 6 words, weak_point under 25 words and disruption descriptions under 8 words.",
     ]

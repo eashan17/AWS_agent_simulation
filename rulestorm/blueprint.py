@@ -15,7 +15,7 @@ from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, create_model, model_validator
 
-from rulestorm.core.engine import Engine
+from rulestorm.core.engine import MAX_OCCURRENCES, MAX_OCCURRENCES_PER_PERSON, Engine
 from rulestorm.core.model import Parameter, Template
 
 SECTIONS = ("policy", "environment", "people")
@@ -106,6 +106,9 @@ def _field(t: Template, p: Parameter) -> tuple[Any, Any]:
             "Disruption",
             kind=(Literal[tuple(d.id for d in t.disruptions)], ...),
             period=(int, Field(ge=1, le=t.calendar.periods)),
+            until_period=(int | None, Field(None, ge=1, le=t.calendar.periods,
+                                            description="for a recurring entry, the last period it covers")),
+            every=(int, Field(1, ge=1, le=t.calendar.periods, description="a recurring entry's gap in periods")),
             steps=(list[step], Field(default_factory=list, description="positions within the period")),
             people=(list[people], Field(default_factory=list)),
             delay=(int, Field(0, ge=0, le=1000)),
@@ -246,7 +249,14 @@ def _allowed(t: Template, p: Parameter) -> str:
                              f"processed that {t.calendar.period_label})")
             else:
                 kinds.append(f"{d.id} ({d.label}: set period and steps)")
+        period = t.calendar.period_label
+        routine = [d.id for d in t.disruptions if d.routine]
+        recur = (f" A routine kind ({', '.join(routine)}) recurs as the person's profile implies: give it as one "
+                 f"entry from `period` to `until_period`, every `every` {period}s (1 = each {period})."
+                 if routine else "")
         return (f"a list of 1-{MAX_DISRUPTIONS}, each with a short description; `period` is the "
-                f"{t.calendar.period_label} number and steps are positions within "
-                f"the {t.calendar.period_label} (1-{t.calendar.steps_per_period}). Kinds: " + "; ".join(kinds))
+                f"{period} number and steps are positions within "
+                f"the {period} (1-{t.calendar.steps_per_period}). Leave out `until_period` for a one-off "
+                f"entry.{recur} At most {MAX_OCCURRENCES} {period} occurrences in all and "
+                f"{MAX_OCCURRENCES_PER_PERSON} on one person. Kinds: " + "; ".join(kinds))
     return p.type
