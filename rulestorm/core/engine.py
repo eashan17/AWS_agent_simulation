@@ -1067,8 +1067,8 @@ class Engine:
                                   caused_by=causes)
                 self.record_event[key] = event.event_id
                 recorded.append(event)
-                if clash is not None and plan == "meet":
-                    recorded.append(self._miss_obligation(person, clash, period, step, event.event_id))
+                if clash is not None and plan == "meet":  # its event isn't a record, so not returned
+                    self._miss_obligation(person, clash, period, step, event.event_id)
         for key, value in self.pending_attributes.items():
             self.attributes[key] = value
         self.pending_attributes.clear()

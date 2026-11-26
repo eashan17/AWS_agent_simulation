@@ -87,6 +87,21 @@ def _extract_json(text: str) -> str:
     return text[start : end + 1] if start != -1 and end > start else text
 
 
+# A key whose `":` the model dropped or mistyped before a list: `"constraints["x"]`, `"constraints=["x"]`
+# (both seen in real fills, 27 Nov). Only a key right after `{` or `,` is touched.
+_KEY_WITHOUT_COLON = re.compile(r'(?<=[{,])"(\w+)"?\s*=?\s*\[')
+
+
+def _repaired(text: str) -> str:
+    """The reply as is if it parses; else with only that one typo repaired. Pydantic still checks
+    every value, so a repair can't make a wrong reply valid, only a well-formed one readable."""
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        return _KEY_WITHOUT_COLON.sub(r'"\1":[', text)
+
+
 def _prompt_with_schema(prompt: str, schema: type[BaseModel]) -> str:
     return (
         f"{prompt}\n\nReply with one JSON object only, no other text, written compactly on a single line "
@@ -150,7 +165,7 @@ def decide(
             outcome.input_tokens += reply.input_tokens
             outcome.output_tokens += reply.output_tokens
             try:
-                outcome.value = schema.model_validate_json(_extract_json(reply.text))
+                outcome.value = schema.model_validate_json(_repaired(_extract_json(reply.text)))
                 outcome.error = None
                 break
             except ValidationError as exc:

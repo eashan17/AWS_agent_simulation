@@ -99,10 +99,10 @@ def test_attendance_tells_what_a_valid_exception_is_and_what_doing_nothing_means
     text = "\n".join(rule_lines(attendance, {**VALUES, "office_capacity_per_week": 5}))
     assert ("The attendance office excuses only absences caused by transport disruption or family emergency; one by "
             "choice when nothing stopped you, or for a work shift clash, is rejected.") in text
-    assert "No action for a session means your plan stays: attend class." in text
+    assert "No action for a session means your plan stays: attend class." in text  # no person: no stakes
     assert ("Transport disruption: a delay longer than your travel buffer means you can't attend class in time "
             "(arriving late counts as absent)") in text
-    assert "Work shift clash or family emergency: you miss the session only if you choose to." in text
+    assert "only if you choose to" not in text  # slice M7b: both clashes carry an obligation now
     assert "So a miss in session 12 can't be excused before the check." in text
     assert "never the session in progress (file for it from the next session)" in text
     assert "recorded automatically from what happened (the faculty need not record it), after everyone decides" in text
@@ -114,7 +114,7 @@ def test_curfew_gets_the_same_rules_in_its_own_words() -> None:
     text = "\n".join(rule_lines(curfew, CURFEW_VALUES))
     assert "A late-entry request needs the guardian's consent before it reaches the warden" in text
     assert "The warden decides each late-entry request seeing what caused each late return it covers." in text
-    assert "Family emergency or evening job shift: you miss the night only if you choose to." in text
+    assert "only if you choose to" not in text  # slice M7b: both clashes carry an obligation now
     assert "can't be back by curfew in time; a shorter one" in text and "counts as late)" not in text
     assert "one still waiting at a check counts as late returns" in text
     assert "can't be excused before the check" not in text  # in_advance: nothing to say about the last step
@@ -202,3 +202,44 @@ def test_the_comparison_measures_count_what_their_labels_say() -> None:
     labels = dict(ROWS)
     assert "staff_decisions" not in labels
     assert labels["requests_decided"].startswith("requests decided") and "requests_rejected" in labels
+
+
+# --- slice M7b: both stakes, in numbers, in a fixed order ------------------------------------------
+
+
+def test_each_person_reads_both_stakes_with_their_own_limit(attendance) -> None:
+    values = {**VALUES, "shift_limits": {"commuter": 2, "resident": 2, "working": 2, "family": 1},
+              "care_limits": {"commuter": 3, "resident": 3, "working": 3, "family": 1}}
+    working = "\n".join(rule_lines(attendance, values, "working"))
+    stakes = ("- Work shift clash: If you attend during your work shift, you miss the shift; you can miss 2 shifts, "
+              "and the next one loses you the job. If you do nothing, you go to your shift.")
+    assert stakes in working
+    # Fixed order: what attending costs, then the limit, then what doing nothing means.
+    at = working.index(stakes)
+    assert working.index("you miss the shift", at) < working.index("you can miss 2", at) < working.index(
+        "If you do nothing", at)
+    assert "you can do so 3 times, and the next time the care arrangement breaks down" in working
+    assert "No action for a session means your plan stays: attend class, except during a clash below." in working
+    family = "\n".join(rule_lines(attendance, values, "family"))
+    assert "you can miss 1 shift, and the next one" in family and "you can do so 1 time, and" in family
+    assert "Work shift clash:" not in "\n".join(rule_lines(attendance, values, "faculty"))  # no limit: left out
+
+
+def test_a_curfew_resident_reads_the_stakes_in_its_own_words_and_the_default_limit() -> None:
+    curfew = load_template("hostel_curfew")
+    text = "\n".join(rule_lines(curfew, CURFEW_VALUES, "intern"))  # no limits in the values: the default, 2
+    assert ("- Evening job shift: If you return on time during your evening shift, you miss the shift; you can miss "
+            "2 shifts, and the next one loses you the job. If you do nothing, you work your shift and return late.") in text
+
+
+def test_the_prompt_carries_the_persons_own_stakes(attendance) -> None:
+    rendered = {}
+
+    def recording(contexts):
+        for c in contexts:
+            rendered.setdefault(c.person, render_prompt(attendance, VALUES, c))
+        return decider(contexts)
+
+    simulate(attendance, VALUES, recording)
+    assert "you can miss 2 shifts" in rendered["commuter"]
+    assert "Work shift clash:" not in rendered["advisor"]

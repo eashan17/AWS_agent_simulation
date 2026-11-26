@@ -25,7 +25,8 @@ from rulestorm.core.model import Template, load_template
 
 Label = Literal["recorded fact", "calculated", "AI interpretation"]
 CALCULATED = {"queue_processed", "queue_over_capacity", "decision_awaiting", "decision_not_made",
-              "check_evaluated", "count_calculated", "count_near_threshold", "many_missed"}
+              "check_evaluated", "count_calculated", "count_near_threshold", "many_missed",
+              "obligation_missed", "obligation_lost"}
 
 
 class Figure(BaseModel):
@@ -48,6 +49,16 @@ class Calculation(BaseModel):
     matches_recorded: bool = Field(description="the recomputed figures equal the ones the check recorded")
 
 
+class ObligationCalculation(BaseModel):
+    """Slice M7b: the end of an obligation_lost chain, recounted from the run's own events."""
+
+    obligation: str
+    missed: int = Field(description="times the person met the duty during this clash, this one included")
+    limit: int
+    lost: str
+    matches_recorded: bool = Field(description="the recount equals the figures the loss recorded")
+
+
 class Step(BaseModel):
     event_id: str
     period: int
@@ -59,6 +70,7 @@ class Step(BaseModel):
     state_change: dict[str, Any]
     interpretation: str | None = Field(None, description="an AI person's own stated reason")
     calculation: Calculation | None = None
+    obligation_calculation: ObligationCalculation | None = None
 
 
 class Evidence(BaseModel):
@@ -89,6 +101,8 @@ def evidence(finding: dict[str, Any], events: list[dict[str, Any]], template: Te
             step.interpretation = e["payload"].get("reason") or None
         if e["type"] == "check_evaluated":
             step.calculation = calculation(e, events, template, words)
+        if e["type"] == "obligation_lost":
+            step.obligation_calculation = obligation_calculation(e, events)
         steps.append(step)
     return Evidence(finding_id=finding["finding_id"], run_id=finding["run_id"], kind=finding["kind"],
                     title=finding["title"], person=finding["person"], steps=steps)
@@ -145,6 +159,16 @@ def calculation(check: dict[str, Any], events: list[dict[str, Any]], template: T
                        outcome=words.outcome(p), matches_recorded=matches)
 
 
+def obligation_calculation(lost: dict[str, Any], events: list[dict[str, Any]]) -> ObligationCalculation:
+    """How often the person met the duty during this kind of clash up to the loss (each one an
+    `obligation_missed`, then the loss itself), against the limit the loss recorded."""
+    p = lost["payload"]
+    missed = 1 + sum(1 for e in events if e["seq"] < lost["seq"] and e["type"] == "obligation_missed"
+                     and e["payload"]["person"] == p["person"] and e["payload"]["disruption"] == p["disruption"])
+    return ObligationCalculation(obligation=p["obligation"], missed=missed, limit=p["limit"], lost=p["lost"],
+                                 matches_recorded=missed == p["missed"] and missed > p["limit"])
+
+
 def _label(event: dict[str, Any]) -> Label:
     if event["type"] == "decision":
         return "AI interpretation"
@@ -173,6 +197,11 @@ class _Words:
         self.checks = {c.id: c.label for c in t.checks}
         self.counts = {c.id: c for c in t.counts}
         self.spp = t.calendar.steps_per_period
+
+    def duties_of_clash(self, p: dict[str, Any]) -> str:
+        """The duty the clash in an obligation event is with, in the template's words."""
+        kind = next((d for d in self.t.disruptions if d.id == p.get("disruption")), None)
+        return self.duties.get(kind.duty, kind.duty) if kind and kind.duty else "the duty"
 
     def when(self, step: int | None, period: int | None = None) -> str:
         if step is None:
@@ -218,6 +247,8 @@ class _Words:
                 return f"{actor} corrected {p['person']}'s record to {word}, {when}"
             margin = self.margin.get(p["duty"])
             why = f", as the delay was over their {margin}" if p.get("obstacle") and margin else ""
+            if p.get("plan") == "default_obligation":
+                why += " (no plan during the clash, so they went to the other obligation)"
             if to != "met" and "excusable" in p:
                 why += (f" (cause {p['cause']}: {'a valid reason' if p['excusable'] else 'not a valid reason'})"
                         if p.get("cause") else " (their own choice: not a valid reason)")
@@ -239,6 +270,12 @@ class _Words:
             return f"{actor} asked to decide {', '.join(p['offered']) or 'nothing'} (capacity {p['capacity']}), {when}"
         if kind == "decision_not_made":
             return f"no decision was made on {', '.join(p['held'])}, so it stays pending ({when})"
+        if kind == "obligation_missed":
+            return (f"{p['person']} met '{self.duties_of_clash(p)}' during the clash, so missed their "
+                    f"{p['obligation']}: {p['missed']} of {p['limit']} allowed, {when}")
+        if kind == "obligation_lost":
+            return (f"{p['person']} met '{self.duties_of_clash(p)}' during the clash once more than their limit of "
+                    f"{p['limit']} missed {p['obligation']}: {p['lost']}, {when}")
         if kind == "check_evaluated":
             count = self.counts[p["count"]["count"]]
             c = p["count"]

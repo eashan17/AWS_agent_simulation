@@ -345,6 +345,8 @@ def run_local_command(blueprint_id: str) -> None:
     print(f"intentions_stated: {summary.intentions_stated}")
     print(f"intentions_unmet: {summary.intentions_unmet}")
     print(f"error_decisions_while_hit: {summary.error_decisions_while_hit}")
+    print("obligations missed/lost: " + ("; ".join(f"{who} {o['missed']}/{o['lost']}"
+                                                   for who, o in summary.obligations.items()) or "none"))
     print(f"event log: {path}")
 
 

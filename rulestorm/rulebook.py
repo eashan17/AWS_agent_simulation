@@ -79,12 +79,34 @@ def _short(label: str) -> str:
     return label.split(" (")[0]
 
 
-def rule_lines(template: Template, values: dict[str, Any]) -> list[str]:
+def _stakes(t: Template, values: dict[str, Any], person: str | None, clashes) -> list[str]:
+    """One line per clash with an obligation, in the template's fixed order (meet the duty: miss the
+    obligation; past the limit: lose it; do nothing: go to it), with this person's limit from the
+    blueprint (or the parameter's default). Left out for someone with no limit."""
+    if person is None:
+        return []
+    lines = []
+    for kind in clashes:
+        if kind.obligation is None:
+            continue
+        param = next((p for p in t.parameters if p.type == "attribute" and p.attribute == kind.obligation.limit_attribute),
+                     None)
+        limits = (values.get(param.name) or param.default or {}) if param else {}
+        limit = limits.get(person)
+        if limit is None:
+            continue
+        lines.append(f"- {kind.label.capitalize()}: "
+                     + kind.obligation.stakes.format(limit=limit, s="" if limit == 1 else "s"))
+    return lines
+
+
+def rule_lines(template: Template, values: dict[str, Any], person: str | None = None) -> list[str]:
     """The "How the rules work" block of every person's prompt: one short line per rule the engine
     applies, from the template's structure (checks, duties, disruption kinds, counts, request
     types, actions) and the blueprint's values. A rule whose value the blueprint lacks is left out
     rather than guessed, so the block holds for any template and any values. Kept short on
-    purpose: it goes into every decision's prompt."""
+    purpose: it goes into every decision's prompt. With `person`, a clash that carries an
+    obligation states both stakes with that person's own limit (slice M7b)."""
     t, cal = template, template.calendar
     period, step = cal.period_label, cal.step_label
     counts = {c.id: c for c in t.counts}
@@ -130,17 +152,21 @@ def rule_lines(template: Template, values: dict[str, Any]) -> list[str]:
 
     for duty in t.duties:
         recorder = roles[duty.recorded_by].label.lower()
-        lines.append(f"- No action for {_a(step)} means your plan stays: {duty.label}. Each {step} is recorded "
-                     f"automatically from what happened (the {recorder} need not record it), after everyone decides.")
         attribute = attributes.get(duty.obstacle_attribute) if duty.obstacle_attribute else None
         delays = [k for k in t.disruptions if k.duty == duty.id and k.kind == "obstacle"]
         clashes = [k for k in t.disruptions if k.duty == duty.id and k.kind == "conflict"]
+        stakes = _stakes(t, values, person, clashes)
+        clashes = [k for k in clashes if k.obligation is None]  # the rest are stated with their stakes
+        unless = ", except during a clash below" if stakes else ""
+        lines.append(f"- No action for {_a(step)} means your plan stays: {duty.label}{unless}. Each {step} is recorded "
+                     f"automatically from what happened (the {recorder} need not record it), after everyone decides.")
         if delays and attribute:
             late = "" if missed_word.lower() == "late" else f" (arriving late counts as {missed_word})"
             lines.append(f"- {_labels(delays).capitalize()}: a delay longer than your {_short(attribute.label)} means "
                          f"you can't {duty.label} in time{late}; a shorter one doesn't stop you.")
         if clashes:
             lines.append(f"- {_labels(clashes).capitalize()}: you miss the {step} only if you choose to.")
+        lines += stakes
         if any(e.kind == "correct_record" and e.duty == duty.id for a in t.actions for e in a.effects):
             lines.append("- A recorded mark can be corrected only to what really happened.")
     for attribute_id in sorted({e.attribute for a in t.actions for e in a.effects if e.kind == "set_attribute"}):

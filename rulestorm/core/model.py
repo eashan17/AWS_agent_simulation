@@ -208,6 +208,9 @@ class Obligation(Block):
     label: str = Field(min_length=1, description="what is missed, e.g. a shift")
     lost_label: str = Field(min_length=1, description="what happens past the limit, e.g. the job is lost")
     limit_attribute: str = Field(min_length=1, description="the per-person attribute holding the limit")
+    # Slice M7b: both stakes, in a fixed order (meet the duty -> miss it; past the limit -> lost;
+    # do nothing -> go to it), as the person reads them. {limit} is their limit, {s} its plural "s".
+    stakes: str = Field(min_length=1, description="the person's stakes; {limit} and {s} are filled in")
 
 
 class DisruptionKind(Block):
@@ -248,6 +251,9 @@ class Parameter(Block):
     stated_only: list[str] = Field(default_factory=list,
                                    description="choice: values a blueprint may hold only as a fact from the "
                                                "user's text, never as the AI's assumption")
+    # Slice M7b: a rule reading (e.g. how excused misses count) stays out of the AI fill: it takes
+    # its default and is changed on review, in a what-if or a policy version.
+    in_fill: bool = Field(True, description="false: the AI fill never sets it (a reading with a default)")
     # Slice M0: what a blueprint made before this parameter existed gets, so it runs as it did.
     default: Any = Field(None, description="the value an older blueprint without this parameter gets")
 
@@ -539,6 +545,8 @@ def _reference_errors(t: Template) -> list[str]:
         if d.kind == "capacity" and d.request_type is None:
             errors.append(f"{owner}: a capacity disruption needs 'request_type'")
         if d.obligation is not None:
+            if "{limit}" not in d.obligation.stakes:
+                errors.append(f"{owner}: the obligation's stakes must state the person's {{limit}}")
             if d.kind != "conflict":
                 errors.append(f"{owner}: only a conflict can carry an obligation")
             limit = d.obligation.limit_attribute
@@ -562,6 +570,8 @@ def _reference_errors(t: Template) -> list[str]:
             if p.attribute is None:
                 errors.append(f"{owner} is an attribute, so it needs 'attribute'")
             ref(owner, "attribute", p.attribute, attributes)
+        if not p.in_fill and p.default is None:
+            errors.append(f"{owner} is left out of the fill, so it needs a default")
         if p.type == "text" and not p.max_length:
             errors.append(f"{owner} is text, so it needs max_length")
         errors.extend(_sentence_errors(p, params))

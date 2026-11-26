@@ -35,14 +35,15 @@ from rulestorm.core.model import Template
 from rulestorm.ledger import margins
 from rulestorm.rulebook import _first_failing
 
-Kind = Literal["check_failed", "pending_at_check", "near_threshold"]
-KINDS: tuple[Kind, ...] = ("check_failed", "pending_at_check", "near_threshold")
+Kind = Literal["check_failed", "pending_at_check", "near_threshold", "obligation_lost"]
+KINDS: tuple[Kind, ...] = ("check_failed", "pending_at_check", "near_threshold", "obligation_lost")
 HARM_KINDS: tuple[str, ...] = ("check_failed", "pending_at_check", "obligation_lost")
 NEAR_SPARE = 1  # a pass with at most this many misses to spare is a near miss
 DISRUPTION_TYPES = ("obstacle", "capacity_changed", "occurrence_cancelled")
 # Used only when a template has no finding title in its terms.
 _FALLBACK_TITLES = {"check_failed": "{check} failed", "pending_at_check": "{request} still pending at the {check}",
-                    "near_threshold": "{check} passed with one miss to spare"}
+                    "near_threshold": "{check} passed with one miss to spare",
+                    "obligation_lost": "Keeping the rule cost a person their obligation"}
 
 
 class Finding(BaseModel):
@@ -51,18 +52,23 @@ class Finding(BaseModel):
     kind: Kind
     title: str
     person: str
-    check: str = Field(description="the check's id in the template")
-    check_label: str
-    check_event_id: str
+    # The check fields are None on an obligation_lost finding (slice M7b): no check is involved.
+    check: str | None = Field(None, description="the check's id in the template")
+    check_label: str | None = None
+    check_event_id: str | None = None
     period: int
-    outcome: str = Field(description="the check's result in the template's words")
-    count: dict[str, Any] = Field(description="the count at the check, as recorded")
-    count_if_pending_approved: dict[str, Any]
-    pending_requests: list[str]
+    outcome: str | None = Field(None, description="the check's result in the template's words")
+    count: dict[str, Any] | None = Field(None, description="the count at the check, as recorded")
+    count_if_pending_approved: dict[str, Any] | None = None
+    pending_requests: list[str] = Field(default_factory=list)
     disruptions: list[str] = Field(description="the chain's disruption event IDs, in order")
     chain: list[str] = Field(description="event IDs in run order, ending at the check")
     harm: bool = Field(False, description="did the rule harm the person (set from the kind)")
     spare: int | None = Field(None, description="near_threshold: misses to spare before the harmful step")
+    # obligation_lost (slice M7b): the loss event the chain ends at, and what was lost.
+    obligation_event_id: str | None = None
+    obligation: str | None = Field(None, description="obligation_lost: what was missed, e.g. a shift")
+    lost: str | None = Field(None, description="obligation_lost: what happened past the limit")
 
     @model_validator(mode="after")
     def _harm_from_kind(self) -> "Finding":
@@ -121,6 +127,18 @@ def detect(run_id: str, events: list[dict[str, Any]], template: Template,
             count=p["count"], count_if_pending_approved=p["count_if_pending_approved"],
             pending_requests=list(p["pending_requests"]),
             disruptions=[i for i in chain if by_id[i]["type"] in DISRUPTION_TYPES], chain=chain, spare=spare))
+    # Slice M7b: the rule kept someone compliant at the cost of their obligation. Numbered after the
+    # older kinds, so their finding IDs don't move.
+    for event in events:
+        if event["type"] != "obligation_lost":
+            continue
+        p = event["payload"]
+        chain = own_chain(by_id, event["event_id"], p["person"], subjects, owners)
+        found.append(Finding(
+            finding_id=f"{run_id}-F{len(found) + 1}", run_id=run_id, kind="obligation_lost",
+            title=title(template, "obligation_lost"), person=p["person"], period=event["period"],
+            disruptions=[i for i in chain if by_id[i]["type"] in DISRUPTION_TYPES], chain=chain,
+            obligation_event_id=event["event_id"], obligation=p["obligation"], lost=p["lost"]))
     return found
 
 

@@ -384,7 +384,8 @@
       "kind": "conflict",
       "duty": "attend_class",
       "routine": true,
-      "obligation": {"label": "work shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit"}
+      "obligation": {"label": "work shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit",
+                     "stakes": "If you attend during your work shift, you miss the shift; you can miss {limit} shift{s}, and the next one loses you the job. If you do nothing, you go to your shift."}
     },
     {
       "id": "family_emergency",
@@ -392,7 +393,8 @@
       "kind": "conflict",
       "duty": "attend_class",
       "routine": false,
-      "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit"}
+      "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit",
+                     "stakes": "If you attend during a family emergency, you leave your family without care; you can do so {limit} time{s}, and the next time the care arrangement breaks down. If you do nothing, you stay with your family."}
     },
     {
       "id": "admin_capacity",
@@ -534,6 +536,7 @@
       "description": "whether a session an approved exception covers leaves the attendance count (remove) or counts as attended (count_as_met); keep remove unless the policy says excused absences count as attended",
       "choices": ["remove", "count_as_met"],
       "default": "remove",
+      "in_fill": false,
       "sentences": {
         "remove": "excused removed",
         "count_as_met": "excused counted as attended"

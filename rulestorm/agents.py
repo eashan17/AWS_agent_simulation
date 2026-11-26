@@ -258,6 +258,8 @@ class RunSummary(BaseModel):
     intentions_stated: int = 0  # slice M5: plans for a later step that the engine kept
     intentions_unmet: int = 0  # slice M5: asked at that step, and didn't carry it out
     error_decisions_while_hit: int = 0  # slice M5: a failed call while a disruption hit the person
+    # Slice M7b: per person, obligations missed (met the duty during the clash) and lost.
+    obligations: dict[str, dict[str, int]] = Field(default_factory=dict)
     input_tokens: int
     output_tokens: int
 
@@ -288,9 +290,21 @@ def summarise(engine: Engine, agents: Agents) -> RunSummary:
         intentions_stated=sum(len(d.payload.get("intends") or []) for d in decisions),
         intentions_unmet=sum(1 for e in engine.events if e.type == "intention_resolved" and not e.payload["met"]),
         error_decisions_while_hit=sum(1 for d in errors if d.step is not None and engine.hitting(d.actor, d.step)),
+        obligations=obligation_counts(engine),
         input_tokens=agents.input_tokens,
         output_tokens=agents.output_tokens,
     )
+
+
+def obligation_counts(engine: Engine) -> dict[str, dict[str, int]]:
+    """{person: {"missed": n, "lost": n}} for everyone an obligation cost something, by person."""
+    out: dict[str, dict[str, int]] = {}
+    for e in engine.events:
+        if e.type in ("obligation_missed", "obligation_lost"):
+            row = out.setdefault(e.payload["person"], {"missed": 0, "lost": 0})
+            row["missed"] += 1  # a loss is a missed obligation too, the one past the limit
+            row["lost"] += e.type == "obligation_lost"
+    return dict(sorted(out.items()))
 
 
 def run_term(template: Template, values: dict[str, Any], agents: Agents | None = None,

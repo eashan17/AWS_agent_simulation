@@ -48,7 +48,7 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
     rules = [sentence(p, values[p.name], values) for p in section(template, "request_rules") if p.name in values]
     if rules:
         lines += ["", "Request rules:", *(f"- {r}" for r in rules)]
-    how = rule_lines(template, values)
+    how = rule_lines(template, values, c.person)
     for rt_id, capacity in c.capacity_now.items():
         rt = next(r for r in template.request_types if r.id == rt_id)
         handler = next(r for r in template.roles if r.id == rt.handled_by).label.lower()

@@ -241,3 +241,26 @@ def test_stored_findings_get_harm_when_read() -> None:
     assert with_harm({"kind": "check_failed"})["harm"] is True
     assert with_harm({"kind": "pending_at_check"})["harm"] is True
     assert with_harm({"kind": "near_threshold"})["harm"] is False
+
+
+# --- slice M7b: the obligation_lost finding ------------------------------------------------------
+
+
+@pytest.mark.parametrize("case_file,person", [("shift_clash.json", "working"), ("curfew_job_shift.json", "intern")])
+def test_an_obligation_lost_finding_has_no_check_fields_and_ends_at_the_loss(case_file, person) -> None:
+    import json
+    from pathlib import Path
+
+    from rulestorm.core.cases import play_case
+
+    case = json.loads((Path(__file__).parent / "cases" / case_file).read_text(encoding="utf-8"))
+    template = load_template(case["template"])
+    events = events_of(play_case(case, template)[1])
+    by_id = {e["event_id"]: e for e in events}
+    found = detect("L-test", events, template)
+    [lost] = [f for f in found if f.kind == "obligation_lost"]
+    assert found[-1] is lost  # numbered after the older kinds, so their IDs don't move
+    assert lost.person == person and lost.harm and (lost.obligation, lost.lost) == (lost.obligation, "job lost")
+    assert (lost.check, lost.check_label, lost.check_event_id, lost.outcome, lost.count) == (None,) * 5
+    assert lost.chain[-1] == lost.obligation_event_id and by_id[lost.chain[-1]]["type"] == "obligation_lost"
+    assert by_id[lost.chain[0]]["type"] == "obstacle" and lost.disruptions[0] == lost.chain[0]

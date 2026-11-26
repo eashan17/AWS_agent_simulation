@@ -180,9 +180,11 @@
     {"id": "transport_delay", "label": "transport delay", "kind": "obstacle", "duty": "return_by_curfew", "routine": false},
     {"id": "lab_overrun", "label": "lab session overrun", "kind": "obstacle", "duty": "return_by_curfew", "routine": false},
     {"id": "family_emergency", "label": "family emergency", "kind": "conflict", "duty": "return_by_curfew", "routine": false,
-     "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit"}},
+     "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit",
+                    "stakes": "If you return on time during a family emergency, you leave your family without care; you can do so {limit} time{s}, and the next time the care arrangement breaks down. If you do nothing, you stay with your family and return late."}},
     {"id": "evening_job_shift", "label": "evening job shift", "kind": "conflict", "duty": "return_by_curfew", "routine": true,
-     "obligation": {"label": "evening shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit"}},
+     "obligation": {"label": "evening shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit",
+                    "stakes": "If you return on time during your evening shift, you miss the shift; you can miss {limit} shift{s}, and the next one loses you the job. If you do nothing, you work your shift and return late."}},
     {"id": "warden_away", "label": "warden away", "kind": "capacity", "request_type": "late_entry"}
   ],
   "triggers": [
@@ -275,6 +277,7 @@
       "description": "whether a night an approved late-entry request covers leaves the late-return count (remove) or counts as back on time (count_as_met); keep remove unless the policy says excused nights count as on time",
       "choices": ["remove", "count_as_met"],
       "default": "remove",
+      "in_fill": false,
       "sentences": {
         "remove": "excused removed",
         "count_as_met": "excused counted as back on time"

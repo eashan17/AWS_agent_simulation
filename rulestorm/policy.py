@@ -27,6 +27,9 @@ if TYPE_CHECKING:
 MAX_INPUT_CHARS = 2000
 # Template fills measured 24 Nov (slice L6b, 10 real runs): about 1,000-1,060 output tokens and
 # 21-28 s per request (pick + fill); 1,800 is about 1.7x that, so it only stops a runaway reply.
+# Re-measured 27 Nov (slice M7b, with the obligation limits, 17 first-try fills over both examples):
+# 740-1,098 output tokens per request, pick included, p95 about 1,070 (the fill about 1,030), 16-22 s.
+# 1.7x the p95 is still about 1,800, so it stays.
 # All calls share one 55 s budget, inside CloudFront's 60 s origin timeout (docs/ARCHITECTURE.md).
 BLUEPRINT_MAX_TOKENS = 1800
 BLUEPRINT_DEADLINE_S = 55.0

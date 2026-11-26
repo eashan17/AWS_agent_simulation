@@ -116,3 +116,30 @@ def test_the_evidence_route_answers_in_under_a_second(tmp_path, attendance) -> N
         assert http.get("/api/findings/L-test-F9/evidence").status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+# --- slice M7b: obligations in the evidence ------------------------------------------------------
+
+
+def test_the_evidence_names_the_cost_and_recounts_the_loss_at_the_end_of_the_chain() -> None:
+    from rulestorm.core.cases import play_case
+
+    case = json.loads((Path(__file__).parent / "cases" / "shift_clash.json").read_text(encoding="utf-8"))
+    template = load_template("attendance")
+    events = [e.model_dump() for e in play_case(case, template)[1].events]
+    [lost] = [f for f in detect("L-test", events, template) if f.kind == "obligation_lost"]
+    ev = evidence(lost.model_dump(), events, template)
+    last = ev.steps[-1]
+    assert last.type == "obligation_lost" and last.label == "calculated"
+    assert last.text == ("working met 'attend class' during the clash once more than their limit of 2 missed "
+                         "work shift: job lost, session 10 (week 5)")
+    calc = last.obligation_calculation
+    assert (calc.obligation, calc.missed, calc.limit, calc.lost, calc.matches_recorded) == ("work shift", 3, 2, "job lost", True)
+    assert last.calculation is None
+    words = evidence_module._Words(template)
+    missed = next(e for e in events if e["type"] == "obligation_missed")
+    assert words.sentence(missed) == ("working met 'attend class' during the clash, so missed their work shift: "
+                                      "1 of 2 allowed, session 4 (week 2)")
+    went = next(e for e in events if e["type"] == "duty_recorded" and e["payload"]["plan"] == "default_obligation")
+    assert "(no plan during the clash, so they went to the other obligation)" in words.sentence(went)
+    assert "not a valid reason" in words.sentence(went)

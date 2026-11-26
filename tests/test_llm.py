@@ -1,3 +1,4 @@
+import json
 import pytest
 from pydantic import BaseModel, Field
 
@@ -99,3 +100,25 @@ def test_deadline_is_wall_clock_even_if_the_call_hangs() -> None:
     outcome = decide("choose", Choice, model=model, deadline_s=0.3)
     assert outcome.no_action and "DeadlineExceeded" in outcome.error
     assert outcome.seconds < 1.5
+
+
+def test_a_key_missing_its_colon_before_a_list_is_repaired_and_still_validated() -> None:
+    """Slice M7b: real curfew fills wrote `"constraints["x"]` (27 Nov); only that typo is repaired."""
+    from pydantic import BaseModel
+
+    from rulestorm.llm import FakeModel, decide
+
+    class Profile(BaseModel):
+        constraints: list[str]
+
+    good = decide("p", Profile, model=FakeModel(['{"constraints["late lab"]}']))
+    assert good.value == Profile(constraints=["late lab"]) and good.attempts == 1
+    still_wrong = decide("p", Profile, model=FakeModel(['{"other["x"]}', '{"other["x"]}']))
+    assert still_wrong.value is None  # repaired to valid JSON, but the schema still refuses it
+
+
+@pytest.mark.parametrize("typo", ['{"constraints["late lab"]}', '{"constraints=["late lab"]}', '{"constraints"["late lab"]}'])
+def test_each_seen_shape_of_the_missing_colon_is_repaired(typo) -> None:
+    from rulestorm.llm import _repaired
+
+    assert json.loads(_repaired(typo)) == {"constraints": ["late lab"]}

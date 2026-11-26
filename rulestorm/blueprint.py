@@ -14,6 +14,7 @@ from functools import lru_cache
 from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, create_model, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from rulestorm.core.engine import MAX_OCCURRENCES, MAX_OCCURRENCES_PER_PERSON, Engine
 from rulestorm.core.model import Parameter, Template
@@ -133,23 +134,61 @@ def values_model(template: Template) -> type[ValuesBase]:
     return _values_model(template.ref, template.model_dump_json())
 
 
+@lru_cache(maxsize=None)
+def _fill_values_model(ref: str, template_json: str) -> type[ValuesBase]:
+    """The values model as the fill sees it (slice M7b): a rule reading keeps its default but is
+    hidden from the schema the AI is given, so the fill never sets it."""
+    t = Template.model_validate_json(template_json)
+    fields = {}
+    for p in t.parameters:
+        kind, info = _field(t, p)
+        fields[p.name] = (kind if p.in_fill else SkipJsonSchema[kind], info)
+    model = create_model(f"FillValues_{t.id}", __base__=ValuesBase, **fields)
+    model.template = t
+    return model
+
+
+def obligation_limits(template: Template) -> list[Parameter]:
+    """The parameters holding each person's obligation limits (slice M7b): the fill sets them from
+    the profiles, and `to_blueprint` labels each an assumption by its name (no fact states them, and
+    asking the AI for the labels took its fills past the label cap: 8 of 10 real fills failed)."""
+    limits = {d.obligation.limit_attribute for d in template.disruptions if d.obligation}
+    return [p for p in template.parameters if p.type == "attribute" and p.attribute in limits]
+
+
+def _names_any(field: str, names: list[str]) -> bool:
+    return any(n in field for n in names)
+
+
+def fill_parameters(template: Template) -> list[Parameter]:
+    """The values the AI fill sets: every parameter but the rule readings (`in_fill: false`)."""
+    return [p for p in template.parameters if p.in_fill]
+
+
 class FillBase(BaseModel):
     template: ClassVar[Template]
 
     @model_validator(mode="after")
     def _every_value_labelled(self) -> "FillBase":
         names = {p.name: p.kind for p in self.template.parameters}
+        # A label naming the obligation limits is dropped: `to_blueprint` writes their labels itself.
+        limits = [p.name for p in obligation_limits(self.template)]
+        self.facts = [x for x in self.facts if not _names_any(x.field, limits)]
+        self.assumptions = [x for x in self.assumptions if not _names_any(x.field, limits)]
         labels = [*self.facts, *self.assumptions]
         unknown = sorted({x.field for x in labels} - set(names) - set(SECTIONS))
         if unknown:
             raise ValueError(f"label fields must be a value's name or a section ({', '.join(SECTIONS)}); "
                              f"unknown: {', '.join(unknown)}")
-        covered = {x.field for x in labels}
+        covered = {x.field for x in labels} | {p.name for p in obligation_limits(self.template)}
         defaults = {p.name: p.default for p in self.template.parameters if p.default is not None}
         missing = [n for n, kind in names.items() if n not in covered and kind not in covered
                    and not (n in defaults and getattr(self.values, n, None) == defaults[n])]
         if missing:
             raise ValueError(f"label these in facts or assumptions (or label their section): {', '.join(missing)}")
+        for p in obligation_limits(self.template):
+            if p.name not in self.values.model_fields_set:
+                raise ValueError(f"set {p.name} for every person from their profile")
         for p in self.template.parameters:
             value = getattr(self.values, p.name, None)
             if value in p.stated_only and not any(x.field == p.name for x in self.facts):
@@ -161,7 +200,7 @@ class FillBase(BaseModel):
 def fill_schema(template: Template) -> type[FillBase]:
     model = create_model(
         f"Fill_{template.id}", __base__=FillBase,
-        values=(values_model(template), ...),
+        values=(_fill_values_model(template.ref, template.model_dump_json()), ...),
         facts=(list[Label], Field(min_length=1, max_length=MAX_LABELS, description="values stated in the user's text")),
         assumptions=(list[Label], Field(min_length=1, max_length=MAX_LABELS, description="values the AI proposed")),
     )
@@ -170,8 +209,16 @@ def fill_schema(template: Template) -> type[FillBase]:
 
 
 def to_blueprint(template: Template, fill: FillBase) -> TemplateBlueprint:
-    return TemplateBlueprint(template_id=template.id, template_version=template.version,
-                             values=fill.values.model_dump(), facts=fill.facts, assumptions=fill.assumptions)
+    """The stored blueprint. Each obligation limit gets its own assumption label, written here from
+    the values the AI set, in place of any label the reply gave it (slice M7b)."""
+    values = fill.values.model_dump()
+    limits = {p.name for p in obligation_limits(template)}
+    assumptions = list(fill.assumptions) + [
+        Label(field=name, statement=("AI-set from each profile: "
+                                     + ", ".join(f"{who} {n}" for who, n in values[name].items()))[:200])
+        for name in sorted(limits, key=[p.name for p in template.parameters].index)]
+    return TemplateBlueprint(template_id=template.id, template_version=template.version, values=values,
+                             facts=list(fill.facts), assumptions=assumptions)
 
 
 # --- the fill prompt ----------------------------------------------------------------------------
@@ -188,7 +235,7 @@ def fill_prompt(template: Template, text: str, purpose: str, environment: str) -
         f"People (fixed by the simulation; you write their profiles):\n{people}",
         "",
         "Values to fill (name [section]: meaning; allowed values):",
-        *(f"- {p.name} [{p.kind}]: {_meaning(p)}; {_allowed(t, p)}" for p in t.parameters),
+        *(f"- {p.name} [{p.kind}]: {_meaning(p)}; {_allowed(t, p)}" for p in fill_parameters(t)),
         "",
         "Use values stated in the user's text and list them under facts. Where the text gives no "
         "value, including policy rules it is silent on (for example when a request may be filed), "
@@ -196,7 +243,10 @@ def fill_prompt(template: Template, text: str, purpose: str, environment: str) -
         f"name, or a whole section ({', '.join(SECTIONS)}) to cover all its values at once; every "
         f"value must be covered. At most {MAX_LABELS} facts and {MAX_LABELS} assumptions, statements "
         "under 15 words. Make each person distinct, and let their profile show in the disruptions: a "
-        "personal clash goes to someone whose description or constraints make it likely.",
+        "personal clash goes to someone whose description or constraints make it likely."
+        + (f" Set each person's {' and '.join(p.name for p in obligation_limits(t))} from their profile (how much "
+           "that obligation matters to them and how much slack they have); they are labelled for you, so "
+           "don't label them." if obligation_limits(t) else ""),
         "",
         f"Policy:\n{text}\n\nPurpose:\n{purpose}\n\nEnvironment:\n{environment}",
     ]

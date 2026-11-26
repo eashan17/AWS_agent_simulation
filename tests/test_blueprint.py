@@ -9,7 +9,7 @@ from rulestorm.api import app, get_blueprint_model, get_store
 from rulestorm.blueprint import TemplateBlueprint, fill_schema, values_model
 from rulestorm.core.model import load_template
 from rulestorm.llm import FakeModel
-from rulestorm.policy import PolicyInput, interpret
+from rulestorm.policy import PolicyInput, create_blueprint, interpret
 from rulestorm.store import Store
 
 # Test-only values: replies shaped like real ones, not numbers the app uses.
@@ -38,9 +38,14 @@ FILL = {
         ],
         "profiles": PROFILES,
         "slack_min": {"commuter": 30, "resident": 10, "working": 15, "family": 20},
+        # Slice M7b: the fill sets each obligation limit from the profile, labelled an assumption.
+        "shift_limits": {"commuter": 2, "resident": 3, "working": 1, "family": 2},
+        "care_limits": {"commuter": 3, "resident": 3, "working": 2, "family": 1},
     },
     "facts": [{"field": "threshold_pct", "statement": "80% stated in the policy"}],
     "assumptions": [
+        {"field": "shift_limits", "statement": "the working student's job allows few missed shifts"},
+        {"field": "care_limits", "statement": "the family student can rarely leave care"},
         {"field": "request_timing", "statement": "the policy is silent; requests after the absence"},
         {"field": "policy", "statement": "the other policy rules are proposed"},
         {"field": "environment", "statement": "a few requests a week, a mid-term check, a strike"},
@@ -175,8 +180,11 @@ def test_fill_prompt_comes_from_the_template(policy, template) -> None:
     model = FakeModel([PICK, json.dumps(FILL)])
     interpret(policy, model)
     prompt = model.prompts[1]
-    for p in template.parameters:
-        assert f"- {p.name} [{p.kind}]: {p.description}" in prompt
+    for p in template.parameters:  # slice M7b: a rule reading (in_fill false) stays out of the fill
+        assert (f"- {p.name} [{p.kind}]: {p.description}" in prompt) is p.in_fill, p.name
+    assert "excused_counting" not in prompt
+    assert ("Set each person's shift_limits and care_limits from their profile (how much that obligation matters "
+            "to them and how much slack they have); they are labelled for you, so don't label them.") in prompt
     assert "- commuter (Student: long-distance commuter)" in prompt  # people and labels from the template
     assert "policy rules it is silent on" in prompt  # silent rules become labelled assumptions
     assert "Requests can cover only classes already recorded as missed." in prompt  # the choices' sentences
@@ -326,3 +334,39 @@ def test_profiles_stay_short_so_a_fill_leaves_room_for_its_retry() -> None:
     for extra in ({"goals": ["a", "b", "c"]}, {"goals": ["a"], "constraints": ["c", "d", "e"]}):
         with pytest.raises(ValidationError):
             PersonProfile(description="x", **extra)
+
+
+# --- slice M7b: obligation limits set from the profile, labelled assumptions ------------------------
+
+
+def test_each_limit_must_be_set_by_the_fill_and_is_labelled_an_assumption_for_it(store, policy) -> None:
+    with pytest.raises(ValidationError, match="set shift_limits for every person from their profile"):
+        fill_schema(load_template("attendance")).model_validate(fill(shift_limits=None))
+    unlabelled = copy.deepcopy(FILL)
+    unlabelled["assumptions"] = [a for a in unlabelled["assumptions"] if not a["field"].endswith("_limits")]
+    unlabelled["facts"].append({"field": "shift_limits", "statement": "two shifts"})  # replaced: no text states it
+    record = create_blueprint(store, policy.id, FakeModel([PICK, json.dumps(unlabelled)]))
+    bp = record.blueprint
+    assert record.status == "valid" and not [x for x in bp.facts if x.field == "shift_limits"]
+    assert [x.statement for x in bp.assumptions if x.field.endswith("_limits")] == [
+        "AI-set from each profile: commuter 2, resident 3, working 1, family 2",
+        "AI-set from each profile: commuter 3, resident 3, working 2, family 1"]
+
+
+def test_the_blueprint_prints_each_persons_limits_labelled_an_assumption(store, policy) -> None:
+    from rulestorm.cli import describe_blueprint
+
+    record = create_blueprint(store, policy.id, FakeModel([PICK, json.dumps(FILL)]))
+    text = "\n".join(describe_blueprint(record))
+    assert ("  shift_limits: commuter 2, resident 3, working 1, family 2  "
+            "[assumption: AI-set from each profile: commuter 2, resident 3, working 1, family 2]") in text
+    assert "  care_limits: commuter 3, resident 3, working 2, family 1  [assumption: AI-set" in text
+    assert record.blueprint.values["excused_counting"] == "remove"  # a reading: its default, not the fill's
+
+
+def test_a_label_naming_the_limits_is_dropped_not_refused(store, policy) -> None:
+    reply = copy.deepcopy(FILL)
+    reply["assumptions"].append({"field": "shift_limits and care_limits", "statement": "from the profiles"})
+    record = create_blueprint(store, policy.id, FakeModel([PICK, json.dumps(reply)]))
+    assert record.status == "valid"
+    assert [x.field for x in record.blueprint.assumptions if "limits" in x.field] == ["shift_limits", "care_limits"]

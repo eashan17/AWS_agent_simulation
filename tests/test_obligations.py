@@ -123,3 +123,24 @@ def test_the_template_check_refuses_a_missing_limit_attribute() -> None:
     raw["parameters"] = [p for p in raw["parameters"] if p["name"] != "shift_limits"]
     assert ("disruption 'work_shift_clash': no parameter sets the limit attribute 'shift_miss_limit'"
             in check_template(raw).errors)
+
+
+def test_a_whole_term_with_a_person_who_attends_the_clash_runs_and_counts_it() -> None:
+    """The term loop reads what recording returns as records only; an obligation event is not one
+    (a real M7b run crashed on it, 27 Nov)."""
+    from rulestorm.agents import obligation_counts
+    from rulestorm.core.term import DecisionContext, PhaseDecision, Proposal, simulate
+
+    def attends(contexts: list[DecisionContext]) -> list[PhaseDecision]:
+        return [PhaseDecision(person=c.person, reason="keeps the rule", proposals=[
+            Proposal(action="attend", params={"session": c.step}) for t in c.triggers if t.type == "obstacle"])
+            for c in contexts]
+
+    shift = {"kind": "work_shift_clash", "period": 1, "until_period": 4, "steps": [2], "people": ["commuter"],
+             "description": "shift"}
+    values = {**copy.deepcopy(TERM_VALUES), "disruptions": [shift],
+              "shift_limits": {"commuter": 2, "resident": 2, "working": 2, "family": 2}}
+    engine = simulate(load_template("attendance"), values, attends)
+    assert [e.type for e in engine.events if e.type.startswith("obligation_")] == [
+        "obligation_missed", "obligation_missed", "obligation_lost"]
+    assert obligation_counts(engine) == {"commuter": {"missed": 3, "lost": 1}}
