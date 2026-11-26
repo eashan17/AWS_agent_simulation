@@ -31,6 +31,14 @@ class Proposal(BaseModel):
 
 
 REPLY_ROUNDS = 2  # per step: someone asks, someone answers
+MAX_INTENDS = 2  # slice M5: actions a decision may say it plans at a later step
+
+
+class Intention(BaseModel):
+    """Slice M5: an action a person says they plan to take at a later step. Not a commitment."""
+
+    action: str = Field(description="the action you plan to take then")
+    step: int = Field(description="the later step you plan it for")
 
 
 class DecisionContext(BaseModel):
@@ -67,6 +75,8 @@ class DecisionContext(BaseModel):
     # Slice M4: what affects the person this step (or that nothing does), from Engine.situation;
     # empty for people who owe no duty.
     situation: list[str] = Field(default_factory=list)
+    # Slice M5: at a step the person named, what they said they would do then (one line each).
+    reminders: list[str] = Field(default_factory=list)
 
     def action_limit(self) -> int:
         """Everyone may propose 3 actions; someone with more requests waiting for them (to consent
@@ -79,6 +89,7 @@ class PhaseDecision(BaseModel):
     proposals: list[Proposal] = Field(default_factory=list)
     reason: str = ""
     strategy: str = ""
+    intends: list[Intention] = Field(default_factory=list)  # slice M5: up to MAX_INTENDS
     error: str | None = None  # set when the person's call failed: recorded as "no action"
 
 
@@ -104,6 +115,13 @@ class Term:
         self.seen_this_step: dict[str, list[str]] = defaultdict(list)
         self.of_kind = {tr.kind: tr for tr in template.triggers}
         self.reasked: set[tuple[str, int]] = set()  # (person, step) asked again after a refused claim
+        # Slice M5: step -> person -> what they said they would do then ({action, stated_at, decision});
+        # the intention_due event of each (person, step) once it fires; the actions each person
+        # carried out (accepted) in each step; and the trigger events a decision has answered.
+        self.intended: dict[int, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+        self.due: dict[tuple[str, int], tuple[Event, list[dict[str, Any]]]] = {}
+        self.carried_out: dict[tuple[str, int], set[str]] = defaultdict(set)
+        self.answered: set[str] = set()
 
     # --- triggers -----------------------------------------------------------------------------
 
@@ -170,6 +188,7 @@ class Term:
             if event.type == "obstacle":
                 for person in event.payload["people"]:
                     self.notify("obstacle_hit", event, person)
+        self.intentions_due(period, step)
         self.decision_phase(period, step)
         # Reply rounds (26 Nov): a message or advice sent now reaches its reader in this same step,
         # before it is recorded, as a real conversation would (before, advice given in the step
@@ -188,6 +207,7 @@ class Term:
         for rt in self.t.request_types:
             if rt.processed == "each_step":
                 self.process(rt.id, period, step)
+        self.resolve_intentions(period, step)
         recorded = e.record_step(step)
 
         missed_by_duty: dict[str, list[Event]] = defaultdict(list)
@@ -204,6 +224,63 @@ class Term:
                                payload={"duty": duty, "people": [m.payload["person"] for m in missed]},
                                caused_by=[m.event_id for m in missed])
                 self.notify("many_missed", event)
+
+    # --- intentions (slice M5) ----------------------------------------------------------------
+
+    def intentions_due(self, period: int, step: int) -> None:
+        """At a step someone named, one `intention_due` event per person (however many things they
+        planned for it), which asks them again: at most once per person per step."""
+        for person, items in sorted(self.intended.pop(step, {}).items()):
+            if "intention_due" not in self.of_kind:
+                continue
+            event = self.engine.emit(
+                "intention_due", "engine", period, step,
+                payload={"person": person,
+                         "intentions": [{"action": i["action"], "stated_at": i["stated_at"]} for i in items]},
+                caused_by=list(dict.fromkeys(i["decision"] for i in items)))
+            self.due[(person, step)] = (event, items)
+            self.notify("intention_due", event, person)
+
+    def resolve_intentions(self, period: int, step: int) -> None:
+        """Met if the person carried out the action they named in this step (an accepted action),
+        unmet if they were asked and didn't. Someone never asked is not counted either way."""
+        for (person, at), (event, items) in sorted(self.due.items()):
+            if at != step:
+                continue
+            del self.due[(person, at)]
+            if event.event_id not in self.answered:
+                continue
+            decisions = [d.event_id for d in self.engine.events
+                         if d.type == "decision" and d.actor == person and d.step == step]
+            for item in items:
+                self.engine.emit("intention_resolved", "engine", period, step,
+                                 payload={"person": person, "action": item["action"],
+                                          "stated_at": item["stated_at"],
+                                          "met": item["action"] in self.carried_out[(person, step)]},
+                                 caused_by=[event.event_id, *decisions])
+
+    def state_intentions(self, person: str, step: int, decision_id: str,
+                         intends: list[Intention]) -> tuple[list[dict], list[dict]]:
+        """(the intentions kept, the ones refused with why). Kept: an action of the person's role
+        at a later step of the term, at most MAX_INTENDS, no repeats."""
+        e = self.engine
+        kept, refused = [], []
+        for i in intends:
+            problem = None
+            if i.action not in e.roles[e.role_of[person]].actions:
+                problem = "not an action you may take"
+            elif not step < i.step <= e.total_steps:
+                problem = f"the {self.t.calendar.step_label} must be later than now and within the term"
+            elif len(kept) >= MAX_INTENDS:
+                problem = f"at most {MAX_INTENDS}"
+            elif any(k["action"] == i.action and k["step"] == i.step for k in kept):
+                problem = "a repeat"
+            if problem:
+                refused.append({**i.model_dump(), "problem": problem})
+                continue
+            kept.append(i.model_dump())
+            self.intended[i.step][person].append({"action": i.action, "stated_at": step, "decision": decision_id})
+        return kept, refused
 
     def process(self, request_type: str, period: int, step: int | None, last_step: int | None = None) -> None:
         """A rule decides at once; an LLM person decides in a phase of their own at the slot."""
@@ -281,16 +358,24 @@ class Term:
         by_person = {d.person: d for d in self.decider(contexts)}
         for context in contexts:
             decision = by_person.get(context.person, PhaseDecision(person=context.person, error="no decision returned"))
-            recorded = e.emit("decision", context.person, period, step,
-                              payload={"proposals": [p.model_dump() for p in decision.proposals],
-                                       "reason": decision.reason, "strategy": decision.strategy,
-                                       "no_action": not decision.proposals, "error": decision.error},
+            payload = {"proposals": [p.model_dump() for p in decision.proposals],
+                       "reason": decision.reason, "strategy": decision.strategy,
+                       "no_action": not decision.proposals, "error": decision.error}
+            recorded = e.emit("decision", context.person, period, step, payload=payload,
                               caused_by=[t.event_id for t in context.triggers])
+            if decision.intends:  # slice M5: only when stated, so older event logs stay as they were
+                kept, refused = self.state_intentions(context.person, step, recorded.event_id, decision.intends)
+                recorded.payload["intends"] = kept
+                if refused:
+                    recorded.payload["intends_refused"] = refused
+            self.answered.update(t.event_id for t in context.triggers)
             decided.append(recorded.event_id)
             self.last_decision[context.person] = recorded.event_id
             for proposal in decision.proposals:
                 done = e.propose(context.person, proposal.action, period, caused_by=[recorded.event_id],
                                  **proposal.params)
+                if done.type != "action_rejected":
+                    self.carried_out[(context.person, step)].add(proposal.action)
                 self.message_received(done, period)
                 self.awaiting_consent(done)
                 if done.type == "action_rejected" and _refused_claim(done) and (context.person, step) not in self.reasked:
@@ -357,7 +442,17 @@ class Term:
             own_requests=[_own_view(r) for r in e.requests.values() if r.person == person],
             unavailable_actions=unavailable, capacity_now=capacity_now,
             situation=e.situation(person, step) if any(e.owes(person, d) for d in e.duties.values()) else [],
+            reminders=self.reminders(person, step),
         )
+
+    def reminders(self, person: str, step: int) -> list[str]:
+        """Slice M5: at a step the person named, what they said they would do then."""
+        due = self.due.get((person, step))
+        if due is None:
+            return []
+        label = self.t.calendar.step_label
+        return [f"{self.engine.actions[i['action']].label} ({i['action']}) at {label} {step}, "
+                f"as you said at {label} {i['stated_at']}" for i in due[1]]
 
     def outcomes_of(self, person: str) -> list[str]:
         """What the engine did with each action of the person's latest decision."""

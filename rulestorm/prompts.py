@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from rulestorm.core.model import REQUEST_OUTCOMES, Action, Parameter, Template
-from rulestorm.core.term import DecisionContext
+from rulestorm.core.term import MAX_INTENDS, DecisionContext
 from rulestorm.rulebook import rule_lines
 
 
@@ -69,6 +69,9 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
     ]
     if c.situation:  # slice M4: after the trigger list, so the frozen lines above stay as they are
         lines += ["", f"Your situation now ({cal.step_label} {c.step}):", *(f"- {x}" for x in c.situation)]
+    if c.reminders:  # slice M5: what they said earlier they would do at this step
+        lines += ["", "You said you would: " + "; ".join(c.reminders) + ".",
+                  "This is a reminder, not a commitment: decide what you do now."]
     request_word = terms.get("request", "request")
     if c.counts:
         for count_id, result in c.counts.items():
@@ -96,6 +99,10 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
     role = next(r for r in template.roles if r.id == c.role)
     actions = {a.id: a for a in template.actions}
     offered_actions = sorted(a for a in role.actions if a not in c.unavailable_actions)
+    # Slice M5: before the actions block, so the frozen lines of that block stay as they are.
+    lines += ["", f"Plans for later: if you plan an action at a later {cal.step_label}, you may add it to "
+                  f"\"intends\" (at most {MAX_INTENDS}, each {{\"action\": <name>, \"step\": <{cal.step_label}>}}); "
+                  f"you will be asked again at that {cal.step_label}. Actions for now go in \"actions\"."]
     lines += [
         "",
         f"Actions you may propose (0 to {c.action_limit()}; an empty list means you do nothing):",

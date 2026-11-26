@@ -177,3 +177,86 @@ def test_the_template_check_refuses_a_cause_on_an_action_that_plans_no_miss() ->
     attend["params"].append({"name": "cause", "type": "cause", "required": False})
     result = check_template(bad)
     assert not result.valid and any("cause parameter" in e for e in result.errors)
+
+
+# --- slice M5: what a person says they'll do later ------------------------------------------------
+
+
+def _planner(name: str, refusals: bool = False):
+    """The hit person, at the disruption step, plans the miss and one other action for the next
+    step; at that step they carry out the miss only. Everyone else does nothing."""
+    action, sp, hit, *_ = SETUPS[name]
+    t = load_template(name)
+    role = next(p.role for p in t.people if p.id == hit)
+    other = next(a for a in next(r for r in t.roles if r.id == role).actions if a != action)
+    seen: dict[int, list[DecisionContext]] = {}
+    state = {"planned_at": None}
+
+    def decider(contexts):
+        out = []
+        for c in contexts:
+            if c.person != hit:
+                out.append(PhaseDecision(person=c.person))
+                continue
+            seen.setdefault(c.step, []).append(c)
+            if state["planned_at"] is None and any(tr.type == "obstacle" for tr in c.triggers):
+                state["planned_at"] = c.step
+                intends = [{"action": action, "step": c.step + 1}, {"action": other, "step": c.step + 1}]
+                if refusals:
+                    intends = [{"action": action, "step": c.step}, {"action": "no_such", "step": c.step + 2},
+                               *intends, {"action": action, "step": c.step + 1}, {"action": other, "step": c.step + 2}]
+                out.append(PhaseDecision(person=c.person, intends=intends))
+            elif c.reminders:
+                out.append(PhaseDecision(person=c.person, proposals=[Proposal(action=action, params={sp: c.step})]))
+            else:
+                out.append(PhaseDecision(person=c.person))
+        return out
+
+    return t, hit, action, other, seen, state, decider
+
+
+@pytest.mark.parametrize("name", list(SETUPS))
+def test_intends_for_the_next_step_fires_intention_due_there_once_with_a_reminder(name) -> None:
+    t, hit, action, other, seen, state, decider = _planner(name)
+    values = SETUPS[name][-1]
+    engine = Term(t, values, decider).run()
+    planned = state["planned_at"]
+    due = [e for e in engine.events if e.type == "intention_due"]
+    assert len(due) == 1 and due[0].step == planned + 1 and due[0].payload["person"] == hit  # once, for both plans
+    assert [i["action"] for i in due[0].payload["intentions"]] == [action, other]
+    [asked] = [c for c in seen[planned + 1] if any(tr.type == "intention_due" for tr in c.triggers)]
+    prompt = render_prompt(t, values, asked)
+    assert f"You said you would: " in prompt and f"({action}) at {t.calendar.step_label} {planned + 1}" in prompt
+    assert "This is a reminder, not a commitment" in prompt
+
+
+@pytest.mark.parametrize("name", list(SETUPS))
+def test_asked_and_not_done_is_unmet_and_done_is_met(name) -> None:
+    t, hit, action, other, seen, state, decider = _planner(name)
+    engine = Term(t, SETUPS[name][-1], decider).run()
+    resolved = {e.payload["action"]: e.payload["met"] for e in engine.events if e.type == "intention_resolved"}
+    assert resolved == {action: True, other: False}
+
+
+@pytest.mark.parametrize("name", list(SETUPS))
+def test_someone_never_asked_is_not_counted(name) -> None:
+    import copy
+
+    t, hit, action, other, seen, state, decider = _planner(name)
+    quiet = copy.deepcopy(t)
+    quiet.triggers = [tr for tr in quiet.triggers if tr.kind != "intention_due"]  # the step never asks them
+    engine = Term(quiet, SETUPS[name][-1], decider).run()
+    stated = [i for e in engine.events if e.type == "decision" for i in e.payload.get("intends", [])]
+    assert len(stated) == 2
+    assert not [e for e in engine.events if e.type in ("intention_due", "intention_resolved")]
+
+
+@pytest.mark.parametrize("name", list(SETUPS))
+def test_the_engine_keeps_at_most_2_later_intentions_of_the_persons_own_actions(name) -> None:
+    t, hit, action, other, seen, state, decider = _planner(name, refusals=True)
+    engine = Term(t, SETUPS[name][-1], decider).run()
+    [d] = [e for e in engine.events if e.type == "decision" and e.payload.get("intends_refused")]
+    assert [(i["action"], i["step"] - d.step) for i in d.payload["intends"]] == [(action, 1), (other, 1)]
+    assert [r["problem"] for r in d.payload["intends_refused"]] == [
+        f"the {t.calendar.step_label} must be later than now and within the term", "not an action you may take",
+        "at most 2", "at most 2"]

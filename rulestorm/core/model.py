@@ -44,6 +44,7 @@ TriggerKind = Literal[
     "decision_awaiting",       # a request awaits an LLM decision at its processing slot
     "escalation_outcome",      # an escalation outcome reaches its listed roles
     "message_received",        # a message or response reaches the person it is for (once a period)
+    "intention_due",           # slice M5: a step a person said they would act at has come
 ]
 # obstacle: a delay that makes a person miss the duty if it is longer than their attribute;
 # conflict: a personal clash (a shift, an emergency) that the person may miss the duty for, or

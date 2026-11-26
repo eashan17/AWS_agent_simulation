@@ -420,6 +420,9 @@
     },
     {
       "kind": "message_received"
+    },
+    {
+      "kind": "intention_due"
     }
   ],
   "parameters": [

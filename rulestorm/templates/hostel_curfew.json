@@ -186,7 +186,8 @@
     {"kind": "endorsement_awaiting"},
     {"kind": "decision_awaiting"},
     {"kind": "escalation_outcome"},
-    {"kind": "message_received"}
+    {"kind": "message_received"},
+    {"kind": "intention_due"}
   ],
   "parameters": [
     {

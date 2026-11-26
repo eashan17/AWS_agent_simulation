@@ -30,13 +30,14 @@ from pydantic import BaseModel, BeforeValidator, Field, create_model
 from rulestorm import config, llm
 from rulestorm.core.engine import Engine
 from rulestorm.core.model import Template
-from rulestorm.core.term import MIN_ACTIONS, DecisionContext, PhaseDecision, Proposal, Term
+from rulestorm.core.term import MAX_INTENDS, MIN_ACTIONS, DecisionContext, Intention, PhaseDecision, Proposal, Term
 from rulestorm.prompts import render_prompt
 
 PHASE_DEADLINE_S = 40.0
 MAX_PARALLEL = 4
 AGENT_MAX_TOKENS = 400
 TOKENS_PER_EXTRA_ACTION = 80  # a person allowed more than 3 actions gets room to write them
+INTENDS_TOKENS = 40  # slice M5: room for up to MAX_INTENDS short {action, step} items
 DEGRADED_ERROR_SHARE = 0.10
 MEMORY_SIZE = 3
 REASON_CHARS = 300
@@ -74,6 +75,8 @@ class AgentDecision(BaseModel):
                                                               description="your current strategy, one short sentence")
     actions: list[Proposal] = Field(default_factory=list, max_length=MIN_ACTIONS,
                                     description="the actions that carry out your reason; empty means you do nothing")
+    intends: list[Intention] = Field(default_factory=list, max_length=MAX_INTENDS,
+                                     description="optional: actions you plan at a later step; you will be asked then")
 
 
 @lru_cache(maxsize=None)
@@ -85,6 +88,11 @@ def decision_schema(limit: int) -> type[AgentDecision]:
                         actions=(list[Proposal], Field(default_factory=list, max_length=limit,
                                                        description="the actions that carry out your reason; "
                                                                    "empty means you do nothing")))
+
+
+def reply_limit(action_limit: int) -> int:
+    """Output tokens for one decision: the base, room for each action past 3, and room for `intends`."""
+    return AGENT_MAX_TOKENS + INTENDS_TOKENS + TOKENS_PER_EXTRA_ACTION * max(0, action_limit - MIN_ACTIONS)
 
 
 class CallCapReached(Exception):
@@ -178,14 +186,14 @@ class Agents:
     def decide_one(self, context: DecisionContext, prompt: str) -> PhaseDecision:
         limit = context.action_limit()
         outcome = llm.decide(prompt, decision_schema(limit), model=self.model,
-                             max_tokens=AGENT_MAX_TOKENS + TOKENS_PER_EXTRA_ACTION * max(0, limit - MIN_ACTIONS))
+                             max_tokens=reply_limit(limit))
         with self._tokens_lock:
             self.input_tokens += outcome.input_tokens
             self.output_tokens += outcome.output_tokens
         if outcome.no_action:
             return PhaseDecision(person=context.person, error=outcome.error or "no reply")
         return PhaseDecision(person=context.person, proposals=outcome.value.actions, reason=outcome.value.reason,
-                             strategy=outcome.value.strategy)
+                             strategy=outcome.value.strategy, intends=outcome.value.intends)
 
     def decide_phase(self, contexts: list[DecisionContext]) -> list[PhaseDecision]:
         """Triggered LLM people decide in parallel on the same snapshot; results come back
@@ -247,6 +255,9 @@ class RunSummary(BaseModel):
     no_actions: int
     rejected: list[Rejection]
     false_claims: int = 0  # slice M4: planned misses refused for claiming a cause not affecting them
+    intentions_stated: int = 0  # slice M5: plans for a later step that the engine kept
+    intentions_unmet: int = 0  # slice M5: asked at that step, and didn't carry it out
+    error_decisions_while_hit: int = 0  # slice M5: a failed call while a disruption hit the person
     input_tokens: int
     output_tokens: int
 
@@ -274,6 +285,9 @@ def summarise(engine: Engine, agents: Agents) -> RunSummary:
         no_actions=sum(1 for d in decisions if d.payload["no_action"]),
         rejected=rejected,
         false_claims=sum(1 for r in rejected if r.reason.startswith("claim:")),
+        intentions_stated=sum(len(d.payload.get("intends") or []) for d in decisions),
+        intentions_unmet=sum(1 for e in engine.events if e.type == "intention_resolved" and not e.payload["met"]),
+        error_decisions_while_hit=sum(1 for d in errors if d.step is not None and engine.hitting(d.actor, d.step)),
         input_tokens=agents.input_tokens,
         output_tokens=agents.output_tokens,
     )

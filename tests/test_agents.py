@@ -258,3 +258,57 @@ def test_a_wordy_reply_is_a_decision_not_an_error(template) -> None:
     agents = agents_for(template, RoutedModel(lambda person, prompt: wordy), cap=10)
     out = agents.decide_phase([context("faculty", "faculty")])
     assert out[0].error is None and len(out[0].reason) <= 300 and len(out[0].strategy) <= 200
+
+
+# --- slice M5: intends, the reply limit and the summary's integrity counts ----------------------
+
+
+def test_intends_takes_at_most_2_and_the_reply_limit_grows_to_fit(template) -> None:
+    from pydantic import ValidationError
+
+    from rulestorm.agents import AGENT_MAX_TOKENS, INTENDS_TOKENS, AgentDecision, reply_limit
+
+    two = {"reason": "plan", "actions": [], "intends": [{"action": "skip", "step": 6}, {"action": "attend", "step": 7}]}
+    assert len(AgentDecision.model_validate(two).intends) == 2
+    with pytest.raises(ValidationError):
+        AgentDecision.model_validate({**two, "intends": two["intends"] + [{"action": "skip", "step": 8}]})
+    assert reply_limit(3) == AGENT_MAX_TOKENS + INTENDS_TOKENS and INTENDS_TOKENS > 0
+
+    limits: list[int] = []
+
+    class Sized(RoutedModel):
+        def complete(self, prompt, max_tokens, timeout_s=None):
+            limits.append(max_tokens)
+            return super().complete(prompt, max_tokens, timeout_s)
+
+    out = agents_for(template, Sized(lambda person, prompt: json.dumps(two)), cap=10).decide_phase([context("working")])
+    assert limits == [reply_limit(3)] and [i.step for i in out[0].intends] == [6, 7]
+
+
+def test_the_summary_counts_intentions_and_unmet_ones(template) -> None:
+    def reply(person, prompt):
+        if person == "working" and "You said you would:" in prompt:
+            return json.dumps({"reason": "changed my mind", "actions": []})  # asked, doesn't do it
+        if person == "working":
+            step = int(re.search(r"Now: session (\d+)", prompt).group(1))
+            return json.dumps({"reason": "plan ahead", "actions": [],
+                               "intends": [{"action": "submit_exception_request", "step": step + 1}]})
+        return NOTHING
+
+    engine, summary = run_term(template, VALUES, agents_for(template, RoutedModel(reply), cap=1000))
+    stated = [i for d in decisions(engine) if d.actor == "working" for i in d.payload.get("intends", [])]
+    resolved = [e for e in engine.events if e.type == "intention_resolved"]
+    assert summary.intentions_stated == len(stated) > 0
+    assert summary.intentions_unmet == len(resolved) > 0 and not any(e.payload["met"] for e in resolved)
+    assert summary.false_claims == 0 and summary.error_decisions_while_hit == 0
+
+
+def test_a_failed_call_while_a_disruption_hits_the_person_is_counted(template) -> None:
+    def reply(person, prompt):
+        if "Your situation now" in prompt and "keeps you from it" in prompt:
+            raise RuntimeError("ThrottlingException: slow down")
+        return NOTHING
+
+    engine, summary = run_term(template, VALUES, agents_for(template, RoutedModel(reply), cap=1000))
+    hit_errors = [d for d in decisions(engine) if d.payload["error"] and engine.hitting(d.actor, d.step)]
+    assert summary.error_decisions_while_hit == len(hit_errors) > 0

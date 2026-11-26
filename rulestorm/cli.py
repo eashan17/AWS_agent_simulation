@@ -339,6 +339,10 @@ def run_local_command(blueprint_id: str) -> None:
     print(f"rejected: {len(summary.rejected)}")
     for r in summary.rejected:
         print(f"  {r.event_id} {r.agent} {r.action}: {r.reason}")
+    print(f"false_claims: {summary.false_claims}")
+    print(f"intentions_stated: {summary.intentions_stated}")
+    print(f"intentions_unmet: {summary.intentions_unmet}")
+    print(f"error_decisions_while_hit: {summary.error_decisions_while_hit}")
     print(f"event log: {path}")
 
 
