@@ -18,7 +18,7 @@ from rulestorm import config
 from rulestorm.comparison import ROWS, ComparisonActive, _column, _run_one
 from rulestorm.core.model import load_template
 from rulestorm.counterfactual import LABEL
-from rulestorm.policy import DailyCapReached, require_approved
+from rulestorm.policy import DailyCapReached, check_version, require_approved
 from rulestorm.runner import FINISHED, RunActive
 from rulestorm.store import _now
 
@@ -50,9 +50,7 @@ def start_repeats(store, blueprint_id: str, times: int, include_run: str | None 
     ComparisonActive, RunActive or DailyCapReached."""
     parent = require_approved(store, blueprint_id)
     template = load_template(parent.template_id)
-    if template.version != parent.template_version:
-        raise ValueError(f"blueprint {blueprint_id} was made with {parent.template_id}@{parent.template_version}, "
-                         f"but the template is now {template.ref}")
+    parent = check_version(template, parent)
     if not MIN_TIMES <= times <= MAX_TIMES:
         raise RepeatRefused(f"times must be {MIN_TIMES}-{MAX_TIMES}")
     runs = []

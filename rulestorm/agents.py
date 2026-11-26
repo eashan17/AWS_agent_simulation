@@ -312,14 +312,12 @@ def run_local(store, blueprint_id: str, out_dir: str = "runs", on_period=None) -
     import uuid
 
     from rulestorm.core.model import load_template
-    from rulestorm.policy import require_approved
+    from rulestorm.policy import check_version, require_approved
 
     record = require_approved(store, blueprint_id)
+    template = load_template(record.blueprint.template_id)
+    record = check_version(template, record)
     bp = record.blueprint
-    template = load_template(bp.template_id)
-    if template.version != bp.template_version:
-        raise ValueError(f"blueprint {blueprint_id} was made with {bp.template_id}@{bp.template_version}, "
-                         f"but the template is now {template.ref}")
     run_id = f"L-{uuid.uuid4().hex[:8]}"
     started = time.monotonic()
     engine, summary = run_term(template, bp.values, Agents(template, bp.values, store=store), on_period=on_period)

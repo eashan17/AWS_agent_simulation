@@ -22,7 +22,7 @@ from rulestorm import llm
 from rulestorm.blueprint import Label, TemplateBlueprint, values_model
 from rulestorm.core.model import Parameter, Template, load_template
 from rulestorm.explore import environment, outcome
-from rulestorm.policy import BlueprintDraft, approve_blueprint
+from rulestorm.policy import BlueprintDraft, approve_blueprint, check_version
 from rulestorm.runner import FINISHED, RunActive, start_run
 
 LABEL = "within-model evidence, not real-world causality"
@@ -94,9 +94,7 @@ def start_counterfactual(store, run_id: str, parameter: str, value: Any, model: 
     if parent is None or parent.blueprint is None:
         raise RunNotFound(run_id)
     template = load_template(parent.template_id)
-    if template.version != parent.template_version:
-        raise ValueError(f"blueprint {parent.id} was made with {parent.template_id}@{parent.template_version}, "
-                         f"but the template is now {template.ref}")
+    parent = check_version(template, parent)
     bp = change_one(template, parent.blueprint, parameter, value)
     running = store.running_run()
     if running:  # checked before saving, so a refused POST leaves no blueprint behind

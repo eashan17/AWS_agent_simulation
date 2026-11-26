@@ -28,6 +28,7 @@ from rulestorm.policy import (
     BLUEPRINT_DEADLINE_S,
     BlueprintDraft,
     BlueprintRecord,
+    check_version,
     DailyCapReached,
     require_approved,
     take_blueprint_call,
@@ -237,9 +238,7 @@ def propose_variants(store, parent_id: str, model: llm.Model | None = None) -> V
     """One model call (at most 2 with the validation retry), inside the 55 s blueprint budget."""
     parent = require_approved(store, parent_id)
     template = load_template(parent.template_id)
-    if template.version != parent.template_version:
-        raise ValueError(f"blueprint {parent_id} was made with {parent.template_id}@{parent.template_version}, "
-                         f"but the template is now {template.ref}")
+    parent = check_version(template, parent)
     take_blueprint_call(store)
     policy = store.get_policy(parent.policy_id)
     model = model or llm.get_model(max_attempts=1)

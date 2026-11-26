@@ -44,6 +44,7 @@ from rulestorm.explore import (
 from rulestorm.policy import (
     BLUEPRINT_DEADLINE_S,
     BlueprintDraft,
+    check_version,
     DailyCapReached,
     approve_blueprint,
     require_approved,
@@ -285,9 +286,7 @@ def start_search(store, blueprint_id: str, max_runs: int = DEFAULT_RUNS, model: 
     RunActive or DailyCapReached."""
     parent = require_approved(store, blueprint_id)
     template = load_template(parent.template_id)
-    if template.version != parent.template_version:
-        raise ValueError(f"blueprint {blueprint_id} was made with {parent.template_id}@{parent.template_version}, "
-                         f"but the template is now {template.ref}")
+    parent = check_version(template, parent)
     if not MIN_RUNS <= max_runs <= MAX_RUNS:
         raise ValueError(f"max_runs must be {MIN_RUNS}-{MAX_RUNS}")
     if (active := store.running_search()):

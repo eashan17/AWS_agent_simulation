@@ -15,7 +15,7 @@ import json
 import string
 from collections import Counter
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -228,6 +228,8 @@ class Parameter(Block):
     stated_only: list[str] = Field(default_factory=list,
                                    description="choice: values a blueprint may hold only as a fact from the "
                                                "user's text, never as the AI's assumption")
+    # Slice M0: what a blueprint made before this parameter existed gets, so it runs as it did.
+    default: Any = Field(None, description="the value an older blueprint without this parameter gets")
 
 
 class ExampleInput(Block):
@@ -255,6 +257,19 @@ class Template(Block):
     disruptions: list[DisruptionKind] = Field(default_factory=list)
     triggers: list[Trigger] = Field(default_factory=list)
     parameters: list[Parameter] = Field(min_length=1)
+    # Slice M0: the blueprint versions this template still reads; empty means only its own.
+    reads_versions: list[int] = Field(default_factory=list,
+                                      description="blueprint versions this template still reads")
+
+    @model_validator(mode="after")
+    def _reads_own_version(self) -> "Template":
+        if not self.reads_versions:
+            self.reads_versions = [self.version]
+        elif self.version not in self.reads_versions:
+            raise ValueError(f"reads_versions {self.reads_versions} must include the template's own "
+                             f"version {self.version}")
+        self.reads_versions = sorted(set(self.reads_versions))
+        return self
 
     @property
     def ref(self) -> str:
@@ -280,6 +295,7 @@ class TemplateCheck(BaseModel):
             f"actions {len(t.actions)}, request types {len(t.request_types)}, "
             f"counts {len(t.counts)}, checks {len(t.checks)}",
             "parameters: " + ", ".join(p.name for p in t.parameters),
+            "reads versions: " + ", ".join(str(v) for v in t.reads_versions),
             "dry run: ok",
         ]
 

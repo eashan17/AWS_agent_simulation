@@ -37,6 +37,7 @@ from rulestorm.explore import misses_lines, queue_lines
 from rulestorm.policy import (
     BLUEPRINT_DEADLINE_S,
     BlueprintDraft,
+    check_version,
     DailyCapReached,
     approve_blueprint,
     require_approved,
@@ -186,9 +187,7 @@ def start_comparison(store, blueprint_id: str, model: llm.Model | None = None,
     ValueError (template changed), ComparisonActive, RunActive or DailyCapReached."""
     parent = require_approved(store, blueprint_id)
     template = load_template(parent.template_id)
-    if template.version != parent.template_version:
-        raise ValueError(f"blueprint {blueprint_id} was made with {parent.template_id}@{parent.template_version}, "
-                         f"but the template is now {template.ref}")
+    parent = check_version(template, parent)
     active = store.running_comparison() or store.running_search() or store.running_repeat()  # slices 16, 21
     if active:
         raise ComparisonActive(active)

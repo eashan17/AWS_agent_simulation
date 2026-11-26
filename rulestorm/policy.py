@@ -11,6 +11,7 @@ Records saved before slice L6b (the old attendance format) are not read; that de
 migrated (docs/ARCHITECTURE.md).
 """
 
+import json
 import time
 from typing import TYPE_CHECKING, Literal
 
@@ -201,6 +202,29 @@ def approve_blueprint(store: "Store", blueprint_id: str) -> BlueprintRecord:
         raise BlueprintInvalid(blueprint_id)
     store.mark_approved(blueprint_id)
     return store.get_blueprint(blueprint_id)
+
+
+class TemplateVersionUnreadable(ValueError):
+    """A blueprint made with a template version this server no longer reads (HTTP 409)."""
+
+
+def check_version(template: Template, record: BlueprintRecord) -> BlueprintRecord:
+    """The one version gate (slice M0) every start route goes through.
+
+    A blueprint whose version the template still reads (`Template.reads_versions`) comes back with
+    every value it lacks set to that parameter's `default`, so an older blueprint runs as it did.
+    Any other version is refused with a clear message, never a crash.
+    """
+    bp = record.blueprint
+    if bp is None or bp.template_version not in template.reads_versions:
+        made = f"{record.template_id}@{bp.template_version if bp else record.template_version}"
+        reads = ", ".join(f"{template.id}@{v}" for v in template.reads_versions)
+        raise TemplateVersionUnreadable(f"blueprint {record.id} was made with {made}; this server reads {reads}")
+    missing = {p.name: p.default for p in template.parameters if p.name not in bp.values and p.default is not None}
+    if not missing:
+        return record
+    filled = bp.model_copy(update={"values": {**bp.values, **json.loads(json.dumps(missing))}})
+    return record.model_copy(update={"blueprint": filled})
 
 
 def require_approved(store: "Store", blueprint_id: str) -> BlueprintRecord:

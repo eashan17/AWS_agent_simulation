@@ -36,7 +36,7 @@ from rulestorm.core.term import Term
 from rulestorm import config
 from rulestorm.detect import detect
 from rulestorm.telemetry import report_run
-from rulestorm.policy import DailyCapReached, require_approved
+from rulestorm.policy import DailyCapReached, check_version, require_approved
 from rulestorm.store import _now
 
 log = logging.getLogger("rulestorm.runner")
@@ -74,11 +74,9 @@ def _begin(store, blueprint_id, model, cap):
     """The checks, in order (the 409 before the cap, so a refused duplicate costs nothing), then
     the `running` row."""
     record = require_approved(store, blueprint_id)
+    template = load_template(record.blueprint.template_id)
+    record = check_version(template, record)
     bp = record.blueprint
-    template = load_template(bp.template_id)
-    if template.version != bp.template_version:
-        raise ValueError(f"blueprint {blueprint_id} was made with {bp.template_id}@{bp.template_version}, "
-                         f"but the template is now {template.ref}")
     running = store.running_run()
     if running:
         raise RunActive(running)

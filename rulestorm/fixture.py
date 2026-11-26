@@ -18,7 +18,7 @@ from typing import Any
 from rulestorm.blueprint import values_model
 from rulestorm.core.model import load_template
 from rulestorm.detect import detect
-from rulestorm.policy import BlueprintRecord, Policy
+from rulestorm.policy import BlueprintRecord, Policy, TemplateVersionUnreadable, check_version
 
 SCHEMA = 2  # 1 was the fixed attendance engine's run file
 DEMO_RUN_ID = "demo"
@@ -87,12 +87,12 @@ def read_fixture(path: str | Path = DEFAULT_PATH) -> dict[str, Any]:
 def check_blueprint(bundle: dict[str, Any]):
     """The bundled blueprint, checked against its template as it is now."""
     record = BlueprintRecord.model_validate(bundle["blueprint"])
-    bp = record.blueprint
-    template = load_template(bp.template_id)
-    if template.version != bp.template_version:
-        raise FixtureError(f"the demo blueprint was made with {bp.template_id}@{bp.template_version}, "
-                           f"but the template is now {template.ref}")
-    values_model(template).model_validate(bp.values)
+    template = load_template(record.blueprint.template_id)
+    try:
+        record = check_version(template, record)
+    except TemplateVersionUnreadable as exc:
+        raise FixtureError(f"the demo {exc}") from exc
+    values_model(template).model_validate(record.blueprint.values)
     return record, template
 
 
