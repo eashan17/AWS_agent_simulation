@@ -115,6 +115,7 @@ The "what-ifs from this run" list is kept per browser, so on a different laptop 
 - **If a judge starts a run while one is going:** "Another simulation is running right now" is expected; there's one run at a time for everyone.
 
 ## Rough spots to know before you're on stage
+- **26 Nov, after the recordings: the people's prompt changed (tag `live-20261126b`).** The AI students had been told only "eligibility is checked in week 6", not that it runs once at the end of the week, is final and counts waiting requests as absences. Every person now gets the full rule, generated from the template. **All the IDs above (`demo`, R-f9db0944, L-01465ef0, L-df9ce433, C-61168412, S-b4501248, S-261e90f7) were recorded with the old prompt; re-record them before using them.** On the laptop (L-4d797840) the working student, now knowing the rule, tried to file in week 6, was refused whole on the "already recorded" rule, and still failed at 72.7%.
 - **The demo failure happened in 1 of 3 runs on the laptop** (R-b97baf8d). Say "in this run", and let scenario #3 answer "how often" with the live numbers.
 - **One what-if flip is not proof.** #5 (fewer staff) flipped the working student to eligible too, which the change can't have caused. So #4's week-8 flip is one run as well: say "in this what-if run, nobody failed", and let the repeat (2 of 3) carry "how often".
 - **The hero is the early check, not the exception backlog** that BRIEF's hero section describes: the working student filed in week 7, after the week-6 check.

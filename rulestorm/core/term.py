@@ -142,6 +142,10 @@ class Term:
         for event in e.run_checks(period):
             if "outcome" in event.payload:
                 self.escalated(event)
+            elif "ladder_step" not in event.payload:
+                # A single-threshold check's result reaches the person checked (26 Nov), so they
+                # know it was final and how it went; before, only ladder outcomes did.
+                self.trigger(event.payload["person"], event)
 
     def run_step(self, period: int, step: int) -> None:
         e = self.engine

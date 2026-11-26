@@ -5,7 +5,9 @@ parameter hints come from the template (rulestorm/templates/*.json). The layout 
 the real runs of slice 6b needed (the slack line, the missed occurrences no request covers, the
 outcomes of the person's last actions), checked character for character by tests/test_prompts.py
 against prompts frozen from the old engine, plus a "Request rules" block rendered from the
-request parameters' sentences.
+request parameters' sentences, and a "How the rules work" block (rulestorm/rulebook.py, 26 Nov):
+when each check runs, that its result is final, how many misses fail it, what counts and how
+requests are queued before it, so every person knows the rules the engine applies to them.
 
 A role's prompt lists only its own allowed actions. Rules (recording, queue processing,
 checks) are never actions, so they are never offered.
@@ -17,6 +19,7 @@ from typing import Any
 
 from rulestorm.core.model import REQUEST_OUTCOMES, Action, Parameter, Template
 from rulestorm.core.term import DecisionContext
+from rulestorm.rulebook import rule_lines
 
 
 def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext,
@@ -45,6 +48,9 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
     rules = [sentence(p, values[p.name], values) for p in section(template, "request_rules") if p.name in values]
     if rules:
         lines += ["", "Request rules:", *(f"- {r}" for r in rules)]
+    how = rule_lines(template, values)
+    if how:
+        lines += ["", "How the rules work (the engine applies these exactly):", *how]
 
     lines += [
         "",

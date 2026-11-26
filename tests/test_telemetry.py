@@ -52,8 +52,11 @@ def test_a_finished_run_sends_one_line_with_its_own_counts(store, approved, monk
     monkeypatch.setattr(telemetry, "_default_sender", lambda: sent.append)
     run_id = run_now(store, approved.id, RoutedModel(lambda person, prompt: NOTHING), out_dir=str(tmp_path))
     run = store.get_run(run_id)
-    assert len(sent) == 1
-    line = sent[0]
+    # Only this run's lines: a background run another test started may finish meanwhile and
+    # report too (seen 26 Nov, once terms grew by the check-result decisions).
+    mine = [line for line in sent if line["run_id"] == run_id]
+    assert len(mine) == 1
+    line = mine[0]
     assert (line["run_id"], line["status"]) == (run_id, run["status"])
     assert line["LLMCalls"] == run["summary"]["llm_calls"] > 0
     assert line["Tokens"] == run["summary"]["input_tokens"] + run["summary"]["output_tokens"]
