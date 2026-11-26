@@ -12,7 +12,10 @@ A case file names its template and values and says what people do, by person and
                                                 filed in advance, else the step after the last one),
                   "consent": true | false      (request types that need consent),
                   "decision": "approved" | "rejected"   (request types an LLM person decides)}]
-    "report": ["count", "queue", "permission", "ladder", "failed_check", "readings", "obligations", "state"]
+    "report": ["count", "queue", "permission", "ladder", "failed_check", "readings", "obligations", "state",
+               "decisions"]
+                                                ("decisions", slice M8a: what became of each of the
+                                                case's requests: refused at filing, or its decision)
                                                 ("state", slice M7c: the focus person's own state
                                                 before each step a clash or delay hits them)
                                                 the lines to print
@@ -22,6 +25,9 @@ A case file names its template and values and says what people do, by person and
     "readings_at": <period>                    ("readings": the period whose end it counts at, after
                                                 that period's queues; default the last)
     "permission_check": {"role", "actor", "action", "params"}
+    "variants": [{"label", "values": {...}, ...}]   (slice M8a) the case played once per variant: its
+                                                values over the case's, any other key replacing the
+                                                case's; each line starts with the variant's label
 
 It runs in the term loop's phase order: period start (capacity disruptions); each step
 (obstacles and cancellations, then planned misses, filings and consents, then queues processed
@@ -37,7 +43,19 @@ from rulestorm.core.model import Template
 
 def run_case(case: dict[str, Any], template: Template) -> list[str]:
     """Plays a fixed case through the general engine; returns the lines to print, each with its event ID."""
+    if "variants" in case:
+        lines = []
+        for variant in case["variants"]:
+            lines += [f"{variant['label']}: {line}" for line in play_case(case_variant(case, variant), template)[0]]
+        return lines
     return play_case(case, template)[0]
+
+
+def case_variant(case: dict[str, Any], variant: dict[str, Any]) -> dict[str, Any]:
+    """One variant of a case (slice M8a): its values over the case's; its other keys replace the case's."""
+    base = {k: v for k, v in case.items() if k != "variants"}
+    extra = {k: v for k, v in variant.items() if k not in ("label", "values")}
+    return {**base, **extra, "values": {**case["values"], **variant.get("values", {})}}
 
 
 def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engine]:
@@ -51,6 +69,7 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
     meets = {person: set(steps) for person, steps in case.get("meets", {}).items()}
     requests = [dict(r, filed_at=r.get("filed_at", _default_filing(e, r))) for r in case.get("requests", [])]
     by_id: dict[str, dict] = {}  # request ID -> its case entry
+    filings: list[tuple[dict, Event]] = []  # each case request and its filing (or refusal) event
     count_lines: list[str] = []
     reading_lines: list[str] = []
     claim_lines: list[str] = []
@@ -67,6 +86,7 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
                                == e.role_of[r["person"]])
             filed = e.propose(r["person"], file_action.id, e.period_of(min(step, e.total_steps)),
                               **{_param(file_action, "step_list"): r["steps"], _param(file_action, "str"): r["reason"]})
+            filings.append((r, filed))
             if filed.type != "request_filed":
                 continue
             request_id = filed.payload["request_id"]
@@ -158,9 +178,34 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
             lines += _obligation_lines(e, template, focus)
         elif item == "state":
             lines += state_lines or [f"state: nothing hit {focus}"]
+        elif item == "decisions":
+            lines += _decision_lines(e, template, filings)
         else:
             raise ValueError(f"unknown report item {item!r}")
     return lines, e
+
+
+def _decision_lines(e: Engine, template: Template, filings: list[tuple[dict, Event]]) -> list[str]:
+    """Slice M8a: each case request, refused at filing or decided (with the reason), with the event ID."""
+    word, step_word = template.terms.get("request", "request"), template.calendar.step_label
+    lines = []
+    for r, filed in filings:
+        head = f"{r['person']} {word} for {step_word} {', '.join(map(str, r['steps']))}"
+        if filed.type != "request_filed":
+            lines.append(f"{head}: refused ({filed.payload['reason']}: {filed.payload.get('detail', '')})  "
+                         f"[{filed.event_id}]")
+            continue
+        request_id = filed.payload["request_id"]
+        decided = next((ev for ev in e.events if ev.type == "request_decided" and ev.payload["request_id"] == request_id),
+                       None)
+        if decided is None:
+            lines.append(f"{head}: {e.requests[request_id].status}  [{filed.event_id}]")
+            continue
+        why = decided.payload.get("reason")
+        by = " by the engine" if decided.actor == "engine" else ""
+        lines.append(f"{head}: {decided.payload['decision']}{by}" + (f" ({why})" if why else "")
+                     + f"  [{decided.event_id}]")
+    return lines
 
 
 def _default_filing(e: Engine, request: dict[str, Any]) -> int:

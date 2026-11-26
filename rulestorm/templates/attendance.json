@@ -343,7 +343,10 @@
       "timing_param": "request_timing",
       "partial_at_submit_param": "partial_at_submit",
       "partial_at_decide_param": "partial_at_decide",
-      "capacity_param": "office_capacity_per_week"
+      "capacity_param": "office_capacity_per_week",
+      "exceptional_param": "exceptional_causes",
+      "proof_param": "proof_required",
+      "deadline_param": "filing_deadline"
     }
   ],
   "counts": [
@@ -376,7 +379,8 @@
       "label": "transport disruption",
       "kind": "obstacle",
       "duty": "attend_class",
-      "routine": false
+      "routine": false,
+      "leaves_proof": false
     },
     {
       "id": "work_shift_clash",
@@ -384,6 +388,7 @@
       "kind": "conflict",
       "duty": "attend_class",
       "routine": true,
+      "leaves_proof": true,
       "obligation": {"label": "work shift", "lost_label": "job lost", "limit_attribute": "shift_miss_limit",
                      "stakes": "If you attend during your work shift, you miss the shift; once you are past your limit, the next one loses you the job. If you do nothing, you go to your shift."}
     },
@@ -393,6 +398,7 @@
       "kind": "conflict",
       "duty": "attend_class",
       "routine": false,
+      "leaves_proof": true,
       "obligation": {"label": "family care", "lost_label": "care arrangement lost", "limit_attribute": "care_miss_limit",
                      "stakes": "If you attend during a family emergency, you leave your family without care; once you are past your limit, the next time the care arrangement breaks down. If you do nothing, you stay with your family."}
     },
@@ -528,6 +534,41 @@
         "approve_if_filed_before_occurrence": "The attendance office approves a request only for classes it was filed before, and only absences with a valid reason.",
         "approve_all": "The attendance office approves every request it processes."
       }
+    },
+    {
+      "name": "exceptional_causes",
+      "kind": "policy",
+      "type": "choice",
+      "description": "what counts as an exceptional reason: unforeseen_only (a routine cause such as a work shift, or no cause, is not excused), any_documented (a miss any disruption caused may be excused)",
+      "choices": ["unforeseen_only", "any_documented"],
+      "default": "unforeseen_only",
+      "in_fill": false,
+      "sentences": {
+        "unforeseen_only": "only unforeseen causes excuse",
+        "any_documented": "any disruption excuses"
+      }
+    },
+    {
+      "name": "proof_required",
+      "kind": "policy",
+      "type": "bool",
+      "description": "whether a exception request needs proof: with it on, a cause that leaves no proof is rejected for no documentation",
+      "default": false,
+      "in_fill": false,
+      "sentences": {
+        "true": "proof required",
+        "false": "no proof needed"
+      }
+    },
+    {
+      "name": "filing_deadline",
+      "kind": "policy",
+      "type": "int",
+      "min": 0,
+      "max": 4,
+      "description": "how many weeks after a session a exception request may still be filed for it (0: no deadline)",
+      "default": 0,
+      "in_fill": false
     },
     {
       "name": "excused_counting",

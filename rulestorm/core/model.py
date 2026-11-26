@@ -55,6 +55,11 @@ CountExclusion = Literal["approved_request", "cancelled"]
 # count (`remove`) or counts as met (`count_as_met`). A policy choice, named by `Count.excused_param`.
 ExcusedReading = Literal["remove", "count_as_met"]
 EXCUSED_READINGS: tuple[str, ...] = ("remove", "count_as_met")
+# Slice M8a: what counts as exceptional, a policy reading named by `RequestType.exceptional_param`.
+# unforeseen_only: a miss a routine disruption (or nothing) caused is not excused; any_documented:
+# a miss any disruption caused may be; decider_judges (an LLM-decided request type only): the
+# decider weighs it. The engine applies the first two before any decider.
+ExceptionalReading = Literal["unforeseen_only", "any_documented", "decider_judges"]
 ParameterKind = Literal["policy", "environment", "people"]
 ParameterType = Literal["int", "bool", "choice", "text", "attribute", "profiles", "disruptions"]
 PromptSection = Literal["policy", "request_rules", "you"]
@@ -161,6 +166,11 @@ class RequestType(Block):
     partial_at_submit_param: str
     partial_at_decide_param: str
     capacity_param: str
+    # Slice M8a: the policy's readings, each named by a parameter (none: the template's old behaviour).
+    exceptional_param: str | None = Field(None, description="policy choice: what counts as exceptional")
+    proof_param: str | None = Field(None, description="policy bool: a cause that leaves no proof isn't excused")
+    deadline_param: str | None = Field(None, description="policy int: periods after a step a request may still "
+                                                         "be filed for it (0: no deadline)")
 
 
 class Count(Block):
@@ -225,6 +235,9 @@ class DisruptionKind(Block):
     # A rule-decided queue excuses only misses a non-routine disruption caused.
     routine: bool | None = Field(None, description="obstacle/conflict: true if a person could plan around it")
     obligation: Obligation | None = Field(None, description="conflict: the obligation meeting the duty costs")
+    # Slice M8a: does a miss it causes leave proof (a strike notice, a hospital note)? Read when
+    # the policy requires proof.
+    leaves_proof: bool | None = Field(None, description="obstacle/conflict: true if a miss it causes leaves proof")
 
 
 class Trigger(Block):
@@ -507,6 +520,19 @@ def _reference_errors(t: Template) -> list[str]:
         param(owner, rt.capacity_param, {"environment"})
         _choices_within(errors, params, rt.decision_rule_param, DecisionRule)
         _choices_within(errors, params, rt.timing_param, RequestTiming)
+        # Slice M8a: the readings are policy values with a default, of the right type.
+        for name, type_ in ((rt.exceptional_param, "choice"), (rt.proof_param, "bool"), (rt.deadline_param, "int")):
+            param(owner, name, {"policy"})
+            if name in params:
+                if params[name].type != type_:
+                    errors.append(f"{owner}: '{name}' must be a {type_}")
+                if params[name].default is None:
+                    errors.append(f"{owner}: '{name}' is a reading, so it needs a default")
+        _choices_within(errors, params, rt.exceptional_param, ExceptionalReading)
+        if rt.exceptional_param in params and rt.decided_by == "rule"                 and "decider_judges" in (params[rt.exceptional_param].choices or []):
+            errors.append(f"{owner} is decided by rule, so '{rt.exceptional_param}' can't offer decider_judges")
+        if rt.deadline_param in params and (params[rt.deadline_param].min or 0) < 0:
+            errors.append(f"{owner}: '{rt.deadline_param}' can't be below 0")
 
     for count in t.counts:
         owner = f"count '{count.id}'"
@@ -543,6 +569,9 @@ def _reference_errors(t: Template) -> list[str]:
         if d.kind in ("obstacle", "conflict") and d.routine is None:
             errors.append(f"{owner}: {'an' if d.kind == 'obstacle' else 'a'} {d.kind} needs 'routine' "
                           f"(true if a person could plan around it)")
+        if d.kind in ("obstacle", "conflict") and d.leaves_proof is None:
+            errors.append(f"{owner}: {'an' if d.kind == 'obstacle' else 'a'} {d.kind} needs 'leaves_proof' "
+                          f"(true if a miss it causes leaves proof)")
         if d.kind == "capacity" and d.request_type is None:
             errors.append(f"{owner}: a capacity disruption needs 'request_type'")
         if d.obligation is not None:

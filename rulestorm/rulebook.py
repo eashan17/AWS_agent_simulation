@@ -36,6 +36,14 @@ def _short(label: str) -> str:
     return label.split(" (")[0]
 
 
+def _reading(t: Template, values: dict[str, Any], name: str | None, fallback: Any) -> Any:
+    """A reading's value (slice M8a): the blueprint's, else its parameter's default."""
+    if name is None:
+        return fallback
+    param = next((p for p in t.parameters if p.name == name), None)
+    return values.get(name, param.default if param is not None and param.default is not None else fallback)
+
+
 def _stakes(t: Template, values: dict[str, Any], person: str | None, clashes) -> list[str]:
     """One line per clash with an obligation, in the template's fixed order (meet the duty: miss the
     obligation; past the limit: lose it; do nothing: go to it). The person's limit and how many they
@@ -148,16 +156,36 @@ def rule_lines(template: Template, values: dict[str, Any], person: str | None = 
         handler = roles[rt.handled_by].label.lower()
         kinds = [k for k in t.disruptions if k.duty == rt.covers and k.kind in ("obstacle", "conflict")]
         exceptional, routine = [k for k in kinds if not k.routine], [k for k in kinds if k.routine]
+        reading = _reading(t, values, rt.exceptional_param, "unforeseen_only")
+        if reading == "any_documented":  # slice M8a: a routine cause may be excused too
+            exceptional, routine = kinds, []
+        no_proof = [k for k in kinds if not k.leaves_proof] if _reading(t, values, rt.proof_param, False) else []
+        exceptional = [k for k in exceptional if k not in no_proof]
         if rt.endorsed_by:
             lines.append(f"- {_a(request).capitalize()} needs the {roles[rt.endorsed_by].label.lower()}'s consent "
                          f"before it reaches the {handler}; a refusal ends it.")
         rule = values.get(rt.decision_rule_param) if rt.decision_rule_param else None
         if rt.decided_by == "rule" and rule in ("approve_if_covered_missed", "approve_if_filed_before_occurrence"):
             excused = f"caused by {_labels(exceptional)}" if exceptional else "caused by a disruption"
+            if no_proof and not exceptional:
+                excused = "with proof"
             refused = "by choice when nothing stopped you" + (f", or for {_labels(routine, article=True)}," if routine else "")
             lines.append(f"- The {handler} excuses only {missed} {excused}; one {refused} is rejected.")
         elif rt.decided_by == "llm":
             lines.append(f"- The {handler} decides each {request} seeing what caused each {missed_one} it covers.")
+            if reading != "decider_judges":
+                barred = (f"for {_labels(routine, article=True)}, or when nothing stopped you," if routine
+                          else "when nothing stopped you")
+                lines.append(f"- {_a(request).capitalize()} {barred} is rejected at once, before the {handler} "
+                             f"sees it.")
+        if no_proof:
+            lines.append(f"- Proof is required: {_labels(no_proof)} {'leaves' if len(no_proof) == 1 else 'leave'} "
+                         f"no proof, so {_a(request)} for one is rejected for no documentation.")
+        deadline = int(_reading(t, values, rt.deadline_param, 0) or 0)
+        if deadline:
+            unit = period if deadline == 1 else f"{period}s"
+            lines.append(f"- {_a(request).capitalize()} must be filed within {deadline} {unit} of the {step} it "
+                         f"covers; a later one is refused.")
         capacity = values.get(rt.capacity_param)
         if capacity is None:
             continue

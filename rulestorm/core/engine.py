@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from rulestorm.core.model import REQUEST_OUTCOMES, Action, Count, Duty, Template
+from rulestorm.core.model import REQUEST_OUTCOMES, Action, Count, DisruptionKind, Duty, RequestType, Template
 
 Outcome = Literal["met", "missed"]
 NO_PLAN = "meet"  # a person with no plan is treated as planning to meet the duty
@@ -228,6 +228,11 @@ class Engine:
     def __init__(self, template: Template, values: dict[str, Any]) -> None:
         self.t = template
         self.values = dict(values)
+        # A value the blueprint doesn't hold reads as its default (slice M8a readings, M1 counting).
+        for p in template.parameters:
+            if p.name not in self.values and p.default is not None and p.type != "attribute":
+                self.values[p.name] = p.default
+        self._check_ladders()
         self.role_of = {p.id: p.role for p in template.people}
         self.roles = {r.id: r for r in template.roles}
         self.actions = {a.id: a for a in template.actions}
@@ -272,6 +277,20 @@ class Engine:
         # Request types decided by an LLM person: the slot open now (only while it is open can
         # its offered requests be decided).
         self.open_slots: dict[str, dict[str, Any]] = {}
+
+    def _check_ladders(self) -> None:
+        """A ladder's thresholds must be in order (slice M8a): each step is reached after the one
+        before it, so a tally's thresholds rise and a rate's fall."""
+        for check in self.t.checks:
+            names = [s.threshold_param for s in check.ladder or []]
+            values = [self.values.get(n) for n in names]
+            if len(names) < 2 or any(v is None for v in values):
+                continue
+            rising = check.comparison in ("<", "<=")
+            if any((b <= a) if rising else (b >= a) for a, b in zip(values, values[1:])):
+                shown = ", ".join(f"{n} {v}" for n, v in zip(names, values))
+                raise ValueError(f"the {check.label} steps are out of order ({shown}): each must be "
+                                 f"{'higher' if rising else 'lower'} than the one before")
 
     def _disruptions(self) -> list[DisruptionValue]:
         names = [p.name for p in self.t.parameters if p.type == "disruptions"]
@@ -451,7 +470,7 @@ class Engine:
             if effect.kind == "plan_miss" and steps:
                 self._check_claim(actor, action, params, steps[0])
             if effect.kind == "file_request":
-                steps, dropped = self._request_steps(actor, action, effect.request_type, duty, steps)
+                steps, dropped = self._request_steps(actor, action, effect.request_type, duty, steps, period)
             elif duty is not None:
                 for precondition in action.preconditions:
                     for step in steps:
@@ -486,24 +505,99 @@ class Engine:
         return events[0]
 
     def _request_steps(self, actor: str, action: Action, request_type: str, duty: Duty,
-                       steps: list[int]) -> tuple[list[int], list[dict[str, Any]]]:
-        """Checks each covered step against the action's preconditions and the policy's request
-        timing. With partial_at_submit the failing steps are dropped and the rest kept;
-        without it, one failing step refuses the whole request."""
+                       steps: list[int], period: int) -> tuple[list[int], list[dict[str, Any]]]:
+        """Checks each covered step against the action's preconditions, the policy's request
+        timing and its filing deadline (slice M8a). With partial_at_submit the failing steps are
+        dropped and the rest kept; without it, one failing step refuses the whole request."""
         rt = self.request_types[request_type]
         timing = self.value(rt.timing_param)
         needed = [*action.preconditions, "occurrence_recorded" if timing == "after_missed" else "occurrence_not_yet"]
+        deadline = int(self.reading(rt.deadline_param, 0) or 0)
         kept, dropped = [], []
         for step in steps:
             try:
                 for precondition in needed:
                     self._precondition(precondition, actor, actor, duty, step, request_type)
+                if deadline and period - self.period_of(step) > deadline:
+                    raise Refused("precondition: within_deadline", self._late_text(rt, step, period, deadline))
                 kept.append(step)
             except Refused as exc:
                 dropped.append({"step": step, "reason": exc.reason, "detail": exc.detail})
         if dropped and (not kept or not self.value(rt.partial_at_submit_param)):
             raise Refused(dropped[0]["reason"], "; ".join(d["detail"] for d in dropped))
         return kept, dropped
+
+    def _late_text(self, rt: RequestType, step: int, period: int, deadline: int) -> str:
+        cal = self.t.calendar
+        late = period - self.period_of(step)
+        unit = cal.period_label if deadline == 1 else f"{cal.period_label}s"
+        return (f"{self.step_label} {step} was in {cal.period_label} {self.period_of(step)}, {late} "
+                f"{cal.period_label}{'' if late == 1 else 's'} ago; {rt.label}s must be filed within {deadline} "
+                f"{unit} of the {self.step_label} they cover")
+
+    # --- the policy's readings (slice M8a) ---------------------------------------------------
+
+    def reading(self, name: str | None, fallback: Any) -> Any:
+        """A reading's value: the blueprint's, else its default, else (no parameter) `fallback`."""
+        return self.values.get(name, fallback) if name else fallback
+
+    def request_type_for(self, duty_id: str) -> RequestType | None:
+        return next((rt for rt in self.t.request_types if rt.covers == duty_id), None)
+
+    def _bar(self, rt: RequestType | None, kind: DisruptionKind | None, for_decider: bool,
+             caused: bool = True) -> str | None:
+        """Why the readings refuse to excuse a miss with this cause, or None. `caused` False: no
+        disruption caused it (a cause of no known kind reads as outside their control, with no
+        proof). `for_decider` False is the engine's own record of a valid reason, where
+        decider_judges reads as unforeseen_only."""
+        reading = self.reading(rt.exceptional_param, "unforeseen_only") if rt else "unforeseen_only"
+        proof = bool(self.reading(rt.proof_param, False)) if rt else False
+        if reading != "decider_judges" or not for_decider:
+            if not caused:
+                return "not exceptional: no disruption stopped them"
+            if reading != "any_documented" and kind is not None and kind.routine:
+                return f"not exceptional: {kind.label} is routine and could be planned around"
+        if proof and (kind is None or not kind.leaves_proof):
+            what = "nothing to document" if not caused else f"{kind.label if kind else 'the cause'} leaves no proof"
+            return f"no documentation: {what}"
+        return None
+
+    def scheduled_kinds(self, duty_id: str, person: str, step: int) -> list[DisruptionKind]:
+        """The obstacle and conflict kinds the blueprint places on this person at this step."""
+        period = self.period_of(step)
+        position = (step - 1) % self.t.calendar.steps_per_period + 1
+        out = []
+        for d in self.disruptions:
+            kind = self.disruption_kinds[d.kind]
+            if (kind.kind in ("obstacle", "conflict") and kind.duty == duty_id and d.period == period
+                    and position in d.steps and person in d.people and (person, d.kind) not in self.obligation_lost):
+                out.append(kind)
+        return out
+
+    def reading_bar(self, request_type: str, person: str, step: int) -> str | None:
+        """Slice M8a: why the policy's readings bar excusing this step for a request, or None. A
+        recorded miss is judged by its cause; a step not yet recorded by what the blueprint places
+        on the person then (none: not exceptional)."""
+        rt = self.request_types[request_type]
+        key = (rt.covers, person, step)
+        if step in self.cancelled[rt.covers] or self.records.get(key) == "met":
+            return None
+        if key in self.records:
+            cause, _ = self.record_cause.get(key, (None, False))
+            if cause is None:
+                return self._bar(rt, None, for_decider=True, caused=False)
+            return self._bar(rt, self.disruption_kinds.get(self.event(cause).payload.get("disruption", "")),
+                             for_decider=True)
+        kinds = self.scheduled_kinds(rt.covers, person, step)
+        if not kinds:
+            return self._bar(rt, None, for_decider=True, caused=False)
+        bars = [self._bar(rt, k, for_decider=True) for k in kinds]
+        return None if None in bars else bars[0]
+
+    def _barred(self, request: Request, steps: list[int]) -> str:
+        """The barred steps of a request in plain words (empty: none)."""
+        bars = [(s, b) for s in steps if (b := self.reading_bar(request.request_type, request.person, s))]
+        return "; ".join(f"{self.step_label} {s}: {b}" for s, b in bars)
 
     def _duty_of(self, effect) -> Duty | None:
         if effect.duty:
@@ -668,6 +762,10 @@ class Engine:
             raise Refused("capacity", f"only {slot['capacity']} {word}s can be decided this {when}, first come "
                                       f"first served; {request.request_id} is not among them")
         outcome = self._param_of_type(action, params, "outcome")
+        if outcome == "approved":
+            barred = self._barred(request, listed or request.steps)
+            if barred:
+                raise Refused("precondition: policy_reading", f"this policy doesn't excuse {barred}")
         if listed and outcome == "approved":
             if not set(listed) <= set(request.steps):
                 raise Refused("bad parameters: steps",
@@ -716,7 +814,8 @@ class Engine:
             elif good and partial:
                 decided = self.decide_request(request.request_id, "approved", actor, period, rule, causes, good)
             else:
-                decided = self.decide_request(request.request_id, "rejected", actor, period, rule, causes)
+                decided = self.decide_request(request.request_id, "rejected", actor, period, rule, causes,
+                                              reason=self._barred(request, request.steps))
             decisions.append(decided.event_id)
         event = self.emit("queue_processed", actor, period, step,
                           payload={"request_type": request_type, "capacity": capacity,
@@ -756,6 +855,13 @@ class Engine:
         rt = self.request_types[request_type]
         if rt.decided_by != "llm":
             raise ValueError(f"queue '{request_type}' is decided by rule: use process_queue")
+        # Slice M8a: a request the policy's readings bar on every step is rejected here, by the
+        # engine, so the decider is offered only requests the policy allows.
+        for r in list(self.requests.values()):
+            if r.request_type == request_type and r.status == "pending" and r.endorsement in (None, "given"):
+                if all(self.reading_bar(request_type, r.person, s) for s in r.steps):
+                    self.decide_request(r.request_id, "rejected", "engine", period, "policy_reading",
+                                        reason=self._barred(r, r.steps))
         capacity, causes, offered, held = self._queue_slot(request_type, period, step)
         event = self.emit("decision_awaiting", self.person_with_role(rt.handled_by), period, step,
                           payload={"request_type": request_type, "capacity": capacity,
@@ -796,9 +902,10 @@ class Engine:
     def _qualifies(self, rule: str, request: Request, step: int) -> bool:
         duty = self.request_types[request.request_type].covers
         key = (duty, request.person, step)
-        # A valid exception: a recorded miss that a non-routine disruption caused. Skipping when
-        # nothing stopped you, or for something you could plan around, is not excused.
-        valid = self.records.get(key) == "missed" and self.record_cause.get(key, (None, False))[1]
+        # A valid exception: a recorded miss whose cause the policy's readings excuse (by default
+        # a non-routine disruption). Skipping when nothing stopped you is never excused.
+        valid = (self.records.get(key) == "missed"
+                 and self.reading_bar(request.request_type, request.person, step) is None)
         if rule == "approve_if_covered_missed":
             return valid
         if rule == "approve_if_filed_before_occurrence":
@@ -1054,7 +1161,7 @@ class Engine:
                 if outcome == "missed" and stopping is not None:
                     cause = stopping.event_id
                     kind = self.disruption_kinds.get(stopping.kind)
-                    excusable = not (kind is not None and kind.routine)
+                    excusable = self._bar(self.request_type_for(duty.id), kind, for_decider=False) is None
                     if cause not in causes:
                         causes = [cause, *causes]
                 if outcome == "missed":
@@ -1121,19 +1228,22 @@ class Engine:
         met, missed = self.t.terms.get("duty_met", "met"), self.t.terms.get("duty_missed", "missed")
         if step in self.cancelled[duty_id]:
             return "cancelled"
+        rt = self.request_type_for(duty_id)
+        bar = self.reading_bar(rt.id, person, step) if rt else None
+        policy = f"; this policy doesn't excuse it ({bar})" if bar else ""
         if key not in self.records:
-            return "not yet happened"
+            return "not yet happened" + policy
         if self.records[key] == "met":
             return f"recorded {met}"
         cause, _ = self.record_cause.get(key, (None, False))
         if cause is None:
-            return f"recorded {missed}; no disruption stopped them (their own choice)"
+            return f"recorded {missed}; no disruption stopped them (their own choice)" + policy
         e = self.event(cause)
         kind = self.disruption_kinds.get(e.payload.get("disruption", ""))
         routine = kind is not None and kind.routine
         what = e.payload.get("description") or (kind.label if kind else "a disruption")
         return (f"recorded {missed}; caused by {what} ({cause}, "
-                f"{'routine, could be planned around' if routine else 'outside their control'})")
+                f"{'routine, could be planned around' if routine else 'outside their control'})" + policy)
 
     # --- counts -----------------------------------------------------------------------------
 

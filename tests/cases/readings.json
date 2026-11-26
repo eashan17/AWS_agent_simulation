@@ -1,0 +1,33 @@
+{
+  "description": "Test-only case (slice M8a). The policy's own readings, each played as a variant of the same term. Session 1: a transport delay (60 min, over the commuter's 30) makes the commuter absent; a transport disruption leaves no proof. Session 3: the working student's shift clashes and, with no plan, they go to the shift (a routine cause, which leaves proof: the roster). Session 4: a family emergency keeps the family student away (not routine, leaves proof). Each variant files the requests that reading decides.",
+  "template": "attendance",
+  "focus_person": "working",
+  "count": "attendance_pct",
+  "values": {
+    "threshold_pct": 80,
+    "request_timing": "after_missed",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "decision_rule": "approve_if_covered_missed",
+    "office_capacity_per_week": 4,
+    "checkpoint_week": 10,
+    "slack_min": {"commuter": 30, "resident": 10, "working": 15, "family": 20},
+    "disruptions": [
+      {"kind": "transport", "period": 1, "steps": [1], "people": ["commuter"], "delay": 60, "description": "bus strike"},
+      {"kind": "work_shift_clash", "period": 2, "steps": [1], "people": ["working"], "description": "extra shift"},
+      {"kind": "family_emergency", "period": 2, "steps": [2], "people": ["family"], "description": "parent in hospital"}
+    ]
+  },
+  "report": ["decisions"],
+  "variants": [
+    {"label": "exceptional_causes unforeseen_only (default)",
+     "requests": [{"person": "working", "steps": [3], "reason": "my shift"}]},
+    {"label": "exceptional_causes any_documented", "values": {"exceptional_causes": "any_documented"},
+     "requests": [{"person": "working", "steps": [3], "reason": "my shift"}]},
+    {"label": "proof_required on", "values": {"proof_required": true},
+     "requests": [{"person": "commuter", "steps": [1], "reason": "bus strike"},
+                  {"person": "family", "steps": [4], "reason": "parent in hospital"}]},
+    {"label": "filing_deadline 1 week", "values": {"filing_deadline": 1},
+     "requests": [{"person": "commuter", "steps": [1], "reason": "bus strike", "filed_at": 5}]}
+  ]
+}

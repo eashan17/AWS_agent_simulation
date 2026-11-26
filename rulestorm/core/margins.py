@@ -91,6 +91,9 @@ class CountState(BaseModel):
     excused: int = Field(description="missed occurrences an approved request covers")
     pending: int = Field(description="missed occurrences a pending request covers (they count as missed)")
     checks: list[CheckMargin]
+    # Slice M8a: with a filing deadline, each uncovered miss still open to a request -> the last
+    # step a request for it can be filed in.
+    can_file: dict[int, int] = Field(default_factory=dict)
 
 
 class ObligationState(BaseModel):
@@ -120,6 +123,10 @@ class PersonState(BaseModel):
                         else [f"{c.label} {c.text} counted", f"{c.missed} in all{covered}"])
             else:
                 bits = [f"{c.label} {c.text}", f"{missed_word} {c.missed}{covered}"]
+            if c.can_file:
+                step_word = template.calendar.step_label
+                bits.append(f"can still file for " + ", ".join(f"{step_word} {s} (until {step_word} {last})"
+                                                              for s, last in sorted(c.can_file.items())))
             for m in c.checks:
                 if m.done:
                     bits.append(f"{m.label}: {m.done}")
@@ -171,8 +178,25 @@ def person_state(engine: "Engine", person: str, step: int) -> PersonState:
                                           check.comparison, e.value(ladder_step.threshold_param), e.total_steps,
                                           cancelled, step, done))
         counts.append(CountState(count=c.id, label=c.label, text=now.text(), missed=len(missed_steps),
-                                 excused=len(excused), pending=len(pending), checks=checks))
+                                 excused=len(excused), pending=len(pending), checks=checks,
+                                 can_file=_can_file(e, c.duty, missed_steps - excused - pending, step)))
     return PersonState(person=person, step=step, counts=counts, obligations=_obligations(e, person))
+
+
+def _can_file(e: "Engine", duty_id: str, uncovered: set[int], step: int) -> dict[int, int]:
+    """Slice M8a: with a filing deadline, the uncovered misses a request can still be filed for,
+    each with the last step to file it (the end of the period the deadline runs to)."""
+    rt = e.request_type_for(duty_id)
+    deadline = int(e.reading(rt.deadline_param, 0) or 0) if rt else 0
+    if not deadline:
+        return {}
+    spp = e.t.calendar.steps_per_period
+    out = {}
+    for s in sorted(uncovered):
+        last = min((e.period_of(s) + deadline) * spp, e.total_steps)
+        if last >= step:
+            out[s] = last
+    return out
 
 
 def _margin(e: "Engine", count, now, check_id: str, label: str, outcome: str, comparison: str, threshold: float,

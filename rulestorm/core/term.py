@@ -519,11 +519,18 @@ def dry_run_values(template: Template) -> dict[str, Any]:
     """Values made only from the parameter specs, for the dry run: never used in a real run."""
     llm_people = [p.id for p in template.people if next(r for r in template.roles if r.id == p.role).llm]
     values: dict[str, Any] = {}
-    # Ladder thresholds at their minimum, so the dry run reaches (and exercises) every step.
-    ladder = {s.threshold_param for c in template.checks for s in c.ladder or []}
+    # Ladder thresholds as low as they can be and still in order (slice M8a), so the dry run
+    # reaches (and exercises) every step.
+    ladder = {s.threshold_param: (i, c.comparison in ("<", "<="))
+              for c in template.checks for i, s in enumerate(c.ladder or [])}
     for p in template.parameters:
-        if p.type == "int":
-            values[p.name] = p.min if p.name in ladder else (p.min + p.max) // 2
+        if not p.in_fill and p.default is not None:  # a reading (slice M8a): its default
+            values[p.name] = p.default
+        elif p.type == "int" and p.name in ladder:
+            i, rising = ladder[p.name]
+            values[p.name] = min(p.min + i, p.max) if rising else max(p.max - i, p.min)
+        elif p.type == "int":
+            values[p.name] = (p.min + p.max) // 2
         elif p.type == "bool":
             values[p.name] = False
         elif p.type == "choice":
