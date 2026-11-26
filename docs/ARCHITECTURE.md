@@ -255,13 +255,16 @@ Each item is a general block used by both templates. Template words stay in the 
 - Not used for agent decisions (each action's `params` is an open object, which a strict schema forbids) or for the comparison (its schema changes with each blueprint, so each call would compile anew).
 
 **The template's readings, shown and changeable (M8).**
-- **What counts as exceptional:** a policy choice of `unforeseen_only` (default: routine causes are rejected, as today) or `any_documented`.
+- **What counts as exceptional:** a policy choice of `unforeseen_only` (routine causes are rejected), `any_documented`, or `decider_judges` (only on an LLM-decided request type: the decider weighs it, as today). Default: `unforeseen_only` on a rule-decided type (attendance, as today) and `decider_judges` on an LLM-decided one (curfew's warden, as today; checked 27 Nov: curfew's request type is `decided_by: llm`, and its wardens approved routine job-shift late entries).
+  - The engine applies `unforeseen_only`, `any_documented`, proof and the deadline before any decider, so an LLM decider is offered only requests the policy allows; a rejection names the reading.
+  - For a step not yet recorded (a request filed in advance), the cause is the disruption hitting that person at that step; none means not exceptional.
+- **The people are told (M7b, M7c):** the rules block states each reading in force (what counts, proof, the deadline). With a deadline set, the person's state lists, per duty, the misses they can still file for and the last step to file; the rules carry no per-person numbers.
 - **Proof:** each disruption kind states `leaves_proof` (a template reading, shown). A request type may name a `proof_param` (policy bool, default false): with it on, a cause that leaves no proof isn't excused. `cause_text` says "no documentation".
 - **Filing deadline:** a request type may name a `deadline_param` (policy int, 0 = none), with a new precondition `within_deadline`.
 - `GET /api/templates/{id}` adds `readings`: the count reading, routine, leaves_proof and obligation per kind, the decision-rule sentences, and which of them are parameters.
 - What-ifs may change one policy value (int, bool or choice, with `stated_only` respected) as well as one environment value. `matched` accepts either. Policy versions may change the new policy values.
 - A values check keeps ladder thresholds in order.
-- **The new readings stay out of the blueprint fill.** They take `Parameter.default`, are shown as template readings and are editable on the review screen, so the fill (25–30 s of a 55 s budget) grows only by recurrence ranges and obligation limits. M7b measures 5 fills per example, which must stay under 40 s.
+- **The new readings stay out of the blueprint fill.** They are `in_fill: false` (M7b's flag, as `excused_counting`), so M7d's fill schema, its label list and the 5 warmed schemas don't change. They take `Parameter.default`, are shown as template readings and are editable on the review screen, so the fill (25–30 s of a 55 s budget) grows only by recurrence ranges and obligation limits. M7b measures 5 fills per example, which must stay under 40 s.
 
 **Integrity of the AI people (M4, M5).**
 - **Claimed cause:** a new action-parameter type `cause`, optional, only on actions that plan a miss (attendance `skip`, curfew `stay_out_late`).
