@@ -65,6 +65,8 @@ def main(argv: list[str] | None = None) -> None:
     export_cmd.add_argument("run_id", help="a finished run in the store")
     export_cmd.add_argument("--out", required=True, help="the file to write, e.g. rulestorm/fixtures/demo_run.json")
     export_cmd.add_argument("--hero", help="the finding shown as the hero (default: the run's first finding)")
+    ledger_cmd = run_commands.add_parser("ledger", help="who carried the rule in a stored run (slice M3, no Bedrock)")
+    ledger_cmd.add_argument("run_id", help="a run in the store")
     reset_cmd = commands.add_parser("reset-demo", help="restore the seeded demo run as run `demo` (no Bedrock)")
     reset_cmd.add_argument("--fixture", help="the demo file (default: rulestorm/fixtures/demo_run.json)")
 
@@ -139,6 +141,16 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "run" and args.run_command == "local":
         run_local_command(args.blueprint)
+    elif args.command == "run" and args.run_command == "ledger":
+        from rulestorm.ledger import lines as ledger_lines, run_ledger
+
+        try:
+            template, book = run_ledger(Store(), args.run_id)
+        except (LookupError, ValueError) as exc:
+            raise SystemExit(str(exc))
+        print(f"ledger {args.run_id} ({book.template})")
+        for line in ledger_lines(template, book):
+            print(line)
     elif args.command == "run" and args.run_command == "export":
         from rulestorm.fixture import FixtureError, export_run, write_fixture
 

@@ -422,6 +422,29 @@ def get_findings(run_id: str, store: Store = Depends(get_store)) -> dict:
     return {"run_id": run_id, "status": run["status"], "findings": findings_of(store, run)}
 
 
+@app.get("/api/runs/{run_id}/ledger")
+def get_ledger(run_id: str, store: Store = Depends(get_store)) -> dict:
+    """Who carried the rule in a finished run (slice M3): per person the margin to every check,
+    absences by kind, requests, obligations and AI mistakes, plus the findings with `harm`.
+    Rules over the run's records, no model call."""
+    from rulestorm.ledger import run_ledger
+    from rulestorm.policy import TemplateVersionUnreadable
+    from rulestorm.runner import FINISHED
+
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run["status"] not in FINISHED:
+        raise HTTPException(status_code=409, detail=f"run {run_id} is {run['status']}; the ledger needs a finished run")
+    try:
+        _, book = run_ledger(store, run_id)
+    except TemplateVersionUnreadable as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return book.model_dump()
+
+
 @app.get("/api/findings/{finding_id}/evidence")
 def get_evidence(finding_id: str, store: Store = Depends(get_store)) -> dict:
     """The finding's chain as ordered steps (slice 9): each event's state change, a sentence in the

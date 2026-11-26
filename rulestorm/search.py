@@ -32,12 +32,11 @@ from pydantic import BaseModel, ValidationError
 from rulestorm import config, llm
 from rulestorm.blueprint import Label, TemplateBlueprint, values_model
 from rulestorm.comparison import ComparisonActive, _run_one
-from rulestorm.core.engine import count_records, count_value, excused_reading
 from rulestorm.detect import with_harm
+from rulestorm.ledger import margins
 from rulestorm.core.model import Template, load_template
 from rulestorm.counterfactual import LABEL, NOTE
 from rulestorm.explore import (
-    _first_failing,
     apply_variant,
     environment,
     variants_prompt,
@@ -78,67 +77,18 @@ class SearchActive(RuntimeError):
 # --- closeness: how near a run came to breaking, from its own records --------------------------
 
 
-def _counted(template: Template, events: list[dict], duty: str, exclude_approved: bool,
-             last_step: int | None, reading: str = "remove") -> dict[str, tuple[int, int]]:
-    """Each person's (met, missed) for one duty from the final records (corrections applied), up
-    to `last_step`, counted by the engine's `count_records`: occurrences an approved request
-    excuses are read as the policy says (left out, or counted as met)."""
-    records: dict[tuple[str, int], str] = {}
-    for e in events:
-        for key, change in (e.get("state_change") or {}).items():
-            parts = key.split(".")
-            if len(parts) == 4 and parts[0] == "record" and parts[1] == duty:
-                records[(parts[2], int(parts[3]))] = change["to"]
-    filer = {e["payload"]["request_id"]: e["payload"].get("person") or e["actor"]
-             for e in events if e["type"] == "request_filed"}
-    excused = {(filer.get(e["payload"]["request_id"]), s) for e in events if e["type"] == "request_decided"
-               for s in e["payload"].get("approved_steps", [])} if exclude_approved else set()
-    by_person: dict[str, dict[int, str]] = {}
-    for (person, step), outcome in records.items():
-        if last_step is not None and step > last_step:
-            continue
-        by_person.setdefault(person, {})[step] = outcome
-    out = {}
-    for person, own in by_person.items():
-        f = count_records("tally", own, set(), {s for p, s in excused if p == person}, reading)
-        out[person] = (f.met, f.missed)
-    return out
-
-
 def closeness(template: Template, values: dict[str, Any], events: list[dict]) -> dict:
     """The smallest number of misses anyone had to spare before a check fails them (0 or less:
-    failed or reached), requests pending at a check, and the queue's peak against its capacity."""
-    t = template
-    counts = {c.id: c for c in t.counts}
-    missed_word = t.terms.get("missed_plural", "misses")
+    failed or reached), requests pending at a check, and the queue's peak against its capacity.
+    A thin wrapper over the ledger's margins (slice M3): a single check, and a ladder's first step."""
+    missed_word = template.terms.get("missed_plural", "misses")
     checks = []
-    for check in t.checks:
-        count = counts[check.count]
-        exclude = "approved_request" in count.exclude
-        reading = excused_reading(t, count, values)
-        if check.ladder is None:
-            period = values[check.at_param]
-            threshold = values[check.threshold_param]
-            outcome = t.terms.get("check_failed", "failed")
-            recorded = {e["payload"]["person"]: (e["payload"]["count"]["met"], e["payload"]["count"]["missed"])
-                        for e in events if e["type"] == "check_evaluated" and e["payload"]["check"] == check.id}
-            tallies = recorded or _counted(t, events, count.duty, exclude, period * t.calendar.steps_per_period,
-                                           reading)
-            where = f"{t.calendar.period_label} {period}"
-        else:
-            threshold = values[check.ladder[0].threshold_param]
-            outcome = check.ladder[0].outcome
-            tallies = _counted(t, events, count.duty, exclude, None, reading)
-            where = "the term"
-        for person, (met, missed) in tallies.items():
-            fails_at = _first_failing(count.kind, check.comparison, threshold, met + missed)
-            if fails_at is None:
-                continue
-            spare = fails_at - missed
-            checks.append({"check": check.id, "person": person, "spare": spare,
-                           "value": count_value(count.kind, met, missed),
-                           "text": (f"{person}: {spare} {missed_word} to spare before '{outcome}' ({where})"
-                                    if spare > 0 else f"{person} reached '{outcome}' ({where})")})
+    for m in margins(template, values, events):
+        if m.ladder_step not in (None, 1) or m.spare is None:
+            continue
+        checks.append({"check": m.check, "person": m.person, "spare": m.spare, "value": m.value,
+                       "text": (f"{m.person}: {m.spare} {missed_word} to spare before '{m.outcome}' ({m.where})"
+                                if m.spare > 0 else f"{m.person} reached '{m.outcome}' ({m.where})")})
     checks.sort(key=lambda c: c["spare"])
     pending = sum(len(e["payload"].get("pending_requests", [])) for e in events if e["type"] == "check_evaluated")
     queues = [e["payload"] for e in events if e["type"] == "queue_processed"]

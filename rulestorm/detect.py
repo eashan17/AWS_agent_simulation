@@ -19,8 +19,9 @@ Slice M2 adds a third kind and marks which findings are harm:
 - `harm` is true for `check_failed` and `pending_at_check`; it is worked out from the kind, so a
   finding stored before M2 gets it when read (`with_harm`).
 A single check's margin is read from its own `check_evaluated` event. A ladder's last step is
-usually never reached, so its margin is counted from the records at the end of the term, which
-needs the blueprint's values (the last step's threshold): without them, ladders give no near miss.
+usually never reached, so its margin comes from the ledger (slice M3), counted from the records at
+the end of the term; that needs the blueprint's values (the last step's threshold), so without
+them ladders give no near miss.
 
 Detection reads only the engine's general event types; titles come from the template's terms
 (`finding_check_failed`, `finding_pending_at_check`, `finding_near_threshold`), never from code.
@@ -30,8 +31,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from rulestorm.core.engine import count_records, excused_reading
 from rulestorm.core.model import Template
+from rulestorm.ledger import margins
 from rulestorm.rulebook import _first_failing
 
 Kind = Literal["check_failed", "pending_at_check", "near_threshold"]
@@ -143,17 +144,15 @@ def _near_misses(events: list[dict[str, Any]], template: Template,
             continue
         if values is None or check.ladder[-1].threshold_param not in values:
             continue
-        threshold = values[check.ladder[-1].threshold_param]
         last: dict[str, dict[str, Any]] = {}  # person -> their last event of this ladder (the anchor)
         for e in mine:
             last[e["payload"]["person"]] = e
+        final = {m.person: m for m in margins(template, values, events)
+                 if m.check == check.id and m.ladder_step == len(check.ladder)}
         for person, e in last.items():
-            if e["payload"].get("ladder_step") == len(check.ladder) and not e["payload"]["passed"]:
-                continue  # reached the last step: that is check_failed
-            met, missed = _term_tally(events, template, count, person, values)
-            spare = _spare(count.kind, check.comparison, threshold, met, missed)
-            if spare is not None and 0 < spare <= NEAR_SPARE:
-                out.append((e, spare))
+            m = final.get(person)
+            if m is not None and m.spare is not None and 0 < m.spare <= NEAR_SPARE:
+                out.append((e, m.spare))
     return sorted(out, key=lambda x: x[0]["seq"])
 
 
@@ -161,28 +160,6 @@ def _spare(kind: str, comparison: str, threshold: float, met: int, missed: int) 
     """Misses to spare before failing (0 or less: failed), with the same number counted."""
     fails_at = _first_failing(kind, comparison, threshold, met + missed)
     return None if fails_at is None else fails_at - missed
-
-
-def _term_tally(events: list[dict[str, Any]], template: Template, count, person: str,
-                values: dict[str, Any]) -> tuple[int, int]:
-    """A person's (met, missed) for a count from the final records, counted as the engine counts."""
-    records: dict[int, str] = {}
-    cancelled: set[int] = set()
-    for e in events:
-        if e["type"] == "occurrence_cancelled" and e["payload"].get("duty") == count.duty:
-            cancelled.add(e["step"])
-        for key, change in (e.get("state_change") or {}).items():
-            parts = key.split(".")
-            if len(parts) == 4 and parts[0] == "record" and parts[1] == count.duty and parts[2] == person:
-                records[int(parts[3])] = change["to"]
-    mine = {e["payload"]["request_id"] for e in events
-            if e["type"] == "request_filed" and e["payload"].get("person") == person}
-    excused = ({s for e in events if e["type"] == "request_decided" and e["payload"]["request_id"] in mine
-                for s in e["payload"].get("approved_steps") or []}
-               if "approved_request" in count.exclude else set())
-    f = count_records(count.kind, records, cancelled if "cancelled" in count.exclude else set(), excused,
-                      excused_reading(template, count, values))
-    return f.met, f.missed
 
 
 def own_chain(by_id: dict[str, dict[str, Any]], start: str, person: str, subjects: set[str],
