@@ -1,0 +1,24 @@
+{
+  "description": "Test-only case (slice M4). A transport disruption hits the family student at session 9, not the commuter. The commuter plans to skip session 9 claiming transport: the engine refuses the claim (nothing affects them this session), and asked again, they attend. Then at session 10 the family student, delayed again (90 min over a 20 min buffer), skips citing transport, which is accepted.",
+  "template": "attendance",
+  "focus_person": "commuter",
+  "count": "attendance_pct",
+  "claims": [
+    {"person": "commuter", "step": 9, "cause": "transport", "then": "attend"},
+    {"person": "family", "step": 10, "cause": "transport"}
+  ],
+  "values": {
+    "threshold_pct": 80,
+    "request_timing": "after_missed",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "decision_rule": "approve_if_covered_missed",
+    "office_capacity_per_week": 2,
+    "checkpoint_week": 10,
+    "slack_min": {"commuter": 60, "resident": 10, "working": 30, "family": 20},
+    "disruptions": [
+      {"kind": "transport", "period": 5, "steps": [1, 2], "people": ["family"], "delay": 90, "description": "train line disruption"}
+    ]
+  },
+  "report": ["claims"]
+}

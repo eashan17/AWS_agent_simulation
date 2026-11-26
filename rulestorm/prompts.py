@@ -67,6 +67,8 @@ def render_prompt(template: Template, values: dict[str, Any], c: DecisionContext
           + (f" changed {json.dumps(t.state_change, ensure_ascii=False)}" if t.state_change else "")
           for t in c.triggers),
     ]
+    if c.situation:  # slice M4: after the trigger list, so the frozen lines above stay as they are
+        lines += ["", f"Your situation now ({cal.step_label} {c.step}):", *(f"- {x}" for x in c.situation)]
     request_word = terms.get("request", "request")
     if c.counts:
         for count_id, result in c.counts.items():
@@ -164,5 +166,6 @@ def action_params(action: Action) -> str:
     text = "{" + ", ".join(f'"{p.name}": {p.hint or "<" + p.type + ">"}' for p in required) + "}"
     for p in action.params:
         if not p.required:
-            text += f'; optional "{p.name}": {p.hint or "<" + p.type + ">"} (leave it out to keep yours as it is)'
+            omit = p.omit_means or "leave it out to keep yours as it is"
+            text += f'; optional "{p.name}": {p.hint or "<" + p.type + ">"} ({omit})'
     return text

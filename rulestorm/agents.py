@@ -246,6 +246,7 @@ class RunSummary(BaseModel):
     decisions_by_agent: dict[str, int]
     no_actions: int
     rejected: list[Rejection]
+    false_claims: int = 0  # slice M4: planned misses refused for claiming a cause not affecting them
     input_tokens: int
     output_tokens: int
 
@@ -272,6 +273,7 @@ def summarise(engine: Engine, agents: Agents) -> RunSummary:
         decisions_by_agent=dict(sorted(Counter(d.actor for d in decisions).items())),
         no_actions=sum(1 for d in decisions if d.payload["no_action"]),
         rejected=rejected,
+        false_claims=sum(1 for r in rejected if r.reason.startswith("claim:")),
         input_tokens=agents.input_tokens,
         output_tokens=agents.output_tokens,
     )

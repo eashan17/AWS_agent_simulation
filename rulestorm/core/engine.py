@@ -343,7 +343,7 @@ class Engine:
                 raise Refused(f"bad parameters: {spec.name} lists a {self.step_label} twice")
             if spec.type == "bool" and not isinstance(value, bool):
                 raise Refused(f"bad parameters: {spec.name} must be true or false")
-            if spec.type in ("str", "person") and not isinstance(value, str):
+            if spec.type in ("str", "person", "cause") and not isinstance(value, str):
                 raise Refused(f"bad parameters: {spec.name} must be text")
             if spec.type == "person" and value not in self.role_of:
                 raise Refused(f"bad parameters: unknown person {value!r}")
@@ -374,6 +374,8 @@ class Engine:
                 if any(s != self.current_step for s in steps):
                     raise Refused("precondition: current_step", f"plans can be made only for the current "
                                   f"{self.step_label} ({self.step_label} {self.current_step})")
+            if effect.kind == "plan_miss" and steps:
+                self._check_claim(actor, action, params, steps[0])
             if effect.kind == "file_request":
                 steps, dropped = self._request_steps(actor, action, effect.request_type, duty, steps)
             elif duty is not None:
@@ -471,8 +473,10 @@ class Engine:
         step = steps[0] if steps else None
         if kind in ("plan_meet", "plan_miss"):
             plan = "meet" if kind == "plan_meet" else "miss"
+            claim = self._param_of_type(action, params, "cause") if plan == "miss" else None
             event = self.emit("duty_planned", actor, period, step,
-                              payload={"action": action.id, "duty": effect.duty, "plan": plan},
+                              payload={"action": action.id, "duty": effect.duty, "plan": plan,
+                                       **({"cause": self.claimed_cause(actor, step, claim)} if plan == "miss" else {})},
                               state_change={f"plan.{effect.duty}.{actor}.{step}": {"from": None, "to": plan}},
                               caused_by=caused_by)
             self.plans[(effect.duty, actor, step)] = (plan, event.event_id)
@@ -785,6 +789,73 @@ class Engine:
                     payload={"disruption": d.kind, "description": d.description, "duty": kind.duty},
                     state_change={f"occurrence.{kind.duty}.{step}": {"from": "scheduled", "to": "cancelled"}}))
         return events
+
+    # --- what affects a person now, and the causes they may claim (slice M4) -----------------------
+
+    def hitting(self, person: str, step: int) -> list[Obstacle]:
+        """The obstacles and conflicts that hit this person at this step."""
+        return [o for o in self.obstacles_by_step.get(step, []) if person in o.people]
+
+    def valid_causes(self, person: str, step: int) -> list[str]:
+        """What a person may give as the cause of missing this step: "none" (their own choice), or
+        the event ID or kind of a disruption hitting them now. Nothing else; no free-text matching."""
+        out = ["none"]
+        for o in self.hitting(person, step):
+            out += [o.event_id, o.kind]
+        return list(dict.fromkeys(out))
+
+    def situation(self, person: str, step: int) -> list[str]:
+        """What affects the person at this step, in plain words, or that nothing does."""
+        lines = []
+        step_word = self.step_label
+        for o in self.hitting(person, step):
+            kind = self.disruption_kinds.get(o.kind)
+            label = kind.label if kind else o.kind
+            what = self.event(o.event_id).payload.get("description") or label
+            routine = "routine, could be planned around" if kind is not None and kind.routine else "outside your control"
+            if o.conflict:
+                lines.append(f"{label} ({o.event_id}, kind {o.kind}): {what}; {routine}. You miss the {step_word} "
+                             f"only if you choose to")
+                continue
+            duty = self.duties[o.duty]
+            slack = self.attributes.get((person, duty.obstacle_attribute)) if duty.obstacle_attribute else None
+            if slack is None:
+                effect = "it keeps you from it"
+            elif o.delay > slack:
+                effect = f"a delay of {o.delay} is over your {slack}, so it keeps you from it"
+            else:
+                effect = f"a delay of {o.delay} is within your {slack}, so it doesn't stop you"
+            lines.append(f"{label} ({o.event_id}, kind {o.kind}): {what}; {routine}; {effect}")
+        for duty in self.t.duties:
+            if step in self.cancelled[duty.id] and self.owes(person, duty):
+                lines.append(f"this {step_word} is cancelled")
+        return lines or [f"nothing outside your control affects you this {step_word}"]
+
+    def situation_text(self, person: str, step: int) -> str:
+        return "; ".join(self.situation(person, step))
+
+    def claimed_cause(self, person: str, step: int, claim: str | None) -> str:
+        """A checked claim as recorded on the plan: the disruption's event ID, or "none"."""
+        if claim in (None, "none"):
+            return "none"
+        return next((o.event_id for o in self.hitting(person, step) if claim in (o.event_id, o.kind)), "none")
+
+    def _check_claim(self, actor: str, action: Action, params: dict[str, Any], step: int) -> None:
+        claim = self._param_of_type(action, params, "cause")
+        if claim is None:
+            return
+        valid = self.valid_causes(actor, step)
+        if claim in valid:
+            return
+        listed = ", ".join(valid)
+        known = claim in self.disruption_kinds or any(claim == o.event_id for os_ in self.obstacles_by_step.values()
+                                                      for o in os_)
+        if known:
+            raise Refused("claim: not_affecting_you",
+                          f"{claim} is not affecting you in {self.step_label} {step}: "
+                          f"{self.situation_text(actor, step)}. Valid causes now: {listed}")
+        raise Refused("bad parameters: cause",
+                      f"cause must be one of: {listed} (not {claim!r}); {self.situation_text(actor, step)}")
 
     # --- the checker rule -----------------------------------------------------------------------
 

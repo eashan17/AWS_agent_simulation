@@ -64,6 +64,9 @@ class DecisionContext(BaseModel):
     # disruption changed it, so the people know the queue is short this period.
     unavailable_actions: list[str] = Field(default_factory=list)
     capacity_now: dict[str, int] = Field(default_factory=dict)
+    # Slice M4: what affects the person this step (or that nothing does), from Engine.situation;
+    # empty for people who owe no duty.
+    situation: list[str] = Field(default_factory=list)
 
     def action_limit(self) -> int:
         """Everyone may propose 3 actions; someone with more requests waiting for them (to consent
@@ -100,6 +103,7 @@ class Term:
         # a person answering a message still sees the disruption that hit this step (26 Nov).
         self.seen_this_step: dict[str, list[str]] = defaultdict(list)
         self.of_kind = {tr.kind: tr for tr in template.triggers}
+        self.reasked: set[tuple[str, int]] = set()  # (person, step) asked again after a refused claim
 
     # --- triggers -----------------------------------------------------------------------------
 
@@ -272,6 +276,7 @@ class Term:
             self.seen_this_step[person] += [t for t in self.triggers[person] if t not in self.seen_this_step[person]]
             del self.triggers[person]
         decided = []
+        refused_claims: dict[str, Event] = {}
 
         by_person = {d.person: d for d in self.decider(contexts)}
         for context in contexts:
@@ -288,6 +293,15 @@ class Term:
                                  **proposal.params)
                 self.message_received(done, period)
                 self.awaiting_consent(done)
+                if done.type == "action_rejected" and _refused_claim(done) and (context.person, step) not in self.reasked:
+                    refused_claims.setdefault(context.person, done)
+        # Slice M4: a refused claim of cause gets the person asked once more in the same step,
+        # shown why, so a refused skip never silently turns into meeting the duty.
+        if refused_claims:
+            for person, event in refused_claims.items():
+                self.reasked.add((person, step))
+                self.trigger(person, event)
+            decided += self.decision_phase(period, step, only=set(refused_claims))
         return decided
 
     def message_received(self, event: Event, period: int) -> None:
@@ -342,6 +356,7 @@ class Term:
             awaiting_consent=awaiting,
             own_requests=[_own_view(r) for r in e.requests.values() if r.person == person],
             unavailable_actions=unavailable, capacity_now=capacity_now,
+            situation=e.situation(person, step) if any(e.owes(person, d) for d in e.duties.values()) else [],
         )
 
     def outcomes_of(self, person: str) -> list[str]:
@@ -373,6 +388,12 @@ class Term:
                            for r in e.requests.values()):
                     missed.append(step)
         return sorted(missed)
+
+
+def _refused_claim(event: Event) -> bool:
+    """A planned miss refused for its claimed cause: a false claim, or a cause not in the list."""
+    reason = event.payload.get("reason", "")
+    return reason.startswith("claim:") or reason == "bad parameters: cause"
 
 
 def _own_view(r) -> dict[str, Any]:

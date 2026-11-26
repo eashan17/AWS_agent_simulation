@@ -11,6 +11,9 @@ A case file names its template and values and says what people do, by person and
                   "consent": true | false      (request types that need consent),
                   "decision": "approved" | "rejected"   (request types an LLM person decides)}]
     "report": ["count", "queue", "permission", "ladder", "failed_check", "readings"]   the lines to print
+    "claims": [{"person", "step", "cause", "then": "<action>"}]   ("claims": a planned miss with
+                                                that claimed cause; if the engine refuses the claim,
+                                                the person is asked again and takes `then`)
     "readings_at": <period>                    ("readings": the period whose end it counts at, after
                                                 that period's queues; default the last)
     "permission_check": {"role", "actor", "action", "params"}
@@ -43,6 +46,7 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
     by_id: dict[str, dict] = {}  # request ID -> its case entry
     count_lines: list[str] = []
     reading_lines: list[str] = []
+    claim_lines: list[str] = []
     last_queue: dict[str, Event] = {}
     spp, periods = template.calendar.steps_per_period, template.calendar.periods
 
@@ -90,6 +94,9 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
             for person, steps in missed.items():
                 if step in steps:
                     e.propose(person, plan_miss.id, period, **{_param(plan_miss, "step"): step})
+            for claim in case.get("claims", []):
+                if claim["step"] == step:
+                    claim_lines.extend(_claim(e, template, plan_miss, claim, period))
             file_due(step)
             process(period, step)
             e.record_step(step)
@@ -129,6 +136,8 @@ def play_case(case: dict[str, Any], template: Template) -> tuple[list[str], Engi
             lines += _failed_check_lines(e, template, focus)
         elif item == "readings":
             lines += reading_lines
+        elif item == "claims":
+            lines += claim_lines
         else:
             raise ValueError(f"unknown report item {item!r}")
     return lines, e
@@ -150,6 +159,26 @@ def _count_lines(e: Engine, template: Template, count_id: str, focus: str, perio
     pending = len(now.payload["pending"])
     return [f"{CountResult(**_result(now)).text()} ({pending} {word} pending)  [{now.event_id}]",
             f"{CountResult(**_result(projected)).text()} (if {pending} approved)  [{projected.event_id}]"]
+
+
+def _claim(e: Engine, template: Template, plan_miss, claim: dict[str, Any], period: int) -> list[str]:
+    """A planned miss with a claimed cause, as the engine judges it; a refused claim is asked again
+    (slice M4), scripted here by the case's `then` action."""
+    person, step, cause = claim["person"], claim["step"], claim["cause"]
+    step_word = template.calendar.step_label
+    params = {_param(plan_miss, "step"): step, _param(plan_miss, "cause"): cause}
+    done = e.propose(person, plan_miss.id, period, **params)
+    head = f"{person} {plan_miss.id}, {step_word} {step} (cause: {cause})"
+    if done.type != "action_rejected":
+        return [f"{head}: accepted, cause {done.payload['cause']}  [{done.event_id}]"]
+    lines = [f"{head}: rejected ({done.payload['reason']}): {e.situation_text(person, step)}  [{done.event_id}]"]
+    then = claim.get("then")
+    if then:
+        action = next(a for a in template.actions if a.id == then)
+        again = e.propose(person, then, period, caused_by=[done.event_id], **{_param(action, "step"): step})
+        outcome = then if again.type != "action_rejected" else f"{then} rejected ({again.payload['reason']})"
+        lines.append(f"{person} asked again, {step_word} {step}: {outcome}  [{again.event_id}]")
+    return lines
 
 
 def _reading_lines(e: Engine, template: Template, count_id: str, focus: str, period: int) -> list[str]:

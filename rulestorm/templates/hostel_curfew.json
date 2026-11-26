@@ -92,7 +92,10 @@
     {
       "id": "stay_out_late",
       "label": "plan to come back after curfew tonight",
-      "params": [{"name": "night", "type": "step", "hint": "<tonight's night>"}],
+      "params": [{"name": "night", "type": "step", "hint": "<tonight's night>"},
+                 {"name": "cause", "type": "cause", "required": false,
+                  "hint": "\"none\" if it is your own choice, or the ID or kind of a disruption hitting you now (see \"Your situation now\")",
+                  "omit_means": "leave it out if nothing stops you: it is your own choice"}],
       "effects": [{"kind": "plan_miss", "duty": "return_by_curfew"}],
       "preconditions": ["own_occurrence", "occurrence_not_yet"]
     },

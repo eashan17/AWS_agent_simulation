@@ -119,10 +119,13 @@ class ActionParam(Block):
     name: str = Field(min_length=1)
     # step / step_list name the occurrence(s) an action is about; person names a target person;
     # request names a filed request (endorse, decide_request); outcome is a request outcome from
-    # the fixed list (decide_request)
-    type: Literal["int", "str", "bool", "step", "step_list", "person", "request", "outcome"]
+    # the fixed list (decide_request); cause (slice M4) names what makes a person miss the duty:
+    # "none" (their own choice) or a disruption hitting them this step, checked by the engine
+    type: Literal["int", "str", "bool", "step", "step_list", "person", "request", "outcome", "cause"]
     required: bool = True
     hint: str = Field("", description="how the value is described to an LLM person, e.g. <current step>")
+    omit_means: str | None = Field(None, description="an optional value: what leaving it out means, in the "
+                                                     "person's prompt (default: it keeps theirs as it is)")
 
 
 class Effect(Block):
@@ -430,6 +433,9 @@ def _reference_errors(t: Template) -> list[str]:
         kinds = {e.kind for e in action.effects}
         if kinds & OCCURRENCE_EFFECTS and types["step"] + types["step_list"] != 1:
             errors.append(f"{owner} needs exactly one step or step_list parameter")
+        if types["cause"] and ("plan_miss" not in kinds or types["cause"] != 1
+                               or any(p.required for p in action.params if p.type == "cause")):
+            errors.append(f"{owner}: a cause parameter is optional, one only, and only on an action that plans a miss")
         if "correct_record" in kinds and (types["person"] != 1 or types["bool"] != 1):
             errors.append(f"{owner}: correct_record needs one person and one bool parameter")
         if "endorse" in kinds and (types["request"] != 1 or types["bool"] != 1):
