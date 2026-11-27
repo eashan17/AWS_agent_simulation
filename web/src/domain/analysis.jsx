@@ -130,7 +130,7 @@ export function HeroFinding({ f, words, onOpen, action = 'Show the evidence', ch
             <p className="mt-2 text-[13.5px] text-ink/70 max-w-md">
               {f.count?.kind === 'rate' ? `${f.count.met} of ${f.count.due} counted ${words.step}s` : figure(f.count)}
               {check ? `, against ${CMP[check.comparison] || ''} ${check.threshold}${f.count?.kind === 'rate' ? '%' : ''}` : ''}.
-              {alt ? ` ${pct(alt.value)} if the waiting ${words.terms.requests} were approved.` : ''}
+              {alt ? ` ${f.count?.kind === 'rate' ? pct(alt.value) : alt.value} if the waiting ${words.terms.requests} were approved.` : ''}
             </p>
           </>
         )}
