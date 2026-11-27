@@ -118,10 +118,26 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-class Store:
-    """The one storage interface the core, API and CLI use."""
+def _parse_time(value: str | None) -> datetime | None:
+    """An ISO time; one without a zone is read as UTC."""
+    if not value or not value.strip():
+        return None
+    parsed = datetime.fromisoformat(value.strip())
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
-    def __init__(self, db_path: str | None = None) -> None:
+
+class Store:
+    """The one storage interface the core, API and CLI use.
+
+    Retired recordings (26 Nov): anything stored before `RULESTORM_RETIRED_BEFORE` (an ISO time)
+    reads as not found: blueprints, runs and their findings, comparisons, repeats and searches.
+    Nothing is deleted; clearing the setting brings it all back. It hides what earlier engine
+    versions recorded, so the live link shows only what the current engine does.
+    """
+
+    def __init__(self, db_path: str | None = None, retired_before: str | None = None) -> None:
+        self.retired_before = _parse_time(
+            retired_before if retired_before is not None else os.environ.get("RULESTORM_RETIRED_BEFORE"))
         self.db_path = db_path or os.environ.get("RULESTORM_DB_PATH") or DEFAULT_DB_PATH
         if self.db_path != ":memory:":
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -136,6 +152,11 @@ class Store:
             conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn = conn
         return conn
+
+    def _retired(self, stored_at: str | None) -> bool:
+        if self.retired_before is None or not stored_at:
+            return False
+        return _parse_time(stored_at) < self.retired_before
 
     def take_daily(self, counter: str, cap: int) -> bool:
         """Takes one unit of today's `counter` if it is under `cap`; safe across threads and processes."""
@@ -200,9 +221,9 @@ class Store:
 
     def get_blueprint(self, blueprint_id: str) -> BlueprintRecord | None:
         row = self._conn().execute(
-            "SELECT record, approved FROM blueprints WHERE id = ?", (blueprint_id,)
+            "SELECT record, approved, created_at FROM blueprints WHERE id = ?", (blueprint_id,)
         ).fetchone()
-        if row is None:
+        if row is None or self._retired(row["created_at"]):
             return None
         record = BlueprintRecord.model_validate_json(row["record"])
         record.approved = bool(row["approved"])
@@ -212,12 +233,14 @@ class Store:
         """Stress variants of one approved blueprint, oldest first."""
         # Filtered in SQL, so blueprints in an older format (before slice 3c) are never parsed.
         rows = self._conn().execute(
-            "SELECT record, approved FROM blueprints WHERE json_extract(record, '$.parent_id') = ? "
+            "SELECT record, approved, created_at FROM blueprints WHERE json_extract(record, '$.parent_id') = ? "
             "ORDER BY created_at, rowid",
             (parent_id,),
         ).fetchall()
         variants = []
         for row in rows:
+            if self._retired(row["created_at"]):
+                continue
             record = BlueprintRecord.model_validate_json(row["record"])
             record.approved = bool(row["approved"])
             variants.append(record)
@@ -285,7 +308,7 @@ class Store:
 
     def get_run(self, run_id: str) -> dict | None:
         row = self._conn().execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
-        if row is None:
+        if row is None or self._retired(row["started_at"]):
             return None
         run = dict(row)
         run["summary"] = json.loads(run["summary"]) if run["summary"] else None
@@ -304,13 +327,16 @@ class Store:
                               for f in findings])
 
     def run_findings(self, run_id: str) -> list[dict]:
-        rows = self._conn().execute("SELECT record FROM findings WHERE run_id = ? ORDER BY rowid",
-                                    (run_id,)).fetchall()
-        return [json.loads(r["record"]) for r in rows]
+        rows = self._conn().execute(
+            "SELECT f.record, r.started_at FROM findings f LEFT JOIN runs r ON r.id = f.run_id "
+            "WHERE f.run_id = ? ORDER BY f.rowid", (run_id,)).fetchall()
+        return [json.loads(r["record"]) for r in rows if not self._retired(r["started_at"])]
 
     def get_finding(self, finding_id: str) -> dict | None:
-        row = self._conn().execute("SELECT record FROM findings WHERE id = ?", (finding_id,)).fetchone()
-        return json.loads(row["record"]) if row else None
+        row = self._conn().execute(
+            "SELECT f.record, r.started_at FROM findings f LEFT JOIN runs r ON r.id = f.run_id WHERE f.id = ?",
+            (finding_id,)).fetchone()
+        return json.loads(row["record"]) if row and not self._retired(row["started_at"]) else None
 
     # --- the seeded demo run (slice 10) --------------------------------------------------------
 
@@ -366,8 +392,8 @@ class Store:
                          (record["status"], json.dumps(record, ensure_ascii=False), record["id"]))
 
     def _get_job(self, table: str, job_id: str) -> dict | None:
-        row = self._conn().execute(f"SELECT record FROM {table} WHERE id = ?", (job_id,)).fetchone()
-        return json.loads(row["record"]) if row else None
+        row = self._conn().execute(f"SELECT record, created_at FROM {table} WHERE id = ?", (job_id,)).fetchone()
+        return json.loads(row["record"]) if row and not self._retired(row["created_at"]) else None
 
     def _running_job(self, table: str) -> str | None:
         row = self._conn().execute(f"SELECT id FROM {table} WHERE status = 'running' LIMIT 1").fetchone()

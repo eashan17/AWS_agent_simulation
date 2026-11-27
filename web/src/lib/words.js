@@ -79,6 +79,27 @@ export function makeWords(template) {
 }
 
 /**
+ * A blueprint's plain name and what kind it is, from what the record already holds, for any
+ * template: { name: "Early checkpoint with many disruptions", kind: "Harsher conditions" }.
+ * The ID stays on screen as a tag; this is the line people read.
+ */
+export function blueprintName(record, words) {
+  if (!record) return { name: '', kind: '' }
+  const policy = words?.template?.title || 'Your policy'
+  const v = (record.variant || '').trim()
+  if (record.comparison_of) return { name: `${cap(humanize(v))} version of the policy`, kind: 'Policy version' }
+  if (record.counterfactual_of) {
+    const m = v.match(/^counterfactual:\s*(\S+)\s+(.+?)\s*->\s*(.+)$/)
+    if (!m) return { name: 'What-if term', kind: 'What-if' }
+    const p = words?.param?.(m[1])
+    return { name: `What if: ${cap(p?.description || humanize(m[1]))}, ${m[2]} → ${m[3]}`, kind: 'What-if' }
+  }
+  if (record.search_of) return { name: cap(v) || 'Search scenario', kind: 'Search scenario' }
+  if (record.parent_id) return { name: cap(v) || 'Harsher conditions', kind: 'Harsher conditions' }
+  return { name: policy, kind: 'Your policy' }
+}
+
+/**
  * The period a blueprint's check runs at: the environment value named for the checkpoint
  * (attendance: checkpoint_week). Not any `_week` name: office_capacity_per_week is a capacity.
  * A template without one (curfew) has no fixed check period, so nothing is marked.

@@ -18,7 +18,7 @@ import { adaptedMap } from '../domain/adaptation.jsx'
 import { PersonPanel } from '../domain/personPanel.jsx'
 import { navigate } from '../lib/router.js'
 import { rememberRun } from '../lib/session.js'
-import { cap, checkpointValue, duration, makeWords } from '../lib/words.js'
+import { blueprintName, cap, checkpointValue, duration, makeWords } from '../lib/words.js'
 
 /** The check's period: where the run recorded it, else the blueprint's checkpoint value (a live run before its check). */
 export function checkpointFrom(bp, words, events) {
@@ -95,7 +95,7 @@ export default function Simulation({ id }) {
 
   return (
     <div>
-      <PageHeader step={3} recorded eyebrow="Simulation" title={words ? words.template.title : 'Simulation'}
+      <PageHeader step={3} recorded eyebrow="Simulation" title={words ? (bp.data ? blueprintName(bp.data, words).name : words.template.title) : 'Simulation'}
         subtitle={running ? `The term is running now. New events appear every few seconds.` : `A simulated term: AI people decide, the rule engine records. Press play to replay it ${words?.period || 'week'} by ${words?.period || 'week'}.`}
         meta={<>
           <IdTag id={run.run_id} label="Run" />

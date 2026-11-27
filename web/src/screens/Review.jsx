@@ -17,7 +17,7 @@ import { api } from '../lib/api.js'
 import { useBlueprint, useElapsed, useTemplate, useTemplates } from '../lib/hooks.js'
 import { navigate } from '../lib/router.js'
 import { rememberRun, setSession } from '../lib/session.js'
-import { makeWords, humanize, cap, checkpointValue, formatValue } from '../lib/words.js'
+import { makeWords, humanize, cap, checkpointValue, formatValue, blueprintName } from '../lib/words.js'
 
 const SECTIONS = [
   { kind: 'policy', title: 'Policy rules', sub: 'What the rule says.' },
@@ -255,7 +255,8 @@ export default function Review({ id, tab, arg }) {
   }
 
   const valid = record.status === 'valid'
-  const title = valid && words ? words.template.title : record.status === 'out_of_scope' ? "RuleStorm can't model this policy yet" : "The AI's draft didn't pass the checks"
+  const named = blueprintName(record, words)
+  const title = valid && words ? named.name : record.status === 'out_of_scope' ? "RuleStorm can't model this policy yet" : "The AI's draft didn't pass the checks"
 
   const actions = !valid ? (
     <Button onClick={() => navigate('/setup')}>Edit the policy</Button>
@@ -272,7 +273,7 @@ export default function Review({ id, tab, arg }) {
     <div>
       <PageHeader step={2} eyebrow="Blueprint review" title={title}
         subtitle={valid ? (record.approved ? 'Frozen: every run uses exactly these values.' : 'Check how RuleStorm understood your rule. Your facts are blue; the AI\'s assumptions are orange and dashed. Approve when it reads right.') : null}
-        meta={<><IdTag id={record.id} label="Blueprint" />{valid && (record.approved ? <Badge tone="ok"><IconLock size={13} /> Approved and frozen</Badge> : <Badge tone="blue">Waiting for your approval</Badge>)}{record.seconds != null && <span className="text-[12px] text-ink-3 font-mono">built in {Math.round(record.seconds)} s</span>}</>}
+        meta={<>{valid && words && <Badge tone={named.kind === 'Your policy' ? 'blue' : 'orange'}>{named.kind}</Badge>}<IdTag id={record.id} label="Blueprint" />{valid && (record.approved ? <Badge tone="ok"><IconLock size={13} /> Approved and frozen</Badge> : <Badge tone="blue">Waiting for your approval</Badge>)}{record.seconds != null && <span className="text-[12px] text-ink-3 font-mono">built in {Math.round(record.seconds)} s</span>}</>}
         actions={actions}
         actionHint={!valid ? 'Takes you back to the policy text, with your fields kept.' : !record.approved ? 'Freezes these values. Nothing runs until you start it.' : 'Starts a 30–60 second term with exactly these values. One simulation runs at a time.'} />
       <div className="flex flex-col gap-4">

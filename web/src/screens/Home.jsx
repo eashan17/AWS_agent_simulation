@@ -66,7 +66,7 @@ export function OpenById() {
   const go = async (e) => {
     e.preventDefault()
     const v = id.trim()
-    if (!v) { setErr('Type a run ID, for example demo or L-960f5653.'); return }
+    if (!v) { setErr('Type a run ID, for example demo.'); return }
     setBusy(true); setErr(null)
     try {
       await api.run(v)
@@ -82,7 +82,7 @@ export function OpenById() {
       <div className="flex gap-2">
         <div className="relative flex-1">
           <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} />
-          <input id="open-run" value={id} onChange={(e) => setId(e.target.value)} placeholder="demo, L-960f5653…"
+          <input id="open-run" value={id} onChange={(e) => setId(e.target.value)} placeholder="demo, or a run ID like L-…"
             aria-invalid={!!err} aria-describedby={err ? 'open-run-err' : undefined}
             className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-white/85 font-mono text-[13px] focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400" />
         </div>

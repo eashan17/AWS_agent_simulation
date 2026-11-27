@@ -15,7 +15,7 @@ import { PersonPanel } from '../domain/personPanel.jsx'
 import { startRepeats } from '../domain/repeats.jsx'
 import { navigate } from '../lib/router.js'
 import { rememberRun, rememberWhatIf, useSession } from '../lib/session.js'
-import { cap, formatValue, humanize, makeWords, pct } from '../lib/words.js'
+import { blueprintName, cap, formatValue, humanize, makeWords, pct } from '../lib/words.js'
 
 const TABS = ['summary', 'findings', 'evidence', 'whatif', 'compare']
 
@@ -336,7 +336,7 @@ function ComparePicker({ run }) {
       <form className="flex gap-2 max-w-md mx-auto" onSubmit={(e) => { e.preventDefault(); if (other.trim()) navigate(`/run/${run.run_id}/analysis/compare/${other.trim()}`) }}>
         <label htmlFor="cmp-id" className="sr-only">Run ID to compare with</label>
         <div className="relative flex-1"><IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} />
-          <input id="cmp-id" value={other} onChange={(e) => setOther(e.target.value)} placeholder="L-960f5653" className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-white/85 font-mono text-[13px] focus:outline-none focus:ring-4 focus:ring-blue-100" /></div>
+          <input id="cmp-id" value={other} onChange={(e) => setOther(e.target.value)} placeholder="A run ID, like L-…" className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-white/85 font-mono text-[13px] focus:outline-none focus:ring-4 focus:ring-blue-100" /></div>
         <Button type="submit" variant="primary">Compare</Button>
       </form>
       {known.length > 0 && <div className="flex flex-wrap gap-2 justify-center mt-4">{known.map((r) => <Button key={r} size="sm" onClick={() => navigate(`/run/${run.run_id}/analysis/compare/${r}`)}>{r}</Button>)}</div>}
@@ -463,8 +463,8 @@ export default function Analysis({ id, tab: rawTab, arg }) {
 
   return (
     <div>
-      <PageHeader step={4} recorded eyebrow="Analysis" title={`What happened in run ${run.run_id}`}
-        subtitle={`${words.template.title}. Findings, the evidence behind them, and what changes when one condition does.`}
+      <PageHeader step={4} recorded eyebrow="Analysis" title="What happened in this term"
+        subtitle={`${bp.data ? blueprintName(bp.data, words).name : words.template.title}. Findings, the evidence behind them, and what changes when one condition does.`}
         meta={<><IdTag id={run.run_id} label="Run" /><StatusBadge status={run.status} /></>}
         actions={<Button icon={<IconBack size={16} />} onClick={() => navigate(`/run/${id}`)}>Back to the map</Button>} />
       {!finished ? (
