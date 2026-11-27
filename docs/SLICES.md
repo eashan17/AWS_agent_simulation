@@ -139,7 +139,7 @@ Status values: todo · doing · done · cut · standby (built only if the gate f
     - **27 Nov:** M0–M5. Also, from the current live link (`live-20261126c`), record a backup video and draft the submission docs.
     - **27 Nov, as it went:** M0–M7d done (M6–M7d a day early).
     - **27 Nov evening, as it went:** M8a–M9 and the UI phase done; **checkpoint deploy live a day early** as tag `live-20261127a` (commit 9a0f07f, Run Command 903a8cc7): cutoff unset, current fixture kept; live checks passed (health ok, UI 200, demo completed, findings with harm and cause class, ledger, readings, people route, evidence 200). Next: M10 (needs EVALUATION.md first).
-    - **28 Nov:** M8a–M9, then the UI phase, then the **checkpoint deploy**: cutoff unset, the current fixture kept, and live checks as in slice 12.
+    - **28 Nov (planned; all done on 27 Nov, line above):** M8a–M9, then the UI phase, then the **checkpoint deploy**: cutoff unset, the current fixture kept, and live checks as in slice 12.
     - **29 Nov:** M10 by 12:00 IST, M11 by 18:00 IST.
     - **30 Nov (deploys frozen; runs and recording allowed):** re-record docs/DEMO_FLOW.md from the M10 IDs, record the final video, `/ship 3` (README and submission), then submit by 23:59 IST.
   - **Fallback:** at each go/no-go, a failed live check leaves the last tag that passed, with the cutoff unset and the fixture it shipped with. The rest ships after 5 Dec for Round 2.
