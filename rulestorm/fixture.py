@@ -6,12 +6,17 @@ and a schema version. `restore_demo` puts it back as run `demo`, replacing any e
 works its findings out again from the restored events with the current detector, so the demo shows
 what the code finds, not a copy. Nothing calls Bedrock.
 
+Slice M11: the hero is a harm finding, a `near_threshold` one, or none (a run with no finding, whose
+ledger is the headline). The restore stamps the run, and a policy or blueprint it adds, with the
+restore time, so the cutoff that hides old recordings (`RULESTORM_RETIRED_BEFORE`) never hides
+`demo`. A policy or blueprint already in the store is kept as it is (an approved blueprint is frozen).
+
 The file is UTF-8 without a byte-order mark. A file in another schema, or whose blueprint no
 longer fits its template, is refused rather than half-restored.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +38,7 @@ class FixtureError(ValueError):
 
 def export_run(store, run_id: str, hero: str | None = None) -> dict[str, Any]:
     """A finished run with its blueprint and policy, ready to write. `hero` is a finding ID
-    (default: the run's first finding)."""
+    (default: the run's first harm, else its first near miss, else none)."""
     from rulestorm.runner import findings_of
 
     run = store.get_run(run_id)
@@ -42,12 +47,13 @@ def export_run(store, run_id: str, hero: str | None = None) -> dict[str, Any]:
     if run["status"] not in ("completed", "degraded"):
         raise FixtureError(f"run {run_id} is {run['status']}; only a finished run can be the demo")
     findings = findings_of(store, run)
-    if not findings:
-        raise FixtureError(f"run {run_id} has no findings")
-    wanted = hero or findings[0]["finding_id"]
-    chosen = next((f for f in findings if f["finding_id"] == wanted), None)
-    if chosen is None:
-        raise FixtureError(f"run {run_id} has no finding {wanted}")
+    if hero:
+        chosen = next((f for f in findings if f["finding_id"] == hero), None)
+        if chosen is None:
+            raise FixtureError(f"run {run_id} has no finding {hero}")
+    else:
+        chosen = (next((f for f in findings if f.get("harm")), None)
+                  or next((f for f in findings if f["kind"] == "near_threshold"), None))
     blueprint = store.get_blueprint(run["blueprint_id"])
     if blueprint is None or not blueprint.approved:
         raise FixtureError(f"run {run_id}'s blueprint {run['blueprint_id']} is missing or not approved")
@@ -58,7 +64,7 @@ def export_run(store, run_id: str, hero: str | None = None) -> dict[str, Any]:
         "schema": SCHEMA,
         "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source_run_id": run_id,
-        "hero": {k: chosen[k] for k in ("finding_id", "kind", "person", "check", "title")},
+        "hero": {k: chosen[k] for k in ("finding_id", "kind", "person", "check", "title")} if chosen else None,
         "run": {k: run[k] for k in RUN_KEYS},
         "events": store.run_events(run_id),
         "findings": findings,
@@ -96,16 +102,28 @@ def check_blueprint(bundle: dict[str, Any]):
     return record, template
 
 
-def hero_of(bundle: dict[str, Any], findings: list[dict[str, Any]]) -> str:
+def hero_of(bundle: dict[str, Any], findings: list[dict[str, Any]]) -> str | None:
     """The restored hero's ID: the finding of the same kind, person and check (slice M2), not the
     same number, so findings added by a newer detector can't move it. A bundle exported before
     the hero carried its check matches on kind and person."""
     want = bundle["hero"]
+    if want is None:  # a run exported with no hero: the ledger is the headline
+        return None
     match = next((f for f in findings if f["kind"] == want["kind"] and f["person"] == want["person"]
                   and f["check"] == want.get("check", f["check"])), None)
     if match is None:
         raise FixtureError(f"the hero finding {want['finding_id']} is not found again in the bundled events")
     return match["finding_id"]
+
+
+def _restamped(run: dict[str, Any], now: datetime) -> dict[str, str | None]:
+    """The run's start moved to `now`, its end moved by the same amount (the duration kept)."""
+    try:
+        took = datetime.fromisoformat(run["finished_at"]) - datetime.fromisoformat(run["started_at"])
+    except (TypeError, ValueError):
+        took = timedelta(0)
+    return {"started_at": now.isoformat(timespec="seconds"),
+            "finished_at": (now + took).isoformat(timespec="seconds") if run.get("finished_at") else None}
 
 
 def restore_demo(store, path: str | Path = DEFAULT_PATH) -> dict[str, Any]:
@@ -115,8 +133,10 @@ def restore_demo(store, path: str | Path = DEFAULT_PATH) -> dict[str, Any]:
     events = bundle["events"]
     findings = [f.model_dump() for f in detect(DEMO_RUN_ID, events, template, record.blueprint.values)]
     hero = hero_of(bundle, findings)
-    store.restore_policy(Policy.model_validate(bundle["policy"]))
-    store.restore_blueprint(record)
-    store.replace_run({"id": DEMO_RUN_ID, **bundle["run"]}, events, findings)
+    now = datetime.now(timezone.utc)
+    stamp = now.isoformat(timespec="seconds")
+    store.restore_policy(Policy.model_validate({**bundle["policy"], "created_at": stamp}))
+    store.restore_blueprint(record.model_copy(update={"created_at": stamp}))
+    store.replace_run({"id": DEMO_RUN_ID, **bundle["run"], **_restamped(bundle["run"], now)}, events, findings)
     return {"run_id": DEMO_RUN_ID, "schema": bundle["schema"], "source_run_id": bundle["source_run_id"],
             "hero": hero, "findings": len(findings), "events": len(events)}

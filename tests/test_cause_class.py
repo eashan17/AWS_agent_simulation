@@ -16,6 +16,8 @@ from rulestorm.store import Store
 
 CASES = Path(__file__).parent / "cases"
 
+RECORDED = CASES / "recorded_demo_L-ff6f0ca8.json"  # the slice-10 demo, kept as known data (slice M11)
+
 
 def case(name: str) -> dict:
     return json.loads((CASES / name).read_text(encoding="utf-8"))
@@ -104,7 +106,7 @@ def test_both_templates_classify_their_harms() -> None:
 
 def test_a_finding_stored_before_m9_gets_its_class_when_read_and_a_later_approval_does_not_count() -> None:
     store = Store(":memory:")
-    restore_demo(store)  # the demo's three misses were all approved, but only after the check
+    restore_demo(store, RECORDED)  # the demo's three misses were all approved, but only after the check
     found = findings_of(store, store.get_run("demo"))
     assert [(f["kind"], f.get("cause_class")) for f in found if f["harm"]] == [("check_failed", "chosen")]
     old = [{k: v for k, v in f.items() if k not in ("cause_class", "cause_detail", "trade_off")} for f in found]
@@ -132,7 +134,7 @@ def test_a_harm_also_counts_its_misses_by_cause(label, shares) -> None:
 
 def test_the_ledger_shows_a_mixed_cause_and_a_lost_obligation_has_no_shares() -> None:
     store = Store(":memory:")
-    restore_demo(store)
+    restore_demo(store, RECORDED)
     from rulestorm.ledger import run_ledger
 
     t, book = run_ledger(store, "demo")

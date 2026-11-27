@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> None:
     export_cmd = run_commands.add_parser("export", help="save a finished run, its blueprint and policy to a file (slice 10)")
     export_cmd.add_argument("run_id", help="a finished run in the store")
     export_cmd.add_argument("--out", required=True, help="the file to write, e.g. rulestorm/fixtures/demo_run.json")
-    export_cmd.add_argument("--hero", help="the finding shown as the hero (default: the run's first finding)")
+    export_cmd.add_argument("--hero", help="the finding shown as the hero (default: the first harm, else the first near miss, else none)")
     ledger_cmd = run_commands.add_parser("ledger", help="who carried the rule in a stored run (slice M3, no Bedrock)")
     ledger_cmd.add_argument("run_id", help="a run in the store")
     reset_cmd = commands.add_parser("reset-demo", help="restore the seeded demo run as run `demo` (no Bedrock)")
@@ -180,7 +180,8 @@ def main(argv: list[str] | None = None) -> None:
         hero = bundle["hero"]
         print(f"exported run {args.run_id} (schema {bundle['schema']}): {len(bundle['events'])} events, "
               f"{len(bundle['findings'])} findings, blueprint {bundle['blueprint']['id']}, policy {bundle['policy']['id']}")
-        print(f"hero: {hero['finding_id']} {hero['kind']} {hero['person']}: {hero['title']}")
+        print(f"hero: {hero['finding_id']} {hero['kind']} {hero['person']}: {hero['title']}" if hero
+              else "hero: none (the run has no harm or near miss; the ledger is the headline)")
         print(f"wrote {path}")
     elif args.command == "reset-demo":
         from rulestorm.fixture import DEFAULT_PATH, FixtureError, restore_demo

@@ -1,5 +1,7 @@
 """Slice U0: the read-only routes the screens need (no model call)."""
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -7,11 +9,13 @@ from rulestorm.api import app, get_store
 from rulestorm.fixture import restore_demo
 from rulestorm.store import Store
 
+RECORDED = Path(__file__).parent / "cases" / "recorded_demo_L-ff6f0ca8.json"  # the slice-10 demo, kept as known data (slice M11)
+
 
 @pytest.fixture
 def http(tmp_path):
     store = Store(str(tmp_path / "test.db"))
-    restore_demo(store)
+    restore_demo(store, RECORDED)
     app.dependency_overrides[get_store] = lambda: store
     yield TestClient(app)
     app.dependency_overrides.clear()

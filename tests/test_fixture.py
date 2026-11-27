@@ -134,3 +134,29 @@ def test_the_restored_hero_is_still_harm(store) -> None:
     restored = restore_demo(store)
     hero = next(f for f in store.run_findings("demo") if f["finding_id"] == restored["hero"])
     assert (restored["hero"], hero["kind"], hero["person"], hero["harm"]) == ("demo-F1", "check_failed", "working", True)
+
+
+# --- slice M11: the hero can be a harm, a near miss, or none --------------------------------------
+
+def test_export_defaults_to_the_first_harm_and_accepts_a_near_miss(store) -> None:
+    restore_demo(store)
+    assert export_run(store, "demo")["hero"]["finding_id"] == "demo-F1"  # the harm, not a near miss
+    near = [f for f in store.run_findings("demo") if f["kind"] == "near_threshold"]
+    if near:
+        assert export_run(store, "demo", hero=near[0]["finding_id"])["hero"]["kind"] == "near_threshold"
+
+
+def test_a_bundle_with_no_hero_restores_and_its_ledger_opens(tmp_path, store, bundle) -> None:
+    from rulestorm.fixture import hero_of, write_fixture
+
+    assert hero_of({**bundle, "hero": None}, bundle["findings"]) is None
+    path = write_fixture({**bundle, "hero": None}, tmp_path / "no_hero.json")
+    restored = restore_demo(store, path)
+    assert restored["hero"] is None and restored["run_id"] == "demo"
+    app.dependency_overrides[get_store] = lambda: store
+    try:
+        http = TestClient(app)
+        assert http.get("/api/runs/demo").status_code == 200
+        assert http.get("/api/runs/demo/ledger").status_code == 200
+    finally:
+        app.dependency_overrides.clear()

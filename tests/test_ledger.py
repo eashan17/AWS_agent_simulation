@@ -20,6 +20,8 @@ from rulestorm.store import Store
 CASES = Path(__file__).parent / "cases"
 LADDER_VALUES = {"warning_at": 2, "inform_guardian_at": 3, "disciplinary_at": 4}
 
+RECORDED = CASES / "recorded_demo_L-ff6f0ca8.json"  # the slice-10 demo, kept as known data (slice M11)
+
 
 def _case(name: str) -> dict:
     return json.loads((CASES / name).read_text(encoding="utf-8"))
@@ -35,7 +37,7 @@ def _played(name: str):
 @pytest.fixture()
 def demo(tmp_path):
     store = Store(str(tmp_path / "ledger.db"))
-    restore_demo(store)
+    restore_demo(store, RECORDED)
     return store
 
 

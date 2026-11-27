@@ -62,9 +62,29 @@ def test_after_the_cutoff_is_shown_and_nothing_was_deleted(tmp_path) -> None:
     assert Store(path, retired_before="").get_run("demo") is not None  # no cutoff: everything is back
 
 
-def test_a_restored_demo_takes_its_source_run_time(tmp_path) -> None:
-    """reset-demo keeps the recorded run's own start time, so a demo recorded after the cutoff stays visible."""
+def test_with_the_cutoff_set_reset_demo_still_opens_demo(tmp_path) -> None:
+    """Slice M11: the restore stamps the run, and the blueprint and policy it adds, with the restore
+    time, so a cutoff later than the recording never hides `demo` (the duration is kept)."""
+    from datetime import datetime, timedelta, timezone
+
     path = str(tmp_path / "test.db")
-    _seed(path)
-    started = read_fixture()["run"]["started_at"]
-    assert Store(path, retired_before="").get_run("demo")["started_at"] == started
+    bundle = read_fixture()
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(timespec="seconds")
+    assert bundle["run"]["started_at"] < cutoff  # recorded before it
+    store = Store(path, retired_before=cutoff)
+    restored = restore_demo(store)
+    app.dependency_overrides[get_store] = lambda: store
+    try:
+        http = TestClient(app)
+        assert http.get("/api/runs/demo").status_code == 200
+        assert http.get(f"/api/blueprints/{bundle['run']['blueprint_id']}").status_code == 200
+        if restored["hero"]:
+            assert http.get(f"/api/findings/{restored['hero']}/evidence").status_code == 200
+        assert http.get("/api/runs/demo/ledger").status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+    run = store.get_run("demo")
+    took = (datetime.fromisoformat(bundle["run"]["finished_at"]) - datetime.fromisoformat(bundle["run"]["started_at"]))
+    assert run["started_at"] >= cutoff
+    assert datetime.fromisoformat(run["finished_at"]) - datetime.fromisoformat(run["started_at"]) == took
+    assert store.get_policy(bundle["policy"]["id"]).created_at >= cutoff

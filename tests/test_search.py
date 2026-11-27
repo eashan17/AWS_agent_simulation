@@ -1,6 +1,7 @@
 """Slice 16: the guided scenario search (fake models; no Bedrock)."""
 
 import json
+from pathlib import Path
 import random
 import time
 
@@ -17,6 +18,8 @@ from rulestorm.llm import Reply
 from rulestorm.runner import recover_interrupted
 from test_agents import RoutedModel
 from test_runner import GatedModel, approved, store  # noqa: F401 - fixtures
+
+RECORDED = Path(__file__).parent / "cases" / "recorded_demo_L-ff6f0ca8.json"  # the slice-10 demo, kept as known data (slice M11)
 
 
 def disruption(period: int, delay: int = 120) -> dict:
@@ -156,7 +159,7 @@ def test_random_scenarios_pass_the_engine_and_change_only_the_environment(templa
 
 def test_closeness_reads_the_demo_runs_own_records() -> None:
     s = __import__("rulestorm.store", fromlist=["Store"]).Store(":memory:")
-    restore_demo(s)
+    restore_demo(s, RECORDED)
     run = s.get_run("demo")
     bp = s.get_blueprint(run["blueprint_id"]).blueprint
     c = search.closeness(load_template("attendance"), bp.values, s.run_events("demo"))
