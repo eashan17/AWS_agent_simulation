@@ -83,6 +83,10 @@ def test_three_versions_differ_only_in_policy_and_give_a_table_with_no_score(htt
     measures = {row["measure"] for row in table["rows"]}
     assert {"check_failed", "requests_filed", "refused_actions", "queue_longest", "requests_decided",
             "requests_rejected"} <= measures
+    # Slice M9: from each version's ledger.
+    assert {"obligations_lost", "near_misses", "lowest_margin", "unexcused_absences", "ai_mistakes"} <= measures
+    lowest = next(row for row in table["rows"] if row["measure"] == "lowest_margin")
+    assert all(isinstance(lowest[v], int) for v in ("strict", "flexible", "progressive"))
     assert all(set(row) >= {"strict", "flexible", "progressive"} for row in table["rows"])
     assert table["checks"] and all({"strict", "flexible", "progressive"} <= set(row) for row in table["checks"])
     assert "score" not in json.dumps(table).lower() and done["no_overall_score"]

@@ -70,6 +70,14 @@ def test_repeated_runs_count_how_often_each_person_fails_with_an_included_run(ht
     assert (working["failed"], working["checked"]) == (3, 3) and working["highest"] < 80
     assert s["people"][0]["person"] == "working"  # most failures first
     assert {"kind": "check_failed", "runs": 3} in s["findings"]
+    # Slice M9: per-person margin spread, obligations lost and the harms counted per cause class.
+    assert working["margin"]["highest"] <= 0 and working["margin"]["lowest"] <= working["margin"]["mean"]
+    assert s["obligations_lost"] == 0
+    assert s["cause_classes"] and sum(c["harms"] for c in s["cause_classes"]) >= 3
+    assert all(c["cause_class"] in ("no_reply", "ai_mistake", "forced", "process", "trade_off", "chosen")
+               for c in s["cause_classes"])
+    assert {"obligations_lost", "near_misses", "lowest_margin", "unexcused_absences", "ai_mistakes"} <= {
+        m["measure"] for m in s["measures"]}
     filed = next(m for m in s["measures"] if m["measure"] == "requests_filed")
     assert len(filed["values"]) == 3 and filed["lowest"] <= filed["mean"] <= filed["highest"]
     assert done["label"] == "within-model evidence, not real-world causality" and "afresh" in done["note"]

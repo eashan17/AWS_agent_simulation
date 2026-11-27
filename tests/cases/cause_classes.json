@@ -1,0 +1,41 @@
+{
+  "description": "Test-only case (slice M9). One short term (eligibility checked at the end of week 5: 10 sessions, 3 absences fail it, 2 don't), played once per cause class. forced: 3 transport delays over the commuter's 30-minute buffer. chosen: the working student skips 3 sessions when nothing affects them. ai_mistake: 2 skips, then a skip claiming a transport delay that isn't there (refused; asked again, they skip anyway). process: 2 transport absences and 1 skip, with the request for the transport absences refused past the deadline, rejected for no documentation, or still waiting (no office capacity). trade_off: the working student's shift clashes 3 times and, with no plan, they go to the shift.",
+  "template": "attendance",
+  "focus_person": "commuter",
+  "count": "attendance_pct",
+  "values": {
+    "threshold_pct": 80,
+    "request_timing": "after_missed",
+    "partial_at_submit": false,
+    "partial_at_decide": false,
+    "decision_rule": "approve_if_covered_missed",
+    "office_capacity_per_week": 4,
+    "checkpoint_week": 5,
+    "slack_min": {"commuter": 30, "resident": 10, "working": 15, "family": 20},
+    "disruptions": []
+  },
+  "report": ["decisions"],
+  "variants": [
+    {"label": "forced", "values": {"disruptions": [
+      {"kind": "transport", "period": 1, "steps": [1, 2], "people": ["commuter"], "delay": 60, "description": "bus strike"},
+      {"kind": "transport", "period": 2, "steps": [1], "people": ["commuter"], "delay": 60, "description": "bus strike"}]}},
+    {"label": "chosen", "outcomes": {"working": {"missed": [2, 4, 6]}}},
+    {"label": "ai_mistake", "outcomes": {"working": {"missed": [2, 4]}},
+     "claims": [{"person": "working", "step": 6, "cause": "transport", "then": "skip"}]},
+    {"label": "process: refused past the deadline", "values": {"filing_deadline": 1, "disruptions": [
+      {"kind": "transport", "period": 1, "steps": [1, 2], "people": ["commuter"], "delay": 60, "description": "bus strike"}]},
+     "outcomes": {"commuter": {"missed": [5]}},
+     "requests": [{"person": "commuter", "steps": [1, 2], "reason": "bus strike", "filed_at": 7}]},
+    {"label": "process: rejected for no documentation", "values": {"proof_required": true, "disruptions": [
+      {"kind": "transport", "period": 1, "steps": [1, 2], "people": ["commuter"], "delay": 60, "description": "bus strike"}]},
+     "outcomes": {"commuter": {"missed": [5]}},
+     "requests": [{"person": "commuter", "steps": [1, 2], "reason": "bus strike"}]},
+    {"label": "process: pending at the check", "values": {"office_capacity_per_week": 0, "disruptions": [
+      {"kind": "transport", "period": 1, "steps": [1, 2], "people": ["commuter"], "delay": 60, "description": "bus strike"}]},
+     "outcomes": {"commuter": {"missed": [5]}},
+     "requests": [{"person": "commuter", "steps": [1, 2], "reason": "bus strike"}]},
+    {"label": "trade_off", "values": {"disruptions": [
+      {"kind": "work_shift_clash", "period": 1, "until_period": 3, "every": 1, "steps": [1], "people": ["working"],
+       "description": "extra shift"}]}}
+  ]
+}

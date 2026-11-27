@@ -31,6 +31,11 @@ def scenario(name: str, disruptions: list[dict], capacity: int = 2, checkpoint: 
 
 MILD = scenario("Mild strike", [disruption(3, delay=10)])
 HARSH = scenario("Six weeks of strikes", [disruption(p) for p in range(1, 7)])
+# Slice M9: strikes over a person's slack alone are a `forced` harm, not a break of the rule; a
+# shift that clashes every session is (nobody plans, so the working student goes to the shift).
+CLASHES = scenario("Shifts every session", [
+    {"kind": "work_shift_clash", "period": 1, "until_period": 6, "every": 1, "steps": [1, 2], "people": ["working"],
+     "description": "extra shifts"}])
 
 
 class ProposalModel:
@@ -71,7 +76,7 @@ def wait_until_done(http, sid: str, timeout: float = 90) -> dict:
 
 
 def test_a_break_counts_only_once_a_rerun_repeats_it(http, store, approved) -> None:  # noqa: F811
-    client = http(ProposalModel(MILD, HARSH))
+    client = http(ProposalModel(MILD, CLASHES))
     started = client.post(f"/api/blueprints/{approved.id}/search", json={"max_runs": 6})
     assert started.status_code == 200 and started.json()["status"] == "running"
     done = wait_until_done(client, started.json()["id"])
@@ -84,7 +89,8 @@ def test_a_break_counts_only_once_a_rerun_repeats_it(http, store, approved) -> N
     assert len(harsh["runs"]) == 2 and all(r["findings"] for r in harsh["runs"])
     assert rnd["status"] == "not run: the search ended"
     assert done["runs_used"] == 3
-    assert done["result"]["scenario"] == "Six weeks of strikes" and len(done["result"]["runs"]) == 2
+    assert done["result"]["scenario"] == "Shifts every session" and len(done["result"]["runs"]) == 2
+    assert {f["cause_class"] for r in harsh["runs"] for f in r["findings"] if f["harm"]} == {"trade_off"}
     assert done["result"]["findings"] and done["label"] == "within-model evidence, not real-world causality"
     # only environment values changed; the scenarios are their own blueprints, not stress variants
     child = store.get_blueprint(harsh["blueprint_id"])
@@ -226,3 +232,26 @@ def test_the_same_harm_for_the_same_person_confirms_the_break(store, approved, m
     record = _scripted(store, approved, monkeypatch, [[working], [dict(working, finding_id="Y-F1"), near]])
     assert record["status"] == "broken"
     assert record["rounds"][0]["scenarios"][0]["status"] == "broke, repeated by the rerun"
+
+
+# --- slice M9: a harm from a failed call, an AI error or piled-on disruptions is no break -----------
+
+
+def test_six_weeks_of_strikes_is_a_forced_harm_and_the_search_ends_not_broken(http, store, approved) -> None:  # noqa: F811
+    client = http(ProposalModel(HARSH))
+    done = wait_until_done(client, client.post(f"/api/blueprints/{approved.id}/search",
+                                               json={"max_runs": 3}).json()["id"])
+    assert done["status"] == "not_broken", done
+    harsh = done["rounds"][0]["scenarios"][0]
+    assert harsh["status"] == "ran: harm not from the rule (forced)" and len(harsh["runs"]) == 1  # no rerun
+    assert done["result"]["closest"]["closeness"]  # the closest margin is still reported
+
+
+@pytest.mark.parametrize("cause", ["forced", "no_reply", "ai_mistake"])
+def test_a_scripted_search_whose_only_break_is_not_from_the_rule_ends_not_broken(
+        store, approved, monkeypatch, cause) -> None:  # noqa: F811
+    harm = {"finding_id": "X-F1", "kind": "check_failed", "person": "working", "harm": True, "cause_class": cause}
+    record = _scripted(store, approved, monkeypatch, [[harm], [harm], [harm], [harm]])
+    first = record["rounds"][0]["scenarios"][0]
+    assert first["status"] == f"ran: harm not from the rule ({cause})" and len(first["runs"]) == 1
+    assert record["status"] == "not_broken" and record["result"]["closest"]["closeness"]

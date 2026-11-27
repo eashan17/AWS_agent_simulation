@@ -12,6 +12,8 @@ For every person who owes the template's duty:
 - `obligations`: obligations missed and lost (the events slice M7 adds; 0 until then).
 - `integrity`: the AI's mistakes: actions the engine refused, false claims of cause (slice M4's
   `claim: …` reason) and decisions with no reply from the model.
+- `findings` (slice M9): every harm with its `cause_class` and `cause_detail` (rulestorm/cause.py);
+  a trade_off also has the clash's recurrence and the person's limit.
 
 Every figure is counted by the engine's own `count_records`, so it can't drift from the checks.
 `search.closeness` is a thin wrapper over `margins` (its numbers are the ladder's first step, as
@@ -245,7 +247,8 @@ def ledger(template: Template, values: dict[str, Any], events: list[dict],
     from rulestorm.detect import with_harm
 
     return Ledger(run_id=run_id, template=t.ref, people=people,
-                  findings=[{k: f.get(k) for k in ("finding_id", "kind", "person", "check", "harm", "spare")}
+                  findings=[{k: f.get(k) for k in ("finding_id", "kind", "person", "check", "harm", "spare",
+                                                   "cause_class", "cause_detail", "trade_off")}
                             for f in map(with_harm, findings or [])])
 
 
@@ -285,8 +288,29 @@ def lines(template: Template, book: Ledger) -> list[str]:
     harm = [f for f in book.findings if f["harm"]]
     near = [f for f in book.findings if f["kind"] == "near_threshold"]
     out.append(f"findings: {len(harm)} harm, {len(near)} near misses"
-               + "".join(f"\n  {f['finding_id']} {f['kind']} {f['person']}" for f in book.findings))
+               + "".join(f"\n  {f['finding_id']} {f['kind']} {f['person']}" + _why(t, f) for f in book.findings))
     return out
+
+
+def _recurs(t: Template, r: dict) -> str:
+    """One disruption entry's recurrence in the template's words: "weeks 1 to 10, every week, session 2"."""
+    period, step = t.calendar.period_label, t.calendar.step_label
+    every = r.get("every") or 1
+    when = (f"{period}s {r['period']} to {r['until_period']}, every {period if every == 1 else f'{every} {period}s'}"
+            if r.get("until_period") else f"{period} {r.get('period')}")
+    steps = r.get("steps") or []
+    return when + (f", {step} {', '.join(map(str, steps))} of the {period}" if steps else "")
+
+
+def _why(t: Template, f: dict) -> str:
+    """Slice M9: a harm's cause class and detail; a trade_off adds the assumptions that set it."""
+    if not f.get("harm") or not f.get("cause_class"):
+        return ""
+    text = f": {f['cause_class']} ({f['cause_detail']})"
+    for c in (f.get("trade_off") or {}).get("clashes", []):
+        recurs = "; ".join(_recurs(t, r) for r in c["recurs"]) or "as scheduled"
+        text += f"\n    {c['label']}: recurs {recurs}" + (f"; limit {c['limit']}" if c.get("limit") is not None else "")
+    return text
 
 
 def run_ledger(store, run_id: str) -> tuple[Template, Ledger]:

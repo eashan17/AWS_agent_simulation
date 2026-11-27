@@ -23,6 +23,10 @@ usually never reached, so its margin comes from the ledger (slice M3), counted f
 the end of the term; that needs the blueprint's values (the last step's threshold), so without
 them ladders give no near miss.
 
+Slice M9: every harm also gets a `cause_class` (rulestorm/cause.py): why it happened, by rules
+over the records (no_reply, ai_mistake, forced, process, trade_off, chosen), with a one-line
+`cause_detail` and, for a trade_off, the clash's recurrence and the person's limit.
+
 Detection reads only the engine's general event types; titles come from the template's terms
 (`finding_check_failed`, `finding_pending_at_check`, `finding_near_threshold`), never from code.
 """
@@ -69,6 +73,11 @@ class Finding(BaseModel):
     obligation_event_id: str | None = None
     obligation: str | None = Field(None, description="obligation_lost: what was missed, e.g. a shift")
     lost: str | None = Field(None, description="obligation_lost: what happened past the limit")
+    # Slice M9: why the harm happened (None on a finding that isn't harm).
+    cause_class: Literal["no_reply", "ai_mistake", "forced", "process", "trade_off", "chosen"] | None = None
+    cause_detail: str | None = None
+    trade_off: dict[str, Any] | None = Field(None, description="trade_off: each clash's recurrence and the "
+                                                               "person's limit, from the blueprint")
 
     @model_validator(mode="after")
     def _harm_from_kind(self) -> "Finding":
@@ -139,7 +148,21 @@ def detect(run_id: str, events: list[dict[str, Any]], template: Template,
             title=title(template, "obligation_lost"), person=p["person"], period=event["period"],
             disruptions=[i for i in chain if by_id[i]["type"] in DISRUPTION_TYPES], chain=chain,
             obligation_event_id=event["event_id"], obligation=p["obligation"], lost=p["lost"]))
-    return found
+    from rulestorm.cause import classify  # slice M9
+
+    return [Finding(**f) for f in classify(template, values, events, [f.model_dump() for f in found])]
+
+
+def with_cause(findings: list[dict[str, Any]], template: Template, values: dict[str, Any] | None,
+               events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Stored findings with `harm` and, on each harm, its cause class (slice M9); a finding saved
+    before M9 gets it when read, worked out from the run's events."""
+    from rulestorm.cause import classify
+
+    marked = [with_harm(f) for f in findings]
+    if all("cause_class" in f for f in marked if f["harm"]):
+        return marked
+    return classify(template, values, events, marked)
 
 
 def _near_misses(events: list[dict[str, Any]], template: Template,

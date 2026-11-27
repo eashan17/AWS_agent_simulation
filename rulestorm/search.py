@@ -14,7 +14,8 @@ weak point that came closest; the random scenario varies the closest scenario so
 
 A run with a harm finding is run once more on the same scenario (a near miss alone is not a
 break, so it is never rerun). Only a break the rerun repeats, the same kind of harm for the same
-person (slice M2), ends the search (`broken`); otherwise the scenario is marked "broke once, not repeated" and the search
+person (slice M2), neither of them `no_reply`, `ai_mistake` nor `forced` (slice M9: a break from a
+failed model call, an AI error or piled-on disruptions tells nothing about the rule), ends the search (`broken`); otherwise the scenario is marked "broke once, not repeated" and the search
 goes on, because the AI people choose afresh in each run. With no confirmed break the search ends
 `not_broken` with the closest scenario. Runs go one at a time, through the normal runner and its
 daily caps. Everything here is within-model evidence.
@@ -32,7 +33,7 @@ from pydantic import BaseModel, ValidationError
 from rulestorm import config, llm
 from rulestorm.blueprint import Label, TemplateBlueprint, values_model
 from rulestorm.comparison import ComparisonActive, _run_one
-from rulestorm.detect import with_harm
+from rulestorm.cause import NOT_THE_RULE
 from rulestorm.ledger import margins
 from rulestorm.core.engine import disruption_when
 from rulestorm.core.model import Template, load_template
@@ -52,7 +53,7 @@ from rulestorm.policy import (
     require_approved,
     take_blueprint_call,
 )
-from rulestorm.runner import RunActive
+from rulestorm.runner import RunActive, findings_of
 from rulestorm.store import _now
 
 log = logging.getLogger("rulestorm.search")
@@ -298,7 +299,8 @@ def _run_scenario(store, record, scenario, agent_model, out_dir) -> dict:
         bp = store.get_blueprint(scenario["blueprint_id"]).blueprint
         events = store.run_events(run_id)
         row["findings"] = [{"finding_id": f["finding_id"], "kind": f["kind"], "person": f.get("person"),
-                            "harm": with_harm(f)["harm"]} for f in store.run_findings(run_id)]
+                            "harm": f["harm"], "cause_class": f.get("cause_class")}
+                           for f in findings_of(store, store.get_run(run_id))]
         row["closeness"] = closeness(load_template(bp.template_id), bp.values, events)
     store.update_search(record)
     return row
@@ -352,16 +354,18 @@ def _rounds(store, record: dict, model, agent_model, out_dir: str) -> None:
                 break
             history.append({"name": s["name"], "source": s["source"], "blueprint_id": s["blueprint_id"],
                             "closeness": first["closeness"]})
-            harms = {(f["kind"], f["person"]) for f in first["findings"] if f["harm"]}
+            harms = breaks(first["findings"])
             if not harms:  # slice M2: a near miss alone is not a break, so it is never rerun
-                s["status"] = "ran: no harm" if first["findings"] else "ran: no finding"
+                others = sorted({f.get("cause_class") or "unclassified" for f in first["findings"] if f["harm"]})
+                s["status"] = (f"ran: harm not from the rule ({', '.join(others)})" if others
+                               else "ran: no harm" if first["findings"] else "ran: no finding")
                 continue
             if record["runs_used"] >= record["max_runs"]:
                 s.update(status="broke once, no runs left to repeat it", confirmed=False)
                 continue
             again = _run_scenario(store, record, s, agent_model, out_dir)
             # a break is repeated only by the same kind of harm for the same person (slice M2)
-            if again["run_id"] and harms & {(f["kind"], f["person"]) for f in again["findings"] if f["harm"]}:
+            if again["run_id"] and harms & breaks(again["findings"]):
                 s.update(status="broke, repeated by the rerun", confirmed=True)
                 record["status"] = "broken"
                 record["result"] = {"scenario": s["name"], "source": s["source"], "blueprint_id": s["blueprint_id"],
@@ -383,6 +387,12 @@ def _rounds(store, record: dict, model, agent_model, out_dir: str) -> None:
                                          "closeness": closeness_line(closest["closeness"])} if closest else None)}
     record["finished_at"] = _now()
     store.update_search(record)
+
+
+def breaks(findings: list[dict]) -> set[tuple[str, str]]:
+    """(kind, person) of each harm that can break the rule (slice M9): not no_reply, ai_mistake or
+    forced. A harm the cause rules couldn't classify still counts, as before M9."""
+    return {(f["kind"], f["person"]) for f in findings if f["harm"] and f.get("cause_class") not in NOT_THE_RULE}
 
 
 def get_search(store, search_id: str) -> dict:

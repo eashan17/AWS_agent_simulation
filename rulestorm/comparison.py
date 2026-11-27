@@ -324,6 +324,44 @@ def _column(store, template: Template, run_id: str) -> dict[str, Any]:
                                  for e in events),
         "messages": sum(e["type"] in ("message_sent", "response_given") and e["actor"] in staff for e in events),
         "llm_calls": (run.get("summary") or {}).get("llm_calls"),
+        **ledger_figures(store, run_id),
+    }
+
+
+def ledger_figures(store, run_id: str) -> dict[str, Any]:
+    """Slice M9: the run's ledger figures for the table and the repeats: obligations lost, near
+    misses, the lowest margin, unexcused absences, AI mistakes, each person's margin (to the step
+    that harms them) and each harm's cause class. None when the ledger can't be read (a blueprint
+    of an older template version)."""
+    from rulestorm.cause import UNTRUE_CORRECTION
+    from rulestorm.ledger import run_ledger
+
+    try:
+        _, book = run_ledger(store, run_id)
+    except (LookupError, ValueError):
+        return {"obligations_lost": None, "near_misses": None, "lowest_margin": None, "unexcused_absences": None,
+                "ai_mistakes": None, "margins": {}, "cause_classes": {}}
+    margins = {}
+    for p in book.people:
+        harmful = [m.spare for m in p.checks if m.spare is not None
+                   and (m.ladder_step is None or m.ladder_step == max(x.ladder_step or 0 for x in p.checks
+                                                                       if x.check == m.check))]
+        if harmful:
+            margins[p.person] = min(harmful)
+    classes: dict[str, int] = {}
+    for f in book.findings:
+        if f["harm"]:
+            key = f.get("cause_class") or "unclassified"
+            classes[key] = classes.get(key, 0) + 1
+    return {
+        "obligations_lost": sum(p.obligations.lost for p in book.people),
+        "near_misses": sum(f["kind"] == "near_threshold" for f in book.findings),
+        "lowest_margin": min(margins.values(), default=None),
+        "unexcused_absences": sum(p.absences.unexcused for p in book.people),
+        "ai_mistakes": sum(p.integrity.false_claims + p.integrity.refused_by_reason.get(UNTRUE_CORRECTION, 0)
+                           for p in book.people),
+        "margins": margins,
+        "cause_classes": classes,
     }
 
 
@@ -340,6 +378,12 @@ ROWS = [
     ("requests_rejected", "requests rejected"),
     ("messages", "messages from staff to people"),
     ("llm_calls", "model calls"),
+    # Slice M9: from each run's ledger.
+    ("obligations_lost", "obligations lost (jobs, care arrangements)"),
+    ("near_misses", "near misses (passed with one miss to spare)"),
+    ("lowest_margin", "lowest margin (misses anyone had to spare)"),
+    ("unexcused_absences", "unexcused misses"),
+    ("ai_mistakes", "AI mistakes (false claims, untrue corrections)"),
 ]
 
 

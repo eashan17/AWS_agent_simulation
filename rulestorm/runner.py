@@ -34,7 +34,7 @@ from rulestorm.agents import Agents, summarise, write_run_file
 from rulestorm.core.model import load_template
 from rulestorm.core.term import Term
 from rulestorm import config
-from rulestorm.detect import detect, with_harm
+from rulestorm.detect import detect, with_cause, with_harm
 from rulestorm.telemetry import report_run
 from rulestorm.policy import DailyCapReached, check_version, require_approved
 from rulestorm.store import _now
@@ -131,18 +131,19 @@ FINISHED = ("completed", "degraded")
 
 def findings_of(store, run: dict) -> list[dict]:
     """A finished run's findings; worked out from its stored events if it has none saved yet
-    (it ended before slice 8, or had none). A running or failed run has none."""
+    (it ended before slice 8, or had none). A running or failed run has none. Each harm carries
+    its cause class (slice M9), worked out when read for a finding saved before M9."""
     if run["status"] not in FINISHED:
         return []
-    saved = store.run_findings(run["id"])
-    if saved:
-        return [with_harm(f) for f in saved]
     template = load_template(run["template"].split("@")[0])
     try:  # the values let ladders give near misses; an old or unreadable blueprint only loses those
         record = store.get_blueprint(run["blueprint_id"]) if run.get("blueprint_id") else None
         values = record.blueprint.values if record is not None and record.blueprint is not None else None
     except ValueError:
         values = None
+    saved = store.run_findings(run["id"])
+    if saved:
+        return with_cause(saved, template, values, store.run_events(run["id"]))
     found = [f.model_dump() for f in detect(run["id"], store.run_events(run["id"]), template, values)]
     store.add_findings(run["id"], found)
     return [with_harm(f) for f in store.run_findings(run["id"])]

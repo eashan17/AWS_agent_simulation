@@ -15,6 +15,7 @@ import uuid
 from statistics import mean
 
 from rulestorm import config
+from rulestorm.cause import CLASSES
 from rulestorm.comparison import ROWS, ComparisonActive, _column, _run_one
 from rulestorm.core.model import load_template
 from rulestorm.counterfactual import LABEL
@@ -126,6 +127,12 @@ def summarise(store, template, run_ids: list[str]) -> dict:
             p["values"].append({"run_id": r, "value": c["value"], "passed": c["passed"]})
     for p in people.values():
         p.update(_spread([v["value"] for v in p["values"]]))
+        # Slice M9: the spread of their margin (misses to spare before the step that harms them).
+        p["margin"] = _spread([columns[r]["margins"].get(p["person"]) for r in run_ids])
+    classes: dict[str, int] = {}
+    for r in run_ids:
+        for key, n in columns[r]["cause_classes"].items():
+            classes[key] = classes.get(key, 0) + n
     findings: dict[str, int] = {}
     for r in run_ids:
         for kind in {f["kind"] for f in store.run_findings(r)}:
@@ -140,6 +147,8 @@ def summarise(store, template, run_ids: list[str]) -> dict:
         "runs": len(run_ids),
         "people": sorted(people.values(), key=lambda p: (-p["failed"], p["person"])),
         "findings": [{"kind": k, "runs": n} for k, n in sorted(findings.items())],
+        "cause_classes": [{"cause_class": k, "harms": classes[k]} for k in (*CLASSES, "unclassified") if k in classes],
+        "obligations_lost": sum(columns[r]["obligations_lost"] or 0 for r in run_ids),
         "measures": measures,
     }
 
