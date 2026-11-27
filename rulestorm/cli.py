@@ -82,6 +82,11 @@ def main(argv: list[str] | None = None) -> None:
         "hunt", help="run the approved variants, then the parent, until a run has a finding (slice H)")
     hunt_cmd.add_argument("blueprint_id", help="the approved blueprint the variants vary")
     hunt_cmd.add_argument("--max-runs", type=int, default=10, help="stop after this many runs (default 10)")
+    evaluation = commands.add_parser("eval", help="the pre-registered evaluation (slice M10, docs/EVALUATION.md)")
+    eval_commands = evaluation.add_subparsers(dest="eval_command", required=True)
+    eval_cmd = eval_commands.add_parser("report", help="a repeat's or search's report and pass lines (no Bedrock)")
+    eval_cmd.add_argument("job_id", help="a repeat (R-...) or search (S-...) ID")
+    eval_cmd.add_argument("--json", action="store_true", help="print the report as JSON")
 
     args = parser.parse_args(argv)
     if args.command == "hello":
@@ -185,6 +190,16 @@ def main(argv: list[str] | None = None) -> None:
         print(f"restored run {restored['run_id']} (schema {restored['schema']}) with policy and blueprint")
         print(f"from {restored['source_run_id']}: {restored['events']} events, {restored['findings']} findings, "
               f"hero {restored['hero']}")
+    elif args.command == "eval":
+        import json
+
+        from rulestorm.evaluation import JobNotFound, report, report_lines
+
+        try:
+            rep = report(Store(), args.job_id)
+        except JobNotFound:
+            raise SystemExit(f"no repeat or search with ID {args.job_id}")
+        print(json.dumps(rep, indent=2, ensure_ascii=False) if args.json else "\n".join(report_lines(rep)))
     elif args.command == "explore":
         explore_command(args.explore_command, args.blueprint_id, getattr(args, "max_runs", 10))
 
