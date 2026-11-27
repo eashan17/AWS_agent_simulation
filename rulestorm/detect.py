@@ -78,6 +78,8 @@ class Finding(BaseModel):
     cause_detail: str | None = None
     trade_off: dict[str, Any] | None = Field(None, description="trade_off: each clash's recurrence and the "
                                                                "person's limit, from the blueprint")
+    cause_shares: dict[str, int] | None = Field(None, description="the harm's unexcused misses at the check, "
+                                                                  "by cause class (a mixed cause shows here)")
 
     @model_validator(mode="after")
     def _harm_from_kind(self) -> "Finding":
@@ -160,7 +162,7 @@ def with_cause(findings: list[dict[str, Any]], template: Template, values: dict[
     from rulestorm.cause import classify
 
     marked = [with_harm(f) for f in findings]
-    if all("cause_class" in f for f in marked if f["harm"]):
+    if all("cause_class" in f and ("cause_shares" in f or f["kind"] == "obligation_lost") for f in marked if f["harm"]):
         return marked
     return classify(template, values, events, marked)
 

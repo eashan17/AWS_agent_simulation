@@ -248,7 +248,7 @@ def ledger(template: Template, values: dict[str, Any], events: list[dict],
 
     return Ledger(run_id=run_id, template=t.ref, people=people,
                   findings=[{k: f.get(k) for k in ("finding_id", "kind", "person", "check", "harm", "spare",
-                                                   "cause_class", "cause_detail", "trade_off")}
+                                                   "cause_class", "cause_detail", "trade_off", "cause_shares")}
                             for f in map(with_harm, findings or [])])
 
 
@@ -307,6 +307,10 @@ def _why(t: Template, f: dict) -> str:
     if not f.get("harm") or not f.get("cause_class"):
         return ""
     text = f": {f['cause_class']} ({f['cause_detail']})"
+    shares = f.get("cause_shares") or {}
+    if len(shares) > 1 or (shares and next(iter(shares)) != f["cause_class"]):  # mixed: say so
+        missed = t.terms.get("missed_plural", "misses")
+        text += f"\n    {missed} by cause: " + ", ".join(f"{n} {k}" for k, n in shares.items())
     for c in (f.get("trade_off") or {}).get("clashes", []):
         recurs = "; ".join(_recurs(t, r) for r in c["recurs"]) or "as scheduled"
         text += f"\n    {c['label']}: recurs {recurs}" + (f"; limit {c['limit']}" if c.get("limit") is not None else "")

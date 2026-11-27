@@ -19,6 +19,13 @@ counted at the check.
    the clash recurs and the person's limit, from the blueprint.
 6. `chosen`: what remains, skips when nothing affected the person.
 
+A harm with mixed causes also gets `cause_shares` (27 Nov): its misses counted at the check, each
+given one cause, so "2 forced, 1 chosen" shows what the class alone hides. Each miss takes the
+first that holds: no_reply or ai_mistake at that step, process (a request covered it but was left
+pending, refused past the deadline or rejected for no documentation), forced (an obstacle over
+their slack), trade_off (a clash they missed the duty for), chosen. Excused misses don't count. A
+lost obligation has none: its harm is the obligation, not the duty's misses.
+
 Misses are counted with the engine's own `count_records`, so a "what if" here can't drift from
 the checks. No domain word lives here: every label comes from the template.
 """
@@ -91,21 +98,55 @@ def classify(template: Template, values: dict[str, Any] | None, events: list[dic
     A finding that isn't harm is returned as it is. Without the blueprint's values, the counting
     rules can't run: a harm that isn't no_reply or ai_mistake gets `cause_class` None."""
     run = _Run(template, values or {}, events)
-    return [{**f, **_classify(run, f)} if f.get("harm") else f for f in findings]
+    return [{**f, **_classify(run, f), **_shares(run, f)} if f.get("harm") else f for f in findings]
 
 
-def _classify(whole: _Run, f: dict[str, Any]) -> dict[str, Any]:
-    # The records as they stood at the check: a request approved, or a record corrected, after it
-    # changed nothing the check saw.
+def _at_check(whole: _Run, f: dict[str, Any]):
+    """The run's records as they stood at the harm's event, the check and count it concerns, and
+    the person's own records up to it."""
+    # A request approved, or a record corrected, after the check changed nothing the check saw.
     at = whole.by_id.get(f.get("check_event_id") or f.get("obligation_event_id") or "")
     run = _Run(whole.t, whole.values, [e for e in whole.events if e["seq"] <= at["seq"]]) if at else whole
-    t, person = run.t, f["person"]
-    spp = t.calendar.steps_per_period
+    t = run.t
     check = next((c for c in t.checks if c.id == f.get("check")), None)
     count = next((c for c in t.counts if check and c.id == check.count), None)
     duty = count.duty if count else (t.duties[0].id if t.duties else None)
-    last = f["period"] * spp
-    own = {s: o for (who, s), o in final_records(run.events, duty).items() if who == person and s <= last} if duty else {}
+    last = f["period"] * t.calendar.steps_per_period
+    own = ({s: o for (who, s), o in final_records(run.events, duty).items() if who == f["person"] and s <= last}
+           if duty else {})
+    return run, check, count, duty, own
+
+
+def _shares(whole: _Run, f: dict[str, Any]) -> dict[str, Any]:
+    """`cause_shares`: the harm's unexcused misses at the check, by cause (see the module notes)."""
+    if f["kind"] == "obligation_lost":
+        return {}
+    run, _, _, duty, own = _at_check(whole, f)
+    person = f["person"]
+    missed = sorted(s for s, o in own.items() if o == "missed" and (person, s) not in run.excused)
+    process = run.process_steps(person, f.get("pending_requests") or [])
+    mine = [e for e in run.events if e["actor"] == person]
+    counts: dict[str, int] = {}
+    for s in missed:
+        at_step = [e for e in mine if e["step"] == s]
+        cause = run.cause_of(duty, person, s)
+        if any(_no_reply(e) for e in at_step):
+            key = "no_reply"
+        elif any(is_ai_mistake(e) for e in at_step):
+            key = "ai_mistake"
+        elif s in process:
+            key = "process"
+        elif cause is not None:
+            key = "trade_off" if cause["payload"].get("conflict") else "forced"
+        else:
+            key = "chosen"
+        counts[key] = counts.get(key, 0) + 1
+    return {"cause_shares": {k: counts[k] for k in CLASSES if k in counts}} if counts else {}
+
+
+def _classify(whole: _Run, f: dict[str, Any]) -> dict[str, Any]:
+    run, check, count, duty, own = _at_check(whole, f)
+    t, person = run.t, f["person"]
     missed = {s for s, o in own.items() if o == "missed"}
     steps = missed | {run.by_id[i]["step"] for i in f.get("chain") or [] if i in run.by_id and run.by_id[i]["step"]}
     if f.get("obligation_event_id") in run.by_id:

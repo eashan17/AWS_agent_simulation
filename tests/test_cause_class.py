@@ -117,3 +117,30 @@ def test_a_finding_stored_before_m9_gets_its_class_when_read_and_a_later_approva
 def test_without_the_values_only_the_record_rules_run() -> None:
     t, _, events, found = played(variant("forced"))
     assert [f.get("cause_class") for f in classify(t, None, events, found) if f["harm"]] == [None]
+
+
+@pytest.mark.parametrize("label, shares", [
+    ("forced", {"forced": 3}),
+    ("chosen", {"chosen": 3}),
+    ("ai_mistake", {"ai_mistake": 1, "chosen": 2}),
+    ("process: refused past the deadline", {"process": 2, "chosen": 1}),
+    ("trade_off", {"trade_off": 3}),
+])
+def test_a_harm_also_counts_its_misses_by_cause(label, shares) -> None:
+    assert played(variant(label))[3][0]["cause_shares"] == shares
+
+
+def test_the_ledger_shows_a_mixed_cause_and_a_lost_obligation_has_no_shares() -> None:
+    store = Store(":memory:")
+    restore_demo(store)
+    from rulestorm.ledger import run_ledger
+
+    t, book = run_ledger(store, "demo")
+    harm = next(f for f in book.findings if f["harm"])
+    assert harm["cause_class"] == "chosen" and harm["cause_shares"] == {"forced": 2, "chosen": 1}
+    assert "    absences by cause: 2 forced, 1 chosen" in "\n".join(lines(t, book)).split("\n")
+    _, _, _, found = played(case("shift_clash.json"))
+    assert all("cause_shares" not in f or f["cause_shares"] is None for f in found if f["kind"] == "obligation_lost")
+    # one cause only: no extra line
+    t2, values2, events2, found2 = played(variant("forced"))
+    assert "by cause" not in "\n".join(lines(t2, ledger(t2, values2, events2, found2)))
