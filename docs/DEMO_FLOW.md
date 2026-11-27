@@ -6,6 +6,33 @@ Link: https://d2emiyaz9dq4bi.cloudfront.net (every screen has a `#/...` address,
 
 **Nothing recorded before today's fixes can be used.** `demo`, `L-a3af1d12`, `S-261e90f7`, `S-b4501248`, `R-f9db0944`, `L-01465ef0`, `L-df9ce433` and `C-61168412` show behaviour the engine no longer allows: students weren't told the check is final, faculty marked absent students present, and a skip by choice could be excused. The two live blueprints `B-a49b586e` and `B-da347452` were filled before personal clashes existed (checked on live: neither has a work shift clash or a family emergency), so new blueprints are built first. Getting the old recordings off the live site is a tech task: see "Old recordings off the live site" below.
 
+## The final demo (approved 27 Nov, after M10 and M11; supersedes Parts 1 and 2 below)
+Checked against the idea doc (docs/ideation/RuleStorm_Consolidated_Product_and_MVP_Specification (2).md): its 7 core capabilities, the 8-step demo journey (§6), the central demonstration interaction and the five differentiators (§9). No AWS scene (team decision). **Record the video with `/brag:brag`** (team decision, 27 Nov), from the live link, under 3 minutes.
+
+`demo` replays **L-4aa53453** (M10 v1 attendance repeat R-57070615, blueprint B-c2db9ddc): its hero `demo-F1` is the working student failing exam eligibility, `trade_off` (8 work-shift clashes the policy doesn't excuse). Old recordings are hidden (`RULESTORM_RETIRED_BEFORE=2026-11-27T06:46:46+00:00`).
+
+| # | Time | Screen | What it shows (idea doc) | Status |
+|---|---|---|---|---|
+| 1 | 0:00–0:14 | Home | §12.7 India framing: an 80% rule against a long-distance commuter, a working student and a student with family duties; shown as a potential benefit, not a measured one. Two rule types | have |
+| 2 | 0:14–0:32 | Policy input → `#/blueprint/B-c2db9ddc` | Journey 2–3, differentiator 1: plain-language policy, purpose and environment; interpretation and stakeholder profiles; stated vs assumed; validation status; editing before approval; "How RuleStorm reads this rule" (a regular shift is routine, so not exceptional) | have |
+| 3 | 0:32–0:40 | **Run this term** → progress | Journey 4, simulation launch: week, run ID, progress (cut after a few seconds) | live, uses 1 run |
+| 4 | 0:40–1:02 | `#/run/demo`, 8× | Journey 5, capabilities 1–2: disruptions, decisions, requests and responses; the working student's goals, constraints, memory, state ("misses left", the job limit) and plans; one strategy change ("How people adapted"); one refused action (the governed environment) | have |
+| 5 | 1:02–1:20 | `#/run/demo/analysis/evidence/demo-F1` + Summary + run details | The central interaction, capability 5: event IDs, state changes, the calculation, labelled recorded / calculated / AI; "Why: trade-off"; who carried the rule; run details | have |
+| 6 | 1:20–1:32 | `#/blueprint/B-c2db9ddc/repeat/R-57070615` | §G repeated runs: working failed 5 of 5; why each harm happened | have |
+| 7 | 1:32–1:48 | `#/blueprint/B-c2db9ddc/search/S-bcce1ecb` | Capabilities 3–4, differentiators 3–4: targeted plus random scenarios; "Recurring family emergency and work clash" fails 3 students, confirmed by its rerun (L-df9aa884, L-e4d8b7ed) | have |
+| 8 | 1:48–2:02 | What-if on L-4aa53453: `exceptional_causes` → `any_documented` | §4.9 controlled counterfactual on how the rule reads, labelled within-model | **to record** (1 run) |
+| 9 | 2:02–2:18 | Compare policies on B-c2db9ddc | Capability 6, journey 7: strict / flexible / progressive under matched conditions; who fails against requests decided | **to record** (3 runs) |
+| 10 | 2:18–2:44 | Curfew: evidence in L-cfc402c9 (search S-993c9533, "Warden away during peak disruptions"), then a what-if on `warden_capacity_per_night` ×2 | The idea doc's central chain (disruption → request → over capacity → still pending at the check) on a second rule; the bottleneck detector (`pending_at_check`, `process`); jobs lost (`trade_off`); the doc's own counterfactual (more processing capacity) | evidence have; what-if **to record** (1 curfew run) |
+| 11 | 2:44–2:58 | "You decide" panel | Journey 8, capability 7: trade-offs, no single score. One line from M10: about 2,000 AI decisions checked, 0 false claims (docs/EVALUATION.md) | have |
+
+**To record (5 runs, about 310 calls, about USD 0.60):** scenes 8, 9 and 10's what-if, after the 05:30 IST daily reset (10 runs and 1,500 calls a day on live) or on 30 Nov (runs aren't deploys). Write each new ID into this table. If a what-if changes nothing, say so on screen.
+
+**Before recording, check on screen:** L-cfc402c9's evidence reads as the central chain; scene 4 has a refused action to point at.
+
+**Not built, so not claimed:** a behavioural-pattern detector with novelty comparison (§4.8; "How people adapted" finds strategy changes and first-time actions from the records, not a comparison with earlier runs), four-stage validation (§4.6; we have schema and template checks), a full run manifest (§4.9).
+
+**Q&A, not in the video:** the no-harm ledger `L-0a075c5e` (M10 v2 attendance: the working student carries the rule with nobody failing); proposing harsher conditions; a harm a search doesn't count because outside disruptions alone caused it (`L-1fe8c324`, `forced`); a fresh run live; the EVALUATION.md protocol.
+
 ## The idea in one line
 A policymaker writes a rule in plain words; RuleStorm turns it into a simulated term with AI people, shows *how* the rule hurts one person, then *how often, under which conditions and for whom* it breaks, and what each fix changes, so the policymaker can decide before rollout.
 
