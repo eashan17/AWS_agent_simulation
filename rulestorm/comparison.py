@@ -152,8 +152,11 @@ def apply_version(template: Template, parent: TemplateBlueprint, name: str, vers
     """The parent with the version's policy values, checked by the values model (and so by the
     engine). Raises ValidationError if the engine refuses them."""
     new = version.values.model_dump()
-    values = copy.deepcopy(parent.values)
-    changed = [p for p in changeable(template, parent) if values[p.name] != new[p.name]]
+    values = values_model(template).model_validate(copy.deepcopy(parent.values)).model_dump()  # readings filled
+    # Slice M8b: a value the version leaves out (one with a default, e.g. a reading) keeps the
+    # approved value rather than falling back to the template's default.
+    given = version.values.model_fields_set
+    changed = [p for p in changeable(template, parent) if p.name in given and values[p.name] != new[p.name]]
     for p in changed:
         values[p.name] = new[p.name]
     values = values_model(template).model_validate(values).model_dump()

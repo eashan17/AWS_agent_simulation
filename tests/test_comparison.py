@@ -143,3 +143,24 @@ def test_the_prompt_names_all_three_versions_and_only_policy_values(store, appro
     assert "approve_all" not in prompt
     with pytest.raises(Exception):
         schema.model_validate(json.loads(VERSIONS.replace('"approve_if_covered_missed"', '"approve_all"')))
+
+
+def test_a_version_may_change_a_reading_and_one_it_leaves_out_keeps_the_approved_value(approved) -> None:  # noqa: F811
+    """Slice M8b: policy versions may change the new readings (what counts as exceptional, proof, the
+    deadline); a reading a version leaves out keeps the approved value, not the template's default."""
+    from rulestorm.core.model import load_template
+
+    template = load_template("attendance")
+    parent = approved.blueprint.model_copy(update={"values": {**approved.blueprint.values, "proof_required": True}})
+    schema = comparison.comparison_schema(template, parent)
+    reply = schema.model_validate(json.loads(VERSIONS.replace(
+        '"approach": "provisions for disruptions", "values": {',
+        '"approach": "provisions for disruptions", "values": {"exceptional_causes": "any_documented", ')))
+    flexible = comparison.apply_version(template, parent, "flexible", reply.flexible)
+    assert flexible.values["exceptional_causes"] == "any_documented"
+    assert flexible.values["proof_required"] is True  # left out: kept
+    assert any(x.field == "exceptional_causes" and "unforeseen_only -> any_documented" in x.statement
+               for x in flexible.assumptions)
+    strict = comparison.apply_version(template, parent, "strict", reply.strict)
+    assert strict.values["exceptional_causes"] == parent.values["exceptional_causes"]
+    assert strict.values["proof_required"] is True

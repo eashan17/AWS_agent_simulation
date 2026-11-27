@@ -1,4 +1,5 @@
-"""Slice 13: rerun the same term with one environment condition changed, and compare (fake model)."""
+"""Slice 13: rerun the same term with one environment condition changed, and compare (fake model).
+Slice M8b: or one policy value."""
 
 import pytest
 
@@ -48,15 +49,51 @@ def test_a_counterfactual_changes_one_condition_and_compares_both_runs(client, a
         assert run["checks"] and all({"person", "passed", "value"} <= set(c) for c in run["checks"])
 
 
+def test_a_counterfactual_can_change_one_policy_reading_and_still_matches(client, approved, store) -> None:
+    """Slice M8b: a what-if on the rule itself (how an excused session counts)."""
+    http, model = client
+    base = finished_run(http, model, approved.id)
+    posted = http.post(f"/api/runs/{base}/counterfactual",
+                       json={"parameter": "excused_counting", "value": "count_as_met"})
+    assert posted.status_code == 200, posted.text
+    body = posted.json()
+    assert body["changed"] == {"parameter": "excused_counting", "from": "remove", "to": "count_as_met"}
+    new = store.get_blueprint(body["blueprint_id"])
+    old_values, new_values = approved.blueprint.values, new.blueprint.values
+    assert [k for k in new_values if old_values.get(k) != new_values[k]] == ["excused_counting"]
+    from rulestorm.core.model import load_template
+    assert new.blueprint.label_for(load_template("attendance"), "excused_counting")[0] == "fact"
+    wait_until_finished(http, body["run_id"])
+    result = http.get(f"/api/runs/{base}/compare/{body['run_id']}").json()
+    assert result["matched"] is True
+    assert result["differences"] == [{"parameter": "excused_counting", "kind": "policy", "from": "remove",
+                                      "to": "count_as_met"}]
+
+
+def test_a_threshold_what_if_is_allowed_but_a_stated_only_choice_is_not(client, approved, store) -> None:
+    http, model = client
+    base = finished_run(http, model, approved.id)
+    before = blueprint_count(store)
+    refused = http.post(f"/api/runs/{base}/counterfactual", json={"parameter": "decision_rule", "value": "approve_all"})
+    assert refused.status_code == 422 and "only when the policy states it" in refused.json()["detail"], refused.text
+    assert blueprint_count(store) == before
+    posted = http.post(f"/api/runs/{base}/counterfactual", json={"parameter": "threshold_pct", "value": 70})
+    assert posted.status_code == 200, posted.text
+    wait_until_finished(http, posted.json()["run_id"])
+
+
 @pytest.mark.parametrize("change, says", [
-    ({"parameter": "threshold_pct", "value": 70}, "policy value"),
+    ({"parameter": "exception_rule", "value": "anything goes"}, "is text"),
+    ({"parameter": "profiles", "value": 1}, "people value"),
+    ({"parameter": "exceptional_causes", "value": "decider_judges"}, "not allowed"),  # rule-decided: not offered
+    ({"parameter": "filing_deadline", "value": 9}, "not allowed"),
     ({"parameter": "office_capacity_per_week", "value": 51}, "not allowed"),
     ({"parameter": "office_capacity_per_week", "value": 2}, "already 2"),
     ({"parameter": "office_capacity_per_week", "value": "5"}, "whole number"),
     ({"parameter": "disruptions", "value": 1}, "a list"),
     ({"parameter": "printer_count", "value": 1}, "no parameter"),
 ])
-def test_anything_but_one_allowed_environment_value_is_refused_and_saves_nothing(
+def test_anything_but_one_allowed_value_is_refused_and_saves_nothing(
         client, approved, store, change, says) -> None:
     http, model = client
     base = finished_run(http, model, approved.id)

@@ -1,7 +1,10 @@
 """Counterfactual reruns (slice 13): the same term with one condition changed, then compared.
 
 The policymaker picks a run and one of its template's single-value `environment` parameters
-(for attendance: the office's weekly capacity or the checkpoint week) and a new value. The run's
+(for attendance: the office's weekly capacity or the checkpoint week) and a new value. From slice
+M8b it may instead be one single-value `policy` parameter (a number, yes/no or choice: a threshold,
+a decision rule, or one of the readings such as how an excused session counts); text stays out,
+and so does a choice the policy must state itself (`stated_only`) unless the run already holds it. The run's
 blueprint is copied with only that value changed: the policy, every person's profile and the
 disruption schedule stay matched. The copy is checked by the values model (and so by the
 engine), labelled a fact (the policymaker asked for it), approved and run like any other.
@@ -36,31 +39,48 @@ class RunNotFound(LookupError):
 
 
 class CounterfactualRefused(Exception):
-    """The asked-for change isn't one environment value the template allows (HTTP 422)."""
+    """The asked-for change isn't one environment or policy value the template allows (HTTP 422)."""
 
 
 class RunNotFinished(Exception):
     """A run being compared is still going or failed (HTTP 409)."""
 
 
-def changeable(template: Template) -> list[Parameter]:
-    """The values a counterfactual may change: one environment condition with a single value."""
-    return [p for p in environment(template) if p.type in SINGLE_VALUE]
+def changeable(template: Template, values: dict[str, Any] | None = None) -> list[Parameter]:
+    """The values a counterfactual may change: one environment condition or (slice M8b) one policy
+    value, with a single value. A `stated_only` choice is left out unless `values` already hold it
+    (with no values, it is left out)."""
+    out = [p for p in environment(template) if p.type in SINGLE_VALUE]
+    for p in template.parameters:
+        if p.kind != "policy" or p.type not in SINGLE_VALUE:
+            continue
+        if p.stated_only and (values or {}).get(p.name) not in p.stated_only:
+            p = p.model_copy(update={"choices": [c for c in p.choices if c not in p.stated_only], "stated_only": []})
+        out.append(p)
+    return out
 
 
 def change_one(template: Template, parent: TemplateBlueprint, parameter: str, value: Any) -> TemplateBlueprint:
     """The parent with only `parameter` set to `value`, checked by the values model."""
-    allowed = {p.name: p for p in changeable(template)}
+    allowed = {p.name: p for p in changeable(template, parent.values)}
     if parameter not in allowed:
         names = ", ".join(allowed)
-        kind = next((p.kind for p in template.parameters if p.name == parameter), None)
-        if kind == "environment":
+        found = next((p for p in template.parameters if p.name == parameter), None)
+        if found is None:
+            raise CounterfactualRefused(f"{template.id} has no parameter {parameter}; a counterfactual can change: {names}")
+        if found.type == "text":
+            raise CounterfactualRefused(f"{parameter} is text; a counterfactual changes one number, yes/no or "
+                                        f"choice: {names}")
+        if found.kind in ("environment", "policy"):
             raise CounterfactualRefused(f"{parameter} is a list, not one value; a counterfactual can change: {names}")
-        if kind:
-            raise CounterfactualRefused(f"{parameter} is a {kind} value; a counterfactual changes only an "
-                                        f"environment condition: {names}")
-        raise CounterfactualRefused(f"{template.id} has no parameter {parameter}; a counterfactual can change: {names}")
+        raise CounterfactualRefused(f"{parameter} is a {found.kind} value; a counterfactual changes only an "
+                                    f"environment condition or a policy value: {names}")
     p = allowed[parameter]
+    if p.type == "choice" and value not in p.choices:
+        held = next(x for x in template.parameters if x.name == parameter)
+        if value in held.stated_only:
+            raise CounterfactualRefused(f"{parameter} = {value!r} is allowed only when the policy states it; "
+                                        f"a counterfactual can set: {', '.join(p.choices)}")
     if p.type == "int" and (isinstance(value, bool) or not isinstance(value, int)):
         raise CounterfactualRefused(f"{parameter} takes a whole number")
     if p.type == "bool" and not isinstance(value, bool):
@@ -150,13 +170,20 @@ def compare(store, run_a: str, run_b: str) -> dict:
                                     "only runs of the same template compare")
     template = load_template(a.template_id)
     kinds = {p.name: p.kind for p in template.parameters}
-    differences = [{"parameter": name, "kind": kinds.get(name), "from": a.values.get(name), "to": b.values.get(name)}
-                   for name in sorted(set(a.values) | set(b.values)) if a.values.get(name) != b.values.get(name)]
+    # A blueprint made before a reading existed (slice M8a) holds its default, as the engine reads it.
+    defaults = {p.name: p.default for p in template.parameters if p.default is not None}
+
+    def value(bp, name):
+        return bp.values.get(name, defaults.get(name))
+
+    differences = [{"parameter": name, "kind": kinds.get(name), "from": value(a, name), "to": value(b, name)}
+                   for name in sorted(set(a.values) | set(b.values)) if value(a, name) != value(b, name)]
     return {
         "label": LABEL,
         "template": template.ref,
         "differences": differences,
-        "matched": len(differences) == 1 and differences[0]["kind"] == "environment",
+        # Slice M8b: one policy value changed matches too (a what-if on the rule itself).
+        "matched": len(differences) == 1 and differences[0]["kind"] in ("environment", "policy"),
         "note": NOTE,
         "runs": [{"run_id": run["id"], "blueprint_id": run["blueprint_id"], "status": run["status"],
                   **measures(store.run_events(run["id"]))} for run in runs],
