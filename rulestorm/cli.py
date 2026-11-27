@@ -87,6 +87,8 @@ def main(argv: list[str] | None = None) -> None:
     eval_cmd = eval_commands.add_parser("report", help="a repeat's or search's report and pass lines (no Bedrock)")
     eval_cmd.add_argument("job_id", help="a repeat (R-...) or search (S-...) ID")
     eval_cmd.add_argument("--json", action="store_true", help="print the report as JSON")
+    eval_cmd.add_argument("--max-calls", type=int, default=None,
+                          help="the calls pass line (default: protocol v2's 300; v1 was 150)")
 
     args = parser.parse_args(argv)
     if args.command == "hello":
@@ -196,7 +198,7 @@ def main(argv: list[str] | None = None) -> None:
         from rulestorm.evaluation import JobNotFound, report, report_lines
 
         try:
-            rep = report(Store(), args.job_id)
+            rep = report(Store(), args.job_id, **({"max_calls": args.max_calls} if args.max_calls else {}))
         except JobNotFound:
             raise SystemExit(f"no repeat or search with ID {args.job_id}")
         print(json.dumps(rep, indent=2, ensure_ascii=False) if args.json else "\n".join(report_lines(rep)))

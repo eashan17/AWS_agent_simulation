@@ -8,7 +8,7 @@ line per person, and every harm with its cause class. Then 15 decisions sampled 
 
 - integrity: false claims plus no-reply decisions are at most 10% of all decisions (pooled over
   the job's runs);
-- calls: every run uses at most 150 model calls;
+- calls: every run uses at most `max_calls` model calls (v1: 150; v2, the default: 300);
 - failed runs: every run the job asked for ended `completed` (degraded, failed or never started
   counts as a miss);
 - fill time: the blueprint's fill took under 40 s (a repeat only; a search's variants are filled
@@ -22,7 +22,7 @@ from rulestorm.cause import UNTRUE_CORRECTION
 from rulestorm.ledger import run_ledger
 
 MAX_SHARE = 0.10
-MAX_CALLS = 150
+MAX_CALLS = 300  # protocol v2 (docs/EVALUATION.md); v1's line was 150
 MAX_FILL_SECONDS = 40.0
 SAMPLE = 15
 
@@ -103,7 +103,7 @@ def _sample(store, run_ids: list[str], seed: str) -> list[dict]:
     return sorted(picked, key=lambda d: (order[d["run_id"]], int(d["event_id"].split("-")[1])))
 
 
-def report(store, job_id: str) -> dict:
+def report(store, job_id: str, max_calls: int = MAX_CALLS) -> dict:
     job = store.get_repeat(job_id) if job_id.startswith("R-") else store.get_search(job_id)
     if job is None:
         raise JobNotFound(job_id)
@@ -119,8 +119,8 @@ def report(store, job_id: str) -> dict:
     lines = {
         "integrity": {"value": None if share is None else round(share, 4), "limit": MAX_SHARE,
                       "passed": share is not None and share <= MAX_SHARE},
-        "calls": {"value": max((r["llm_calls"] or 0 for r in rows), default=None), "limit": MAX_CALLS,
-                  "passed": bool(rows) and all(r["llm_calls"] is not None and r["llm_calls"] <= MAX_CALLS for r in rows)},
+        "calls": {"value": max((r["llm_calls"] or 0 for r in rows), default=None), "limit": max_calls,
+                  "passed": bool(rows) and all(r["llm_calls"] is not None and r["llm_calls"] <= max_calls for r in rows)},
         "failed_runs": {"value": not_completed, "passed": bool(slots) and not not_completed
                         and job.get("status") != "failed"},
     }

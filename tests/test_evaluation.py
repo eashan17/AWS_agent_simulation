@@ -43,7 +43,8 @@ def test_a_miss_on_any_pass_line_fails_the_report(store, repeat) -> None:  # noq
     first, second = (r["run_id"] for r in repeat["runs"])
     summary = store.get_run(first)["summary"]
     store.update_run(first, summary={**summary, "llm_calls": 151})
-    rep = report(store, repeat["id"])
+    assert report(store, repeat["id"])["pass_lines"]["calls"]["passed"]  # v2's line: 300
+    rep = report(store, repeat["id"], max_calls=150)  # v1's line
     assert rep["pass_lines"]["calls"] == {"value": 151, "limit": 150, "passed": False} and not rep["passed"]
 
     # false claims plus no-reply over 10% of all decisions
@@ -68,5 +69,7 @@ def test_unknown_job_and_the_cli(store, repeat, monkeypatch, capsys) -> None:  #
     main(["eval", "report", repeat["id"]])
     printed = capsys.readouterr().out
     assert f"repeat {repeat['id']}" in printed and "pass lines:" in printed and "result: PASS" in printed
+    main(["eval", "report", repeat["id"], "--max-calls", "1"])
+    assert "calls: FAIL" in capsys.readouterr().out
     with pytest.raises(SystemExit, match="no repeat or search"):
         main(["eval", "report", "S-00000000"])
