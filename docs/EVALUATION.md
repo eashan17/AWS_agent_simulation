@@ -65,5 +65,41 @@ Not pass lines: whether any harm appears, how many people fail, or which cause c
 are results, reported as they come.
 
 ## Results
-(Filled in after the runs: blueprint and repeat IDs, fill times, each report's key lines, the
-searches, and pass or fail on each line. The same numbers go into docs/BRIEF.md.)
+
+### v1 (27 Nov, from 12:15 IST): no-go on curfew
+Counts read from the live API, before `eval report` was deployed.
+- **Fills:** attendance P-72f97b42 → B-c2db9ddc, valid, 24.76 s; curfew P-3d04d792 → B-b865620c,
+  valid, 33.04 s. Both under 40 s.
+- **Attendance repeat R-57070615:** 5 of 5 `completed`; 32, 24, 32, 32, 33 calls (L-4aa53453,
+  L-79e47355, L-fb5d68e5, L-a897ba21, L-ec65235c); 0 false claims, 0 no-reply decisions.
+- **Curfew repeat R-c756dee5:** 4 of 5 `degraded`: L-eaf1b1bb, L-8077066b, L-6bd9e671 and
+  L-02919fc0 each hit the 150-call cap (151–160 decisions asked for); L-156cd3dc `completed`
+  with 128 calls. 0 false claims, 0 no-reply decisions. **Miss on "Failed runs".**
+  Why: this fill set the evening job shift on 3 nights a week for both the intern and the
+  volunteer (24 clash nights each), against 2 nights each in the fill the budget was measured on
+  (B-0cc342b2, about 134 calls a run). Every clash brings the person's decision, the guardian's
+  consent and the warden's ruling. The AI people made no mistake; the cap was too low for the
+  term the fill described.
+- **Attendance search S-bcce1ecb:** `broken` in 3 of 6 runs. "Recurring family emergency and work
+  clash" (B-8d25512a) failed exam eligibility for the resident, the working student and the
+  family carer in L-df9aa884, and again in its rerun L-e4d8b7ed: every harm `trade_off`.
+- **Curfew search:** not run (v1 stopped at the miss).
+
+### v2 (27 Nov, written after v1 and before any v2 run)
+Everything above stands, with these changes only:
+- **Calls per run:** the cap (`MAX_LLM_CALLS_PER_RUN` in `/etc/rulestorm.env`) goes from 150 to
+  **300**, and the "Calls" pass line becomes **at most 300 calls per run**. Set from v1's
+  heaviest asked-for run (160 decisions) with room for a heavier fill; at about USD 0.28 per 150
+  calls, a 300-call run costs about USD 0.56.
+- **Daily limits for the protocol:** 50 runs and 5,000 model calls (`MAX_RUNS_PER_DAY`,
+  `MAX_LLM_CALLS_PER_DAY`), so v2 can't stop on a daily limit. Worst case at the cap: 10 curfew
+  runs × 300 + 11 attendance runs × 40, about 3,500 calls, about USD 6.50.
+- **Order:** both searches run the same day, after the repeats (attendance `{"max_runs":6}`,
+  curfew `{"max_runs":5}`).
+- These are settings, not code: the code stays at `live-20261127a`. The service restarts once,
+  before the first v2 fill, with no run going. After v2's last run the daily limits go back to
+  25 runs and 1,500 calls; the per-run cap stays 300 (at 150, a judge's curfew run could end
+  degraded the same way). M11 sets the final limits.
+- New fills of both examples, as in step 1; v1's blueprints and runs are not reused.
+
+(v2 results are filled in after its runs. The same numbers go into docs/BRIEF.md.)
