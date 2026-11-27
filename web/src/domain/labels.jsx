@@ -54,10 +54,40 @@ export function StatusBadge({ status }) {
   return <Badge><IconClock size={13} /> {status || 'unknown'}</Badge>
 }
 
+/** The four finding kinds (slices 8, M2, M7b). Only harm kinds are red. */
+export const KIND = {
+  check_failed: { label: 'Objective failure', tone: 'bad', harm: true },
+  pending_at_check: { label: 'Bottleneck', tone: 'orange', harm: true },
+  obligation_lost: { label: 'Obligation lost', tone: 'bad', harm: true },
+  near_threshold: { label: 'Near miss', tone: 'blue', harm: false },
+}
+export const kindLabel = (kind) => KIND[kind]?.label || kind
+export const isHarm = (f) => (f?.harm != null ? !!f.harm : !!KIND[f?.kind]?.harm)
+
 export function KindBadge({ kind }) {
-  if (kind === 'check_failed') return <Badge tone="bad">Objective failure</Badge>
-  if (kind === 'pending_at_check') return <Badge tone="orange">Bottleneck</Badge>
-  return <Badge>{kind}</Badge>
+  const k = KIND[kind]
+  return <Badge tone={k?.tone}>{k?.label || kind}</Badge>
+}
+
+/** Why a harm happened (slice M9): one class per harm, by rules over the records. */
+export const CAUSE = {
+  no_reply: { label: 'No reply from the model', tone: 'muted', note: 'An AI call failed or timed out: an infrastructure problem, not the rule.' },
+  ai_mistake: { label: 'Depends on an AI mistake', tone: 'orange', note: 'A false claim or untrue correction was refused on the way: not evidence about the rule.' },
+  forced: { label: 'Forced by disruptions', tone: 'orange', note: 'Delays over their slack alone were enough: piled-on disruptions, not a choice.' },
+  process: { label: 'Process', tone: 'bad', note: 'A request that would have saved them was left waiting, refused late or rejected for no proof.' },
+  trade_off: { label: 'Trade-off', tone: 'bad', note: 'Keeping one obligation cost the other, under how the policy reads what is exceptional.' },
+  chosen: { label: 'Chosen', tone: 'muted', note: 'Misses they chose when nothing affected them.' },
+}
+
+export function CauseBadge({ cause, detail }) {
+  const c = CAUSE[cause]
+  if (!c) return null
+  const tones = {
+    bad: 'bg-bad-50 text-bad border-transparent',
+    orange: 'bg-orange-50 text-orange-700 border-orange-200 border-dashed',
+    muted: 'bg-mist text-ink-2 border-line',
+  }
+  return <span title={detail || c.note} className={cx('inline-flex items-center gap-1 h-6 px-2.5 rounded-full border text-[11.5px] font-medium', tones[c.tone])}>Why: {c.label}</span>
 }
 
 export function WithinModelBanner({ text = 'within-model evidence, not real-world causality',

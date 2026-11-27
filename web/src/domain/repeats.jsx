@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Badge, Banner, Button, Card, CardTitle, Dot, EmptyState, IdTag, Progress, cx } from '../ui/primitives.jsx'
 import { IconLock, IconRestart } from '../ui/icons.jsx'
 import { ApiErrorBanner, LoadingBlock } from './feedback.jsx'
-import { WithinModelBanner } from './labels.jsx'
+import { CAUSE, CauseBadge, KindBadge, WithinModelBanner } from './labels.jsx'
 import { api } from '../lib/api.js'
 import { href, navigate } from '../lib/router.js'
 import { setSession, useSession } from '../lib/session.js'
@@ -77,6 +77,7 @@ function Summary({ s, words }) {
                     </a>
                   ))}
                   {p.lowest != null && <span className="text-ink-3 self-center">lowest {pct(p.lowest)} · mean {pct(p.mean)} · highest {pct(p.highest)}</span>}
+                  {p.margin?.lowest != null && <span className="text-ink-3 self-center">· {p.margin.lowest === p.margin.highest ? `${p.margin.lowest}` : `${p.margin.lowest} to ${p.margin.highest}`} {p.margin.highest === 1 ? 'miss' : 'misses'} to spare{p.margin.lowest === p.margin.highest ? ' in every run' : ` (mean ${p.margin.mean})`}</span>}
                 </div>
               </div>
             </li>
@@ -90,12 +91,26 @@ function Summary({ s, words }) {
             <ul className="flex flex-col gap-2 text-[13px]">
               {s.findings.map((f) => (
                 <li key={f.kind} className="flex items-center justify-between gap-2">
-                  <Badge tone={f.kind === 'check_failed' ? 'bad' : 'orange'}>{f.kind === 'check_failed' ? 'Objective failure' : 'Bottleneck'}</Badge>
+                  <KindBadge kind={f.kind} />
                   <span className="tabular font-semibold">{f.runs} of {s.runs}</span>
                 </li>
               ))}
             </ul>
           ) : <p className="text-[13px] text-ink-3">No finding in any run.</p>}
+          {s.cause_classes?.length > 0 && (
+            <>
+              <h4 className="eyebrow !text-[10.5px] mt-5 mb-2">Why each harm happened</h4>
+              <ul className="flex flex-col gap-2 text-[13px]">
+                {s.cause_classes.map((c) => (
+                  <li key={c.cause_class} className="flex items-center justify-between gap-2" title={CAUSE[c.cause_class]?.note}>
+                    <CauseBadge cause={c.cause_class} />
+                    <span className="tabular font-semibold">{c.harms} harm{c.harms === 1 ? '' : 's'}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {s.obligations_lost != null && <p className="mt-4 text-[13px] text-ink-2">Obligations lost across the runs: <span className={cx('tabular font-semibold', s.obligations_lost ? 'text-bad' : 'text-ok')}>{s.obligations_lost}</span></p>}
         </Card>
         <Card className="!p-0 overflow-hidden">
           <div className="px-5 pt-5"><CardTitle className="!mb-3" title="The spread of each measure" sub="Lowest · mean · highest across the runs" /></div>

@@ -38,6 +38,12 @@ export const useFindings = (runId, status) =>
 export const useAdaptations = (runId, status) =>
   useLoad(runId && status && status !== 'running' ? `adapt:${runId}:${status}` : null, () => api.adaptations(runId))
 export const useEvidence = (fid) => useLoad(fid ? `evidence:${fid}` : null, () => api.evidence(fid))
+// Slice M3/M9: who carried the rule, per person, for a finished run.
+export const useLedger = (runId, status) =>
+  useLoad(runId && status && status !== 'running' ? `ledger:${runId}:${status}` : null, () => api.ledger(runId))
+// Slice M7c: one person's decisions, each with the state it was made from (works while running too).
+export const usePerson = (runId, person, status) =>
+  useLoad(runId && person ? `person:${runId}:${person}:${status}` : null, () => api.person(runId, person), { keep: false })
 
 export const templateIdOf = (ref) => (ref ? String(ref).split('@')[0] : null)
 

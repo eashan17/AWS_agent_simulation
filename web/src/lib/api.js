@@ -89,6 +89,8 @@ export const api = {
   adaptations: (id) => request('GET', `/api/runs/${encodeURIComponent(id)}/adaptations`),
   findings: (id) => request('GET', `/api/runs/${encodeURIComponent(id)}/findings`),
   evidence: (fid) => request('GET', `/api/findings/${encodeURIComponent(fid)}/evidence`),
+  ledger: (id) => request('GET', `/api/runs/${encodeURIComponent(id)}/ledger`),
+  person: (id, person) => request('GET', `/api/runs/${encodeURIComponent(id)}/people/${encodeURIComponent(person)}`),
   counterfactual: (id, parameter, value) =>
     request('POST', `/api/runs/${encodeURIComponent(id)}/counterfactual`, { parameter, value }),
   startSearch: (blueprintId, maxRuns) =>

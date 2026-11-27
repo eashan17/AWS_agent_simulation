@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { Badge, Button, Card, CardTitle, cx, IdTag } from '../ui/primitives.jsx'
 import { IconArrow, IconChain } from '../ui/icons.jsx'
 import { PersonAvatar } from '../sim/Agent.jsx'
-import { KindBadge } from './labels.jsx'
+import { CAUSE, CauseBadge, isHarm, KindBadge, kindLabel } from './labels.jsx'
 import { cap, humanize, pct } from '../lib/words.js'
 
 const CMP = { '>=': '≥', '<=': '≤', '>': '>', '<': '<' }
@@ -23,30 +23,73 @@ function ifApproved(f) {
   return a
 }
 
-/** One finding in the Findings grid: result first, then who, then the trail. */
+/** Why a harm happened (slice M9): its cause class, the rule's own sentence, the misses by cause
+ * when they are mixed, and for a trade-off the assumptions that set it (recurrence, limit). */
+export function WhyBlock({ f, words, className }) {
+  if (!isHarm(f) || !f.cause_class) return null
+  const shares = Object.entries(f.cause_shares || {})
+  const mixed = shares.length > 1 || (shares.length === 1 && shares[0][0] !== f.cause_class)
+  const clashes = f.trade_off?.clashes || []
+  return (
+    <div className={cx('rounded-2xl bg-white/55 border border-white px-4 py-3 text-[13px]', className)}>
+      <div className="flex items-center gap-2 flex-wrap"><CauseBadge cause={f.cause_class} detail={f.cause_detail} /><span className="text-[11.5px] text-ink-3">found by rules from the records</span></div>
+      {f.cause_detail && <p className="mt-1.5 text-ink-2">{cap(f.cause_detail)}.</p>}
+      {mixed && (
+        <p className="mt-1 text-ink-2">{cap(words.terms.missed_plural || 'misses')} by cause: {shares.map(([k, n]) => `${n} ${(CAUSE[k]?.label || k).toLowerCase()}`).join(', ')}.</p>
+      )}
+      {clashes.map((c) => (
+        <p key={c.kind} className="mt-1 text-ink-2">
+          {cap(c.label)}: {recurs(c.recurs, words)}{c.limit != null ? `; ${words.name(f.person)} can miss ${c.limit} before the ${c.obligation || 'obligation'} is lost` : ''}. <span className="text-orange-700">Both are assumptions in the blueprint.</span>
+        </p>
+      ))}
+    </div>
+  )
+}
+
+/** A disruption entry's recurrence in the template's words: "weeks 1 to 10, every week, session 2". */
+export function recurs(entries, words) {
+  if (!entries?.length) return 'as scheduled'
+  return entries.map((r) => {
+    const every = r.every && r.every > 1 ? `every ${r.every} ${words.period}s` : `every ${words.period}`
+    const when = r.until_period ? `${words.period}s ${r.period} to ${r.until_period}, ${every}` : `${words.period} ${r.period}`
+    return r.steps?.length ? `${when}, ${words.step} ${r.steps.join(', ')} of the ${words.period}` : when
+  }).join('; ')
+}
+
+/** The figure a finding leads with when it isn't a count: a near miss's spare, or what was lost. */
+function headline(f) {
+  if (f.kind === 'obligation_lost') return { big: 'lost', sub: f.obligation ? `${f.obligation}: ${f.lost}` : f.lost }
+  if (f.kind === 'near_threshold' && f.spare != null) return { big: `${f.spare}`, sub: `${f.spare === 1 ? 'miss' : 'misses'} to spare` }
+  return null
+}
+
+/** One finding in the Findings grid: result first, then who, then why, then the trail. */
 export function FindingCard({ f, words, onOpen, check }) {
   const alt = ifApproved(f)
+  const head = headline(f)
+  const harm = isHarm(f)
   return (
     <Card className="flex flex-col">
       <div className="flex items-center justify-between gap-3">
         <KindBadge kind={f.kind} />
-        <span className="text-[12px] text-ink-3">{cap(words.period)} {f.period} · {f.check_label}</span>
+        <span className="text-[12px] text-ink-3">{cap(words.period)} {f.period}{f.check_label ? ` · ${f.check_label}` : ''}</span>
       </div>
       <h3 className="mt-4 text-[17px] font-semibold leading-snug tracking-[-0.01em]">{f.title}</h3>
       <div className="mt-5 flex items-end justify-between gap-4">
         <div className="flex items-center gap-3">
-          <PersonAvatar colour={words.colour(f.person)} size={40} mood="sad" />
+          <PersonAvatar colour={words.colour(f.person)} size={40} mood={harm ? 'sad' : 'idle'} />
           <div>
             <div className="text-[14px] font-medium">{words.name(f.person)}</div>
             <div className="text-[12.5px] text-ink-3">{words.label(f.person)}</div>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[34px] leading-none font-normal tracking-[-0.03em] tabular">{big(f.count)}</div>
-          <div className="text-[12.5px] text-ink-3 mt-1">{f.count?.kind === 'rate' ? `${f.count.met} / ${f.count.due}` : words.terms.count}{check ? ` · needs ${CMP[check.comparison] || ''} ${check.threshold}${f.count?.kind === 'rate' ? '%' : ''}` : ''}</div>
+          <div className={cx('text-[34px] leading-none font-normal tracking-[-0.03em] tabular', head?.big === 'lost' && 'text-bad')}>{head ? head.big : big(f.count)}</div>
+          <div className="text-[12.5px] text-ink-3 mt-1">{head ? head.sub : <>{f.count?.kind === 'rate' ? `${f.count.met} / ${f.count.due}` : words.terms.count}{check ? ` · needs ${CMP[check.comparison] || ''} ${check.threshold}${f.count?.kind === 'rate' ? '%' : ''}` : ''}</>}</div>
         </div>
       </div>
       {alt && <p className="mt-3 text-[13px] text-orange-700">{pct(alt.value)} if {f.pending_requests.join(', ')} {f.pending_requests.length > 1 ? 'were' : 'was'} approved in time.</p>}
+      <WhyBlock f={f} words={words} className="mt-4" />
       <div className="mt-5 pt-4 border-t border-line/70 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex gap-4 text-[12.5px] text-ink-3">
           <span className="inline-flex items-center gap-1.5"><IconChain size={14} /> {f.chain.length} linked events</span>
@@ -62,11 +105,12 @@ export function FindingCard({ f, words, onOpen, check }) {
 /** The one accent card on a screen (Wattbank's "84% self-powered"): the finding's result. */
 export function HeroFinding({ f, words, onOpen, action = 'Show the evidence', check }) {
   const alt = ifApproved(f)
+  const lost = f.kind === 'obligation_lost'
   return (
     <section className="accent-card relative overflow-hidden rounded-[var(--radius-card)] p-6 flex flex-col min-h-[300px]">
       <div className="flex items-center gap-2 text-[12px] font-medium text-ink/70">
         <span className="grid place-items-center w-5 h-5 rounded-full bg-ink text-white text-[10px]">!</span>
-        {f.kind === 'check_failed' ? 'Objective failure' : 'Bottleneck'} · found by rules from the records
+        {kindLabel(f.kind)} · found by rules from the records
       </div>
       <div className="mt-auto pt-10">
         <div className="flex items-center gap-2.5">
@@ -74,14 +118,23 @@ export function HeroFinding({ f, words, onOpen, action = 'Show the evidence', ch
           <span className="text-[14px] font-medium">{words.name(f.person)}</span>
           <span className="text-[13px] text-ink/60">· {words.label(f.person)}</span>
         </div>
-        <p className="mt-3 text-[30px] leading-[1.12] font-normal tracking-[-0.02em]">
-          is at <span className="font-medium tabular">{big(f.count)}</span> at the {words.period} {f.period} check, <em className="font-normal">{f.outcome}</em>
-        </p>
-        <p className="mt-2 text-[13.5px] text-ink/70 max-w-md">
-          {f.count?.kind === 'rate' ? `${f.count.met} of ${f.count.due} counted ${words.step}s` : figure(f.count)}
-          {check ? `, against ${CMP[check.comparison] || ''} ${check.threshold}${f.count?.kind === 'rate' ? '%' : ''}` : ''}.
-          {alt ? ` ${pct(alt.value)} if the waiting ${words.terms.requests} were approved.` : ''}
-        </p>
+        {lost ? (
+          <p className="mt-3 text-[30px] leading-[1.12] font-normal tracking-[-0.02em]">
+            kept the rule and lost their {f.obligation} in {words.period} {f.period}: <em className="font-normal">{f.lost}</em>
+          </p>
+        ) : (
+          <>
+            <p className="mt-3 text-[30px] leading-[1.12] font-normal tracking-[-0.02em]">
+              is at <span className="font-medium tabular">{big(f.count)}</span> at the {words.period} {f.period} check, <em className="font-normal">{f.outcome}</em>
+            </p>
+            <p className="mt-2 text-[13.5px] text-ink/70 max-w-md">
+              {f.count?.kind === 'rate' ? `${f.count.met} of ${f.count.due} counted ${words.step}s` : figure(f.count)}
+              {check ? `, against ${CMP[check.comparison] || ''} ${check.threshold}${f.count?.kind === 'rate' ? '%' : ''}` : ''}.
+              {alt ? ` ${pct(alt.value)} if the waiting ${words.terms.requests} were approved.` : ''}
+            </p>
+          </>
+        )}
+        <WhyBlock f={f} words={words} className="mt-4 !bg-white/70 max-w-xl" />
         {onOpen && (
           <button type="button" onClick={onOpen} className="mt-5 inline-flex items-center gap-2 h-10 px-4 rounded-full bg-white/75 hover:bg-white text-[14px] font-medium transition backdrop-blur">
             {action} <IconArrow size={16} />

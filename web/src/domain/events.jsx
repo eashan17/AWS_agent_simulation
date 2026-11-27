@@ -23,6 +23,9 @@ const CHIP = {
   decision_awaiting: 'requests', decision_not_made: 'requests', request_endorsed: 'requests', request_endorsement_refused: 'requests',
   duty_recorded: 'records', record_corrected: 'records',
   many_missed: 'checks', count_near_threshold: 'checks', check_evaluated: 'checks',
+  // slice M7a/M5: the cost on the other side, and plans people stated for later
+  obligation_missed: 'checks', obligation_lost: 'checks',
+  intention_due: 'decisions', intention_resolved: 'decisions',
 }
 export const chipOf = (e) => {
   // routine queue ticks with nothing in them are records, not requests
@@ -64,7 +67,19 @@ export function describe(e, w) {
       return { tone: 'blue', icon: '“', title: `${who(e.actor)} decided${acts ? `: ${acts}` : ''}`, quote: p.reason, sub: p.strategy ? `Strategy: ${p.strategy}` : null }
     }
     case 'action_rejected':
+      // slice M4: a claimed cause that isn't hitting them is an AI mistake, said so plainly
+      if (String(p.reason || '').startsWith('claim')) {
+        return { tone: 'bad', icon: '✕', title: `${who(e.actor)}'s claimed cause refused (an AI mistake): ${p.detail || 'nothing like that is affecting them'}` }
+      }
       return { tone: 'bad', icon: '✕', title: `${who(e.actor)}'s ${humanize(p.action)} refused: ${p.detail || 'not allowed'}` }
+    case 'obligation_missed':
+      return { tone: 'orange', icon: '⚖', title: `${who(p.person)} kept the rule and missed their ${p.obligation} (${p.missed} of ${p.limit} they can miss)` }
+    case 'obligation_lost':
+      return { tone: 'bad', icon: '⚖', title: `${who(p.person)} kept the rule past their limit of ${p.limit}: ${p.lost}` }
+    case 'intention_due':
+      return { small: true, tone: 'muted', icon: '·', title: `${who(p.person)} is reminded of what they planned: ${(p.intentions || []).map((x) => humanize(x.action)).join(', ')}` }
+    case 'intention_resolved':
+      return { small: true, tone: p.met ? 'ok' : 'muted', icon: p.met ? '✓' : '·', title: `${who(p.person)} ${p.met ? 'did' : "didn't do"} what they planned in ${w.step} ${p.stated_at}: ${humanize(p.action)}` }
     case 'duty_planned':
       return { small: true, tone: 'muted', icon: '·', title: `${who(e.actor)} plans to ${p.plan === 'miss' ? `be ${w.terms.duty_missed}` : humanize(p.action)}` }
     case 'attribute_set': {

@@ -1,6 +1,8 @@
 // The person panel (slice 20): everything about one person in a run, in one place. Read from the
-// run's events, its blueprint and the adaptations route; no new data. Every item shows its event
-// ID; clicking it moves the map to that moment (onJump).
+// run's events, its blueprint and the adaptations route; from the M slices also their obligations,
+// the plans they stated for later, and the state each decision was made from (GET
+// /api/runs/{id}/people/{person}, slice M7c). Every item shows its event ID; clicking it moves
+// the map to that moment (onJump).
 import { useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Badge, Button, cx } from '../ui/primitives.jsx'
@@ -10,6 +12,7 @@ import { describe } from './events.jsx'
 import { EvidenceLabel } from './labels.jsx'
 import { KIND_TEXT } from './adaptation.jsx'
 import { cap, humanize, pct } from '../lib/words.js'
+import { usePerson } from '../lib/hooks.js'
 
 function Section({ title, count, children }) {
   return (
@@ -34,6 +37,8 @@ function usePersonFacts(id, events) {
     const requests = new Map()
     const decisions = []
     const refused = []
+    const obligations = [] // obligation_missed / obligation_lost
+    const intentions = [] // intention_due / intention_resolved
     let check = null
     for (const e of events) {
       const p = e.payload || {}
@@ -53,14 +58,19 @@ function usePersonFacts(id, events) {
       if (e.type === 'decision' && e.actor === id) decisions.push(e)
       if (e.type === 'action_rejected' && e.actor === id) refused.push(e)
       if (e.type === 'check_evaluated' && p.person === id) check = e
+      if ((e.type === 'obligation_missed' || e.type === 'obligation_lost') && p.person === id) obligations.push(e)
+      if ((e.type === 'intention_due' || e.type === 'intention_resolved') && p.person === id) intentions.push(e)
     }
-    return { records: [...records.values()].sort((a, b) => a.step - b.step), requests: [...requests.values()], decisions, refused, check }
+    return { records: [...records.values()].sort((a, b) => a.step - b.step), requests: [...requests.values()], decisions, refused, check, obligations, intentions }
   }, [id, events])
 }
 
-export function PersonPanel({ id, events, words, blueprint, adaptations, onClose, onJump }) {
+export function PersonPanel({ id, events, words, blueprint, adaptations, onClose, onJump, runId, status }) {
   const closeRef = useRef(null)
   const f = usePersonFacts(id, events)
+  const view = usePerson(runId, id, `${status}:${f.decisions.length}`)
+  const stateOf = useMemo(() => Object.fromEntries((view.data?.decisions || []).map((d) => [d.event_id, d])), [view.data])
+  const latest = [...(view.data?.decisions || [])].reverse().find((d) => d.state)
   useEffect(() => {
     closeRef.current?.focus()
     const on = (e) => { if (e.key === 'Escape') onClose() }
@@ -123,6 +133,53 @@ export function PersonPanel({ id, events, words, blueprint, adaptations, onClose
                 <EvidenceLabel label="calculated" />
                 <Jump id={f.check.event_id} onJump={onJump} />
               </div>
+            </Section>
+          )}
+
+          {latest && (
+            <Section title="Their state">
+              <ul className="flex flex-col gap-1 text-[12.5px]">
+                {latest.state_lines.map((line, i) => <li key={i} className="font-mono text-[12px]">{line}</li>)}
+              </ul>
+              <p className="mt-2 text-[11.5px] text-ink-3 flex items-center gap-2 flex-wrap"><EvidenceLabel label="calculated" className="!h-5" /> What they knew when they last decided, {words.where(latest.period, latest.step)}: worked out by the engine, not the AI. <Jump id={latest.event_id} onJump={onJump} /></p>
+            </Section>
+          )}
+          {view.error && <p className="py-3 text-[12px] text-ink-3">Their state couldn't be loaded ({view.error.kind === 'network' ? "the server didn't answer" : 'the server refused it'}); the rest comes from the run's events.</p>}
+
+          {(f.obligations.length > 0 || latest?.state?.obligations?.length > 0) && (
+            <Section title="Obligations" count={f.obligations.length ? `${f.obligations.length} missed` : 'none missed'}>
+              {(latest?.state?.obligations || []).map((o) => (
+                <div key={o.kind} className="flex items-center gap-2 flex-wrap text-[12.5px] mb-1.5">
+                  <span className="font-medium">{cap(o.obligation)}</span>
+                  {o.lost ? <Badge tone="bad" className="!h-5 !text-[11px]">{o.lost_label}</Badge>
+                    : <span className="text-ink-2 tabular">missed {o.missed} of {o.limit}, {o.left} left</span>}
+                </div>
+              ))}
+              <ul className="flex flex-col gap-1.5 mt-1">
+                {f.obligations.map((e) => (
+                  <li key={e.event_id} className="flex items-start gap-2 text-[12.5px]">
+                    <span className={e.type === 'obligation_lost' ? 'text-bad' : 'text-orange-700'}>⚖</span>
+                    <span className="flex-1">{describe(e, words).title} · {words.where(e.period, e.step)}</span>
+                    <Jump id={e.event_id} onJump={onJump} />
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11.5px] text-ink-3">The limits are assumptions in the blueprint, set from their profile.</p>
+            </Section>
+          )}
+
+          {f.intentions.some((e) => e.type === 'intention_resolved') && (
+            <Section title="What they planned for later" count={f.intentions.filter((e) => e.type === 'intention_resolved').length}>
+              <ul className="flex flex-col gap-1.5">
+                {f.intentions.filter((e) => e.type === 'intention_resolved').map((e) => (
+                  <li key={e.event_id} className="flex items-start gap-2 text-[12.5px]">
+                    <span className={e.payload.met ? 'text-ok' : 'text-ink-3'}>{e.payload.met ? '✓' : '·'}</span>
+                    <span className="flex-1">{humanize(e.payload.action)}: said in {words.step} {e.payload.stated_at}, {e.payload.met ? 'done' : 'not done'} in {words.step} {e.step}</span>
+                    <Jump id={e.event_id} onJump={onJump} />
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11.5px] text-ink-3">A reminder, not a commitment: they could change their mind.</p>
             </Section>
           )}
 
@@ -197,6 +254,14 @@ export function PersonPanel({ id, events, words, blueprint, adaptations, onClose
                       <p className="mt-0.5">{d.title}</p>
                       {e.payload?.reason && <p className="mt-0.5 italic text-ink-2">“{e.payload.reason}”</p>}
                       {e.payload?.strategy && <p className="mt-0.5 text-ink-3">Strategy: {e.payload.strategy}</p>}
+                      {stateOf[e.event_id]?.state_lines?.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-[11.5px] text-blue-700">The state they decided from</summary>
+                          <ul className="mt-1 pl-3 border-l-2 border-line font-mono text-[11.5px] text-ink-2">
+                            {stateOf[e.event_id].state_lines.map((line, i) => <li key={i}>{line}</li>)}
+                          </ul>
+                        </details>
+                      )}
                     </li>
                   )
                 })}

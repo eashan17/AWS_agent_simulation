@@ -4,12 +4,13 @@ import { Badge, Banner, Button, Card, CardTitle, EmptyState, IdTag, Progress, St
 import { IconArrow, IconBack, IconBolt, IconSearch, IconSplit } from '../ui/icons.jsx'
 import { PageHeader } from '../ui/shell.jsx'
 import { ApiErrorBanner, LoadingBlock } from '../domain/feedback.jsx'
-import { StatusBadge, WithinModelBanner } from '../domain/labels.jsx'
+import { isHarm, kindLabel, StatusBadge, WithinModelBanner } from '../domain/labels.jsx'
+import { LedgerTable, WhoCarried } from '../domain/ledger.jsx'
 import { CalcPanel, EvidenceTimeline, FindingCard, HeroFinding, MissChart } from '../domain/analysis.jsx'
 import { PersonAvatar } from '../sim/Agent.jsx'
 import TimeRuler from '../sim/TimeRuler.jsx'
 import { api, ApiError } from '../lib/api.js'
-import { templateIdOf, useAdaptations, useBlueprint, useEvidence, useFindings, useLoad, useRun, useTemplate } from '../lib/hooks.js'
+import { templateIdOf, useAdaptations, useBlueprint, useEvidence, useFindings, useLedger, useLoad, useRun, useTemplate } from '../lib/hooks.js'
 import { AdaptationList } from '../domain/adaptation.jsx'
 import { PersonPanel } from '../domain/personPanel.jsx'
 import { startRepeats } from '../domain/repeats.jsx'
@@ -45,32 +46,50 @@ function Summary({ run, events, words, findings, onEvidence, blueprint }) {
   for (const e of events) if (e.type === 'decision' && e.payload?.reason) reasons[e.actor] = e.payload.reason
   const refused = {}
   for (const r of s.rejected || []) refused[r.agent] = (refused[r.agent] || 0) + 1
-  const hero = findings?.[0]
+  // Slice M2/M9: harm, not any finding, leads and sets the red tone; a near miss alone is not harm.
+  const harms = (findings || []).filter(isHarm)
+  const near = (findings || []).length - harms.length
+  const hero = harms[0]
+  const book = useLedger(run.run_id, run.status)
+  const tryHarder = (
+    <>
+      <Button onClick={() => navigate(`/blueprint/${run.blueprint_id}/stress`)} icon={<IconBolt size={16} />}>Stress-test the policy</Button>
+      <Button onClick={() => navigate(`/run/${run.run_id}/analysis/whatif`)}>What if?</Button>
+    </>
+  )
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatTile label="AI decisions" value={s.decisions ?? '—'} sub={`${s.no_actions || 0} chose to do nothing`} />
         <StatTile label="Model calls" value={s.llm_calls ?? '—'} sub={`${s.llm_errors || 0} errors · cap ${s.llm_cap ?? '—'}`} tone={s.llm_errors ? 'bad' : undefined} />
         <StatTile label="Refused actions" value={(s.rejected || []).length} sub="blocked by the rule engine" />
-        <StatTile label={`${cap(words.terms.requests)} filed`} value={filed} sub={`${findings?.length ?? 0} finding${findings?.length === 1 ? '' : 's'}`} tone={findings?.length ? 'bad' : 'ok'} />
+        <StatTile label={`${cap(words.terms.requests)} filed`} value={filed} sub={`${harms.length} harm${harms.length === 1 ? '' : 's'} · ${near} near miss${near === 1 ? '' : 'es'}`} tone={harms.length ? 'bad' : 'ok'} />
       </div>
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-4">
-        {hero ? <HeroFinding f={hero} words={words} check={events.find((e) => e.event_id === hero.check_event_id)?.payload} onOpen={() => onEvidence(hero.finding_id)} /> : (
-          <section className="glass rounded-[var(--radius-card)] p-6 flex flex-col min-h-[300px]">
-            <div className="flex items-center gap-2 text-[12px] font-medium text-ink-2"><span className="w-2 h-2 rounded-full bg-ok" /> Found by rules from the records</div>
-            <div className="mt-auto pt-10 text-[30px] font-normal tracking-[-0.02em] leading-tight">No problems found in this run.</div>
-            <p className="mt-2 text-[14px] text-ink-2">Nobody failed a check and no request was left waiting at one. Try harsher conditions to look for weak points.</p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Button onClick={() => navigate(`/blueprint/${run.blueprint_id}/stress`)} icon={<IconBolt size={16} />}>Stress-test the policy</Button>
-              <Button onClick={() => navigate(`/run/${run.run_id}/analysis/whatif`)}>What if?</Button>
-            </div>
-          </section>
-        )}
+      {hero ? (
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-4">
+          <HeroFinding f={hero} words={words} check={events.find((e) => e.event_id === hero.check_event_id)?.payload} onOpen={() => onEvidence(hero.finding_id)} />
+          <Card>
+            <CardTitle title={`${cap(words.terms.missed_plural || 'misses')} recorded by ${words.period}`} sub="Counted from this run's own records, corrections applied" />
+            <MissChart events={events} words={words} highlight={hero?.person} />
+          </Card>
+        </div>
+      ) : (
+        <>
+          {book.loading ? <Card><LoadingBlock label="Reading who carried the rule…" /></Card>
+            : book.error ? <Card><ApiErrorBanner error={book.error} onRetry={book.reload} /></Card>
+              : <WhoCarried book={book.data} words={words} onPerson={setPanel} actions={tryHarder} />}
+          <Card>
+            <CardTitle title={`${cap(words.terms.missed_plural || 'misses')} recorded by ${words.period}`} sub="Counted from this run's own records, corrections applied" />
+            <MissChart events={events} words={words} />
+          </Card>
+        </>
+      )}
+      {hero && book.data && (
         <Card>
-          <CardTitle title={`${cap(words.terms.missed_plural || 'misses')} recorded by ${words.period}`} sub="Counted from this run's own records, corrections applied" />
-          <MissChart events={events} words={words} highlight={hero?.person} />
+          <CardTitle title="Who carried this rule" sub="Each person's margin to the step that harms them, their misses and the obligations it cost. Rules over this run's records, no AI." />
+          <LedgerTable book={book.data} words={words} onPerson={setPanel} />
         </Card>
-      </div>
+      )}
       <Card>
         <CardTitle title="How each person ended the term" sub="The check result, how often they decided, and their last stated reason. Click a name to see everything about them." />
         <div className="overflow-x-auto -mx-2">
@@ -104,7 +123,7 @@ function Summary({ run, events, words, findings, onEvidence, blueprint }) {
             : <AdaptationList items={adapt.data?.adaptations} words={words} />}
       </Card>
       {panel && (
-        <PersonPanel id={panel} events={events} words={words} blueprint={blueprint} adaptations={adapt.data?.adaptations}
+        <PersonPanel id={panel} events={events} words={words} blueprint={blueprint} adaptations={adapt.data?.adaptations} runId={run.run_id} status={run.status}
           onClose={() => setPanel(null)} onJump={(eventId) => navigate(`/run/${run.run_id}?at=${eventId}`)} />
       )}
     </div>
@@ -138,13 +157,27 @@ function Findings({ run, events, words, findings, onEvidence }) {
     return <Card><EmptyState title="No problems found in this run." action={<><Button variant="primary" icon={<IconBolt size={16} />} onClick={() => navigate(`/blueprint/${run.blueprint_id}/stress`)}>Stress-test the policy</Button><Button onClick={() => navigate(`/run/${run.run_id}/analysis/whatif`)}>What if?</Button></>}>Findings come only from rules over this run's records. None of them fired.</EmptyState></Card>
   }
   const byId = Object.fromEntries(events.map((e) => [e.event_id, e]))
+  const harms = findings.filter(isHarm)
+  const near = findings.filter((f) => !isHarm(f))
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-[13.5px] text-ink-2">Found by rules from the records, not written by an AI. Each one links to the exact events behind it.</p>
+      <p className="text-[13.5px] text-ink-2">Found by rules from the records, not written by an AI. Each one links to the exact events behind it. {harms.length === 1 ? '1 harm, with why it happened' : `${harms.length} harms, each with why it happened`}{near.length ? `; ${near.length} near miss${near.length === 1 ? '' : 'es'} (passed, with one miss to spare: not harm)` : ''}.</p>
       <div className="grid lg:grid-cols-2 gap-4">
-        {findings.map((f) => <FindingCard key={f.finding_id} f={f} words={words} check={byId[f.check_event_id]?.payload} onOpen={() => onEvidence(f.finding_id)} />)}
+        {[...harms, ...near].map((f) => <FindingCard key={f.finding_id} f={f} words={words} check={byId[f.check_event_id]?.payload} onOpen={() => onEvidence(f.finding_id)} />)}
       </div>
     </div>
+  )
+}
+
+/** Slice M7b: a lost obligation's recount, in place of a check's calculation. */
+function ObligationCalc({ calc, words }) {
+  if (!calc) return null
+  return (
+    <Card className="flex flex-col">
+      <CardTitle title="The calculation" sub={calc.matches_recorded ? "✓ Recounted from this run's records, and it matches what the engine recorded" : "Counted from this run's records"} />
+      <div className="font-mono text-[30px] leading-none tracking-tight tabular"><span className="text-bad">{calc.missed}</span> <span className="text-ink-3">missed, limit</span> {calc.limit}</div>
+      <p className="mt-4 text-[14px] text-ink-2">Each time they kept the rule during the clash ({words.terms.duty_met}), they missed their {calc.obligation}. Past their limit of {calc.limit}: <span className="font-medium text-bad">{calc.lost}</span>.</p>
+    </Card>
   )
 }
 
@@ -159,6 +192,7 @@ function Evidence({ run, events, words, findings, fid }) {
   if (!ev.data || !f) return null
   const steps = ev.data.steps || []
   const calc = steps.find((s) => s.calculation)?.calculation
+  const obligationCalc = steps.find((s) => s.obligation_calculation)?.obligation_calculation
   const check = events.find((e) => e.event_id === f.check_event_id)?.payload
   const per = {}
   const dis = {}
@@ -176,7 +210,7 @@ function Evidence({ run, events, words, findings, fid }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[13px] text-ink-3 mr-1">Finding</span>
           <Tabs size="sm" value={fid} onChange={(id) => navigate(`/run/${run.run_id}/analysis/evidence/${id}`)}
-            tabs={findings.map((x) => ({ id: x.finding_id, label: `${words.name(x.person)} · ${x.kind === 'check_failed' ? 'failure' : 'bottleneck'}` }))} />
+            tabs={findings.map((x) => ({ id: x.finding_id, label: `${words.name(x.person)} · ${kindLabel(x.kind).toLowerCase()}` }))} />
         </div>
       )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -187,7 +221,7 @@ function Evidence({ run, events, words, findings, fid }) {
       </div>
       <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-4">
         <HeroFinding f={f} words={words} check={check} />
-        <CalcPanel calc={calc} words={words} />
+        {calc ? <CalcPanel calc={calc} words={words} /> : <ObligationCalc calc={obligationCalc} words={words} />}
       </div>
       <Card>
         <CardTitle title="How it happened" sub={`${steps.length} events in run order, from the first disruption to the check: ${counts.fact} recorded facts, ${counts.calc} calculations, ${reasons} stated reasons`}
@@ -225,8 +259,15 @@ function EvidenceKey() {
 function WhatIf({ run, words, bp }) {
   const s = useSession()
   const names = words.template.counterfactual_parameters || []
-  const params = names.map((n) => words.param(n)).filter(Boolean)
+  // Slice M8b: the readings' own sentences and stated_only choices, from the template's readings.
+  const settings = {}
+  for (const t of words.template.readings?.request_types || []) for (const k of ['decision_rule', 'exceptional', 'proof', 'deadline']) if (t[k]) settings[t[k].parameter] = t[k]
+  for (const c of words.template.readings?.counts || []) if (c.excused) settings[c.excused.parameter] = c.excused
+  const params = names.map((n) => words.param(n)).filter(Boolean).map((p) => ({ ...p, sentences: settings[p.name]?.sentences || null, stated_only: settings[p.name]?.stated_only || [] }))
   const values = bp?.blueprint?.values || {}
+  const valueOf = (p) => values[p.name] ?? settings[p.name]?.default
+  // a choice the policy must state itself is offered only if the run already holds it
+  const choicesOf = (p) => (p.choices || []).filter((c) => !p.stated_only.includes(c) || valueOf(p) === c)
   const [name, setName] = useState(params[0]?.name || '')
   const param = params.find((p) => p.name === name)
   const [value, setValue] = useState('')
@@ -234,11 +275,11 @@ function WhatIf({ run, words, bp }) {
   const [error, setError] = useState(null)
   const [newId, setNewId] = useState(null)
   const live = useRun(newId)
-  useEffect(() => { if (param) setValue(String(values[param.name] ?? param.min ?? '')) }, [name, bp]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (param) setValue(String(valueOf(param) ?? param.min ?? '')) }, [name, bp]) // eslint-disable-line react-hooks/exhaustive-deps
   const done = live.run && live.run.status !== 'running'
   useEffect(() => { if (done && live.run.status !== 'failed') navigate(`/run/${run.run_id}/analysis/compare/${newId}`) }, [done]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!params.length) return <Card><EmptyState title="No condition can be changed for this template." /></Card>
+  if (!params.length) return <Card><EmptyState title="Nothing can be changed in a what-if for this template." /></Card>
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setError(null)
@@ -257,8 +298,8 @@ function WhatIf({ run, words, bp }) {
   return (
     <div className="grid lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-4 items-start">
       <Card>
-        <CardTitle title="Rerun the same term with one condition changed" />
-        <p className="text-[13.5px] text-ink-2 -mt-2 mb-5">Same people, same disruptions, same policy. Only this one condition changes. The AI people still make their own choices, so some differences come from them.</p>
+        <CardTitle title="Rerun the same term with one thing changed" />
+        <p className="text-[13.5px] text-ink-2 -mt-2 mb-5">Same people, same disruptions, same policy, except one condition or one way the rule is read. The AI people still make their own choices, so some differences come from them.</p>
         {newId ? (
           <div className="flex flex-col gap-4" aria-live="polite">
             <div className="flex items-center gap-2 flex-wrap"><span className="text-[13.5px] font-medium">What-if run</span><IdTag id={newId} label="Run" />{live.run && <StatusBadge status={live.run.status} />}</div>
@@ -271,26 +312,33 @@ function WhatIf({ run, words, bp }) {
           </div>
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-5">
-            <fieldset>
-              <legend className="text-[13.5px] font-medium mb-2">Condition</legend>
+            {[['environment', 'A condition', 'The setting the rule meets.'], ['policy', 'How the rule reads', 'One policy value or reading, everything else kept.']].map(([kind, legend, hint]) => {
+              const group = params.filter((p) => (kind === 'policy' ? p.kind === 'policy' : p.kind !== 'policy'))
+              if (!group.length) return null
+              return (
+            <fieldset key={kind}>
+              <legend className="text-[13.5px] font-medium mb-0.5">{legend}</legend>
+              <p className="text-[12.5px] text-ink-3 mb-2">{hint}</p>
               <div className="grid gap-2">
-                {params.map((p) => (
+                {group.map((p) => (
                   <label key={p.name} className={cx('flex gap-3 items-start rounded-2xl border px-4 py-3 cursor-pointer transition', name === p.name ? 'bg-white border-blue-200 shadow-[var(--shadow-glass)]' : 'bg-white/50 border-white hover:bg-white')}>
                     <input type="radio" name="cf-param" value={p.name} checked={name === p.name} onChange={() => setName(p.name)} className="mt-1 accent-[var(--color-blue-600)]" />
                     <span className="flex-1"><span className="block text-[13.5px]">{cap(p.description || humanize(p.name))}</span><span className="block font-mono text-[11px] text-ink-3 mt-0.5">{p.name}</span></span>
-                    <span className="text-[13px] text-ink-2 shrink-0">in this run: <span className="font-semibold text-ink tabular">{formatValue(values[p.name], p)}</span></span>
+                    <span className="text-[13px] text-ink-2 shrink-0">in this run: <span className="font-semibold text-ink tabular">{p.sentences?.[String(valueOf(p))] || formatValue(valueOf(p), p)}</span></span>
                   </label>
                 ))}
               </div>
             </fieldset>
+              )
+            })}
             {param && (
               <div>
                 <label htmlFor="cf-value" className="text-[13.5px] font-medium">New value</label>
                 {param.type === 'int' && <p className="text-[12.5px] text-ink-3 mb-2">A whole number from {param.min} to {param.max}.</p>}
                 {param.type === 'bool' ? (
-                  <select id="cf-value" value={value} onChange={(e) => setValue(e.target.value)} className="mt-1 h-11 px-3 rounded-xl border border-line bg-white"><option value="true">yes</option><option value="false">no</option></select>
+                  <select id="cf-value" value={value} onChange={(e) => setValue(e.target.value)} className="mt-1 h-11 px-3 rounded-xl border border-line bg-white"><option value="true">{param.sentences?.true || 'yes'}</option><option value="false">{param.sentences?.false || 'no'}</option></select>
                 ) : param.type === 'choice' ? (
-                  <select id="cf-value" value={value} onChange={(e) => setValue(e.target.value)} className="mt-1 h-11 px-3 rounded-xl border border-line bg-white">{(param.choices || []).map((c) => <option key={c} value={c}>{humanize(c)}</option>)}</select>
+                  <select id="cf-value" value={value} onChange={(e) => setValue(e.target.value)} className="mt-1 h-11 px-3 rounded-xl border border-line bg-white max-w-full">{choicesOf(param).map((c) => <option key={c} value={c}>{param.sentences?.[c] || humanize(c)}</option>)}</select>
                 ) : (
                   <input id="cf-value" type="number" inputMode="numeric" min={param.min} max={param.max} step="1" value={value} onChange={(e) => setValue(e.target.value)}
                     aria-invalid={!!error && error.kind === 'input'} aria-describedby={error ? 'cf-err' : undefined}

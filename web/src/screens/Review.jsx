@@ -1,11 +1,12 @@
 // S3 Blueprint review and approval, with S4 Stress test as its second tab.
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Badge, Banner, Button, Card, CardTitle, EmptyState, IdTag, Tabs } from '../ui/primitives.jsx'
 import { IconArrow, IconBolt, IconCheck, IconLock } from '../ui/icons.jsx'
 import { PageHeader } from '../ui/shell.jsx'
 import { ApiErrorBanner, LoadingBlock, WaitingState } from '../domain/feedback.jsx'
 import { FactBadge, FactLegend } from '../domain/labels.jsx'
-import { DisruptionList, LabelLines, ParamRow, labelFor, sectionLabels } from '../domain/blueprint.jsx'
+import { DisruptionList, LabelLines, ParamRow, labelFor, periodsOf, sectionLabels } from '../domain/blueprint.jsx'
+import { ReadingsCard, readingParams } from '../domain/readings.jsx'
 import { SlackEditor } from '../domain/people.jsx'
 import { PersonCard } from '../domain/people.jsx'
 import { SearchTab } from '../domain/search.jsx'
@@ -47,10 +48,13 @@ function Values({ bp, words, onSave }) {
   const params = words.template.parameters || []
   const attr = words.template.attributes?.[0]
   const attrParam = params.find((p) => p.type === 'attribute')
+  const attrParams = params.filter((p) => p.type === 'attribute')
+  const readings = new Set(readingParams(words))
   const disruptionsParam = params.find((p) => p.type === 'disruptions')
   const disruptions = disruptionsParam ? values[disruptionsParam.name] || [] : []
   const perPeriod = {}
-  for (const d of disruptions) perPeriod[d.period] = (perPeriod[d.period] || 0) + 1
+  // a recurring entry (slice M6) marks every period it recurs in
+  for (const d of disruptions) for (const p of periodsOf(d, words)) perPeriod[p] = (perPeriod[p] || 0) + 1
   const ruleRoles = words.roles.filter((r) => !r.llm)
 
   const order = (list, kind) => list
@@ -60,11 +64,12 @@ function Values({ bp, words, onSave }) {
   return (
     <div className="flex flex-col gap-4">
       {SECTIONS.map((sec) => {
-        const list = params.filter((p) => p.kind === sec.kind && p.type !== 'disruptions' && p.type !== 'profiles' && p.type !== 'attribute')
+        const list = params.filter((p) => p.kind === sec.kind && p.type !== 'disruptions' && p.type !== 'profiles' && p.type !== 'attribute' && !readings.has(p.name))
         const secLabels = sectionLabels(bp, sec.kind)
         const sectionLabel = secLabels[0]
         return (
-          <Card key={sec.kind}>
+          <Fragment key={sec.kind}>
+          <Card>
             <CardTitle title={sec.title} sub={sec.sub} action={sectionLabel && <FactBadge kind={sectionLabel.kind} statement={sectionLabel.statement} />}>
               <LabelLines labels={secLabels} className="mt-2" />
             </CardTitle>
@@ -85,25 +90,30 @@ function Values({ bp, words, onSave }) {
 
             {sec.kind === 'people' && (
               <div className="flex flex-col gap-4">
-                {attrParam && (() => {
-                  const l = labelFor(bp, attrParam.name, null)
+                {/* Every per-person value: the slack, and from slice M7 each obligation's limit, an assumption set from the profiles. */}
+                {attrParams.map((ap) => {
+                  const l = labelFor(bp, ap.name, null)
+                  const attribute = words.template.attributes?.find((a) => a.id === ap.attribute)
+                  const own = values[ap.name] || {}
                   return (
-                    <div className="flex items-start justify-between gap-4 rounded-2xl bg-white/60 border border-white px-4 py-3">
-                      <div className="min-w-0">
-                        <div className="text-[13.5px] text-ink">{cap(attrParam.description || humanize(attrParam.name))}</div>
-                        <div className="font-mono text-[11px] text-ink-3 mt-0.5">{attrParam.name}</div>
-                        <LabelLines labels={l ? [l] : []} className="mt-1.5" />
+                    <div key={ap.name} className="flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-4 rounded-2xl bg-white/60 border border-white px-4 py-3">
+                        <div className="min-w-0">
+                          <div className="text-[13.5px] text-ink">{cap(ap.description || humanize(ap.name))}</div>
+                          <div className="font-mono text-[11px] text-ink-3 mt-0.5">{ap.name}</div>
+                          {ap !== attrParam && Object.keys(own).length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[12.5px]">
+                              {Object.entries(own).map(([pid, v]) => <span key={pid}>{words.name(pid)}: <span className="font-semibold tabular">{v}</span></span>)}
+                            </div>
+                          )}
+                          <LabelLines labels={l ? [l] : []} className="mt-1.5" />
+                        </div>
+                        {l && <span className="shrink-0"><FactBadge kind={l.kind} statement={l.statement} /></span>}
                       </div>
-                      {l && <span className="shrink-0"><FactBadge kind={l.kind} statement={l.statement} /></span>}
+                      {onSave && <SlackEditor param={ap} attribute={attribute} values={own} words={words} onSave={onSave} />}
                     </div>
                   )
-                })()}
-                {attrParam && onSave && (() => {
-                  const attribute = words.template.attributes?.find((a) => a.id === attrParam.attribute)
-                  return (
-                    <SlackEditor param={attrParam} attribute={attribute} values={values[attrParam.name] || {}} words={words} onSave={onSave} />
-                  )
-                })()}
+                })}
                 <div className="grid md:grid-cols-2 gap-3">
                   {Object.entries(values.profiles || {}).map(([id, prof]) => (
                     <PersonCard key={id} id={id} words={words} profile={prof} slack={values.slack_min?.[id]} slackLabel={attr?.label || 'slack'} />
@@ -125,6 +135,8 @@ function Values({ bp, words, onSave }) {
               </div>
             )}
           </Card>
+          {sec.kind === 'policy' && <ReadingsCard bp={bp} words={words} onSave={onSave} />}
+          </Fragment>
         )
       })}
     </div>

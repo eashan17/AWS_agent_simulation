@@ -23,6 +23,10 @@ function weight(e) {
     case 'record_corrected': return 0.45
     case 'many_missed': return 0.55
     case 'count_near_threshold': return 0.7
+    case 'obligation_missed': return 1.0
+    case 'obligation_lost': return 1.6
+    case 'intention_due':
+    case 'intention_resolved': return 0.3
     case 'duty_planned': return 0.25
     case 'duty_recorded': return 0.14
     case 'queue_processed': return e.payload?.processed?.length ? 0.6 : 0.08
@@ -140,7 +144,7 @@ export function deriveWorld(events, count, words) {
         break
       }
       case 'action_rejected':
-        bubble(actor, 'refused', p.detail || 'This action was refused.', i)
+        bubble(actor, 'refused', String(p.reason || '').startsWith('claim') ? `Claim refused: ${p.detail || 'nothing like that is affecting me'}` : (p.detail || 'This action was refused.'), i)
         if (agents[actor]) { agents[actor].mood = 'refused'; agents[actor].refused = true }
         break
       case 'request_filed': {
@@ -181,6 +185,14 @@ export function deriveWorld(events, count, words) {
         break
       }
       case 'many_missed':
+        break
+      case 'obligation_missed':
+        bubble(p.person, 'think', `Missed my ${p.obligation} to keep the rule (${p.missed} of ${p.limit}).`, i)
+        if (agents[p.person]) agents[p.person].mood = 'think'
+        break
+      case 'obligation_lost':
+        bubble(p.person, 'refused', `Kept the rule past my limit: ${p.lost}.`, i)
+        if (agents[p.person]) agents[p.person].mood = 'sad'
         break
       case 'count_near_threshold':
         if (agents[p.person]) agents[p.person].count = { value: p.value, threshold: p.threshold, i }

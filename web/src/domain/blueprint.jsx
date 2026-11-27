@@ -111,6 +111,14 @@ export function ParamRow({ param, value, label, changedFrom, onSave }) {
   )
 }
 
+/** The periods a disruption entry falls in: one, or every `every` periods up to `until_period` (slice M6). */
+export function periodsOf(d, words) {
+  const last = Math.min(d.until_period || d.period, words?.periods || d.until_period || d.period)
+  const out = []
+  for (let p = d.period; p <= last; p += Math.max(1, d.every || 1)) out.push(p)
+  return out
+}
+
 /** "Week 5, session 1 of the week: Train line disruption, 45 min delay, affects …" */
 export function disruptionText(d, words) {
   const kind = words.template.disruption_kinds?.find((k) => k.id === d.kind)
@@ -118,7 +126,11 @@ export function disruptionText(d, words) {
   if (d.delay) bits.push(`${d.delay} min delay`)
   if (d.capacity != null) bits.push(`capacity ${d.capacity}`)
   if (d.people?.length) bits.push(`affects ${d.people.join(', ')}`)
-  return { when: `${cap(words.period)} ${d.period}, ${words.withinPeriod(d.steps)}`, what: bits.join(', '), kind: kind?.kind || 'obstacle' }
+  const repeats = d.until_period && d.until_period > d.period
+  const when = repeats
+    ? `${cap(words.period)}s ${d.period} to ${d.until_period}, every ${d.every > 1 ? `${d.every} ${words.period}s` : words.period}, ${words.withinPeriod(d.steps)}`
+    : `${cap(words.period)} ${d.period}, ${words.withinPeriod(d.steps)}`
+  return { when, what: bits.join(', '), kind: kind?.kind || 'obstacle' }
 }
 
 export function DisruptionList({ list, words }) {

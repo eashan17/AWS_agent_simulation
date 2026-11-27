@@ -170,7 +170,7 @@ export default function Simulation({ id }) {
         )}
       </div>
       {panel && words && (
-        <PersonPanel id={panel} events={events} words={words} blueprint={bp.data} adaptations={adapt.data?.adaptations}
+        <PersonPanel id={panel} events={events} words={words} blueprint={bp.data} adaptations={adapt.data?.adaptations} runId={run?.run_id} status={run?.status}
           onClose={() => setPanel(null)} onJump={jumpTo} />
       )}
     </div>
