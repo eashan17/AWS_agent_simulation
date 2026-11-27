@@ -102,4 +102,45 @@ Everything above stands, with these changes only:
   degraded the same way). M11 sets the final limits.
 - New fills of both examples, as in step 1; v1's blueprints and runs are not reused.
 
-(v2 results are filled in after its runs. The same numbers go into docs/BRIEF.md.)
+### v2 results (27 Nov, afternoon IST): **GO** — every pass line met on both examples
+Printed by `eval report <id>` on the live server through Run Command (tag `live-20261127c`; the
+report reads stored records only and was deployed after the last v2 run). Settings for the runs:
+300 calls a run, 50 runs and 5,000 calls a day; the daily limits went back to 25 and 1,500 after.
+
+| Job | Runs | Calls | Decisions | False claims | No reply | Integrity | Calls | Failed runs | Fill | Result |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Attendance repeat R-17d0d900 (B-0255b6af) | 5 of 5 completed | 23–28 (127) | 127 | 0 | 0 | 0.0% | 28 ≤ 300 | none | 16.09 s | **PASS** |
+| Curfew repeat R-781e8d15 (B-dac2e01a) | 5 of 5 completed | 131–170 (811) | 811 | 0 | 0 | 0.0% | 170 ≤ 300 | none | 21.32 s | **PASS** |
+| Attendance search S-bbeea730 | 3 of 6 used, `broken` | 30–100 (161) | 160 | 0 | 0 | 0.0% | 100 ≤ 300 | none | — | **PASS** |
+| Curfew search S-993c9533 | 5 of 5 used, `broken` | 51–207 (780) | 780 | 0 | 0 | 0.0% | 207 ≤ 300 | none | — | **PASS** |
+
+About 1,880 calls in all (about USD 3.50). Intentions: attendance 21 stated, 7 unmet; curfew 12
+stated, 1 unmet. The 15 sampled decisions of each repeat were read: every reason cites the
+person's own state or profile (a shift clash, the misses they have left, a delay over their
+slack), and the deciders' reasons cite the requests in front of them.
+
+**What the runs show (results, not pass lines):**
+- **Attendance, as approved: no harm in 5 runs; the ledger is the headline.** The working student
+  carries the rule: 3–4 unexcused absences in every run (the shift clashes, which the policy
+  doesn't excuse), 1–2 misses to spare, a work shift missed in 4 of 5 runs. Everyone else has 3–4
+  to spare.
+- **Curfew, as approved: harm in 1 of 5 runs.** L-19f9acfc: the intern fails the late-return
+  penalties (12 misses for clashes the policy doesn't excuse, `trade_off`) and the volunteer loses
+  the evening job (`trade_off`). In the other 4 runs both file a late-entry request for every
+  shift night and the guardian and warden approve them: the burden is a request a night.
+- **Attendance search: broken.** "Early checkpoint amid cascading personal crises" (B-251ae299)
+  failed the working student's exam eligibility in L-756b2a86 and again in its rerun L-f4036e8c,
+  3 unexcused clash misses each, `trade_off`. The first scenario, "Mass transport failure hits all
+  commuters for weeks" (L-1fe8c324), harmed 4 students but every harm was `forced` (the strikes
+  alone), so it isn't counted as the rule breaking.
+- **Curfew search: broken.** "Warden away during peak disruptions" (B-514e3869), in L-cfc402c9 and
+  its rerun L-5719bddf: late-entry requests from 4 residents still waiting at the check
+  (`process`), the intern failing the penalties, and in L-cfc402c9 both the intern and the
+  volunteer losing their evening jobs (`trade_off`).
+- **A label to check (outside M10, in docs/IDEAS.md):** L-cfc402c9-F6 and L-5719bddf-F6/F7 say
+  `forced` while their misses by cause say `8 process`.
+
+**v1 by the same command** (`--max-calls 150`, v1's line): attendance R-57070615 PASS (24–33
+calls, 0 false claims, a `trade_off` harm for the working student in all 5 runs, a job lost in
+L-79e47355); curfew R-c756dee5 FAIL on failed runs (L-eaf1b1bb, L-8077066b, L-6bd9e671,
+L-02919fc0 degraded).
